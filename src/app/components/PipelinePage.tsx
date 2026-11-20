@@ -50,7 +50,7 @@ function Track({ steps, working = false }: { steps: Step[]; working?: boolean })
           <span className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ring-4 ring-gray-950 ${
             s.done ? 'bg-emerald-500 text-gray-950' : s.current ? 'bg-blue-500 text-white shadow-[0_0_0_6px_rgba(59,130,246,0.18)]' : 'bg-gray-800 text-gray-500'}`}>
             {s.done ? '✓' : i + 1}
-            {s.current && working && <span className="absolute -inset-1.5 rounded-full border-2 border-blue-300 border-t-transparent border-l-transparent animate-spin motion-reduce:animate-none" aria-hidden />}
+            {s.current && (working || s.label === 'CI running') && <span className="absolute -inset-1.5 rounded-full border-2 border-blue-300 border-t-transparent border-l-transparent animate-spin motion-reduce:animate-none" aria-hidden />}
           </span>
           <span className={`text-xs mt-2 px-1 leading-tight ${s.done ? 'text-gray-200' : s.current ? 'text-blue-300 font-medium' : 'text-gray-600'}`}>{s.label}</span>
           {s.current && working && <span className="text-[10px] text-blue-300/80 animate-pulse motion-reduce:animate-none">Session is working</span>}
@@ -111,7 +111,12 @@ function PrPanel({ t, p, auto, onSend, onDismiss }: { t: PrTrack; p: Pipeline; a
           ) : <p className="text-xs text-gray-500 animate-pulse">Loading from GitHub…</p>}
         </Panel>
         <Panel title="CI">
-          <p className="flex items-center gap-2 text-sm"><span className={`text-lg leading-none ${ci[1]}`}>{ci[0]}</span><span className="text-gray-200">{ci[2]}</span></p>
+          <p className="flex items-center gap-2 text-sm">
+            {v?.checks === 'pending'
+              ? <span className="w-4 h-4 rounded-full border-2 border-amber-300 border-t-transparent animate-spin motion-reduce:animate-none" aria-hidden />
+              : <span className={`text-lg leading-none ${ci[1]}`}>{ci[0]}</span>}
+            <span className="text-gray-200">{ci[2]}</span>
+          </p>
           {v && <p className="text-[11px] text-gray-500 mt-2">Updated {new Date(v.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}
         </Panel>
         <Panel title={`Slack${t.slack ? ` · #${t.slack.channel}` : ''}`} right={t.slack?.permalink && <a href={t.slack.permalink} target="_blank" rel="noreferrer" className="text-[11px] text-blue-400 hover:underline">Open thread ↗</a>}>

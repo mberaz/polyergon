@@ -38,12 +38,22 @@ function summaryBody(p: Pipeline): string {
 export function prSteps(t: PrTrack, slack: boolean): { label: string; done: boolean; current: boolean }[] {
   const merged = t.view?.state === 'MERGED'
   const approved = merged || t.view?.reviewDecision === 'APPROVED' || t.state === 'ready'
+  // Approval alone isn't mergeable: CI, open review threads and draft also gate it
+  const v = t.view
+  const ready = merged || t.state === 'ready'
+  const blocker = !v ? 'Checking…'
+    : v.checks === 'failing' ? 'CI failing'
+    : v.checks === 'pending' ? 'CI running'
+    : v.unresolved ? `${v.unresolved} open thread${v.unresolved > 1 ? 's' : ''}`
+    : v.isDraft ? 'Still a draft'
+    : 'Ready to merge'
   return [
     { label: 'PR opened', done: true, current: false },
     ...(slack ? [{ label: 'Posted to Slack', done: !!t.slack, current: !t.slack }] : []),
     { label: 'In review', done: approved, current: !approved },
     { label: 'Approved', done: approved, current: false },
-    { label: 'Merged', done: merged, current: approved && !merged },
+    { label: ready ? 'Ready to merge' : blocker, done: ready, current: approved && !ready },
+    { label: 'Merged', done: merged, current: ready && !merged },
   ]
 }
 
@@ -54,6 +64,7 @@ export function preprSteps(p: Pipeline): { label: string; done: boolean; current
     { label: 'PR opened', done: false, current: false },
     { label: 'In review', done: false, current: false },
     { label: 'Approved', done: false, current: false },
+    { label: 'Ready to merge', done: false, current: false },
     { label: 'Merged', done: false, current: false },
   ]
 }

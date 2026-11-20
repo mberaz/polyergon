@@ -158,7 +158,7 @@ export function TaskBoard({ orgId, folders, liveSessions, pipelines, onStart, on
                                 </span>
                               ))}
                             </span>
-                            <span className={`ml-auto ${x.view?.checks === 'failing' ? 'text-red-400' : x.view?.checks === 'passing' ? 'text-emerald-400' : 'text-gray-500'}`}>CI {x.view?.checks ?? '…'}</span>
+                            <span className={`ml-auto flex items-center gap-1 ${x.view?.checks === 'failing' ? 'text-red-400' : x.view?.checks === 'passing' ? 'text-emerald-400' : x.view?.checks === 'pending' ? 'text-amber-300' : 'text-gray-500'}`}>{x.view?.checks === 'pending' && <span className="w-2.5 h-2.5 rounded-full border-2 border-amber-300 border-t-transparent animate-spin motion-reduce:animate-none" />}CI {x.view?.checks === 'pending' ? 'running' : x.view?.checks ?? '…'}</span>
                           </div>
                           {(x.view?.isDraft || !!x.view?.unresolved) && <p className="text-[11px] text-amber-300 mt-0.5">{[x.view?.isDraft && 'draft', x.view?.unresolved && `${x.view.unresolved} unresolved thread${x.view.unresolved > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}</p>}
                           {x.suggestion && (x.suggestion.kind === 'merge' && !auto.merge
