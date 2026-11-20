@@ -880,7 +880,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
       </div>
 
       {/* Tabs — grid; 4+ tabs in one row got too cramped */}
-      <div className="grid grid-cols-3 border-b border-gray-800/60">
+      <div className="grid grid-cols-[1fr_1fr_1.2fr] border-b border-gray-800/60">
         <button
           onClick={() => setTab('live')}
           className={`py-2.5 text-xs font-semibold tracking-wide flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
@@ -981,14 +981,16 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
         </button>}
         <button
           onClick={() => { setTab('automations'); onOpenAutomations() }}
-          className={`py-2.5 text-xs font-semibold tracking-wide flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
+          className={`py-2.5 pr-1 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
             tab === 'automations' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
           }`}
         >
-          <span className="relative whitespace-nowrap" title={pipelines.filter(isRunning).length ? `${pipelines.filter(isRunning).length} running` : undefined}>
-            Automations
-            {pipelines.filter(isRunning).length > 0 && <span className="absolute -top-0.5 -right-2 w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-          </span>
+          <span className="whitespace-nowrap">Automations</span>
+          {pipelines.filter(isRunning).length > 0 && (
+            <span title={`${pipelines.filter(isRunning).length} running`} className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${tab === 'automations' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-800 text-gray-500'}`}>
+              {pipelines.filter(isRunning).length}
+            </span>
+          )}
         </button>
       </div>
 
