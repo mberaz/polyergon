@@ -1,4 +1,5 @@
 'use client'
+import { withOrg } from '@/lib/activeOrg'
 import { useEffect, useState } from 'react'
 import type { MarketplacePlugin } from '@/lib/marketplace'
 
@@ -10,13 +11,13 @@ export function MarketplaceDialog({ onClose, onInstalled, inline = false }: { on
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null)
 
-  const load = () => fetch('/api/skills/marketplace').then(r => r.json()).then(d => setPlugins(d.plugins ?? [])).catch(() => setPlugins([]))
+  const load = () => fetch(withOrg('/api/skills/marketplace')).then(r => r.json()).then(d => setPlugins(d.plugins ?? [])).catch(() => setPlugins([]))
   useEffect(() => { load() }, [])
 
   async function install(p: MarketplacePlugin) {
     const id = `${p.name}@${p.marketplace}`
     setBusy(id); setMsg(null)
-    const r = await fetch('/api/skills/marketplace', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: p.name, marketplace: p.marketplace }) })
+    const r = await fetch(withOrg('/api/skills/marketplace'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: p.name, marketplace: p.marketplace }) })
     const d = await r.json().catch(() => ({}))
     setBusy(null)
     setMsg({ id, ok: r.ok, text: r.ok ? 'Installed. New sessions will have it.' : d.error ?? 'Install failed' })

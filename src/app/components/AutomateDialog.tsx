@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import type { Pipeline, PipelineConfig, PrTrack, Suggestion } from '@/lib/pipelines'
 import type { SlackChannel } from '@/lib/slackBridge'
-import { isRunning, pipelineSummary, shortPr, prSteps } from '@/lib/pipelineView'
+import { isRunning, pipelineSummary, shortPr, prSteps, preprSteps } from '@/lib/pipelineView'
 import { SlackChannelPicker } from './SlackChannelPicker'
 
 const STEPS = [
@@ -40,8 +40,7 @@ const TRACK_BADGE: Record<PrTrack['state'], [string, string]> = {
 }
 
 // PR opened → Slack → In review → Approved → Merged for one PR
-function Stepper({ t, slack }: { t: PrTrack; slack: boolean }) {
-  const steps = prSteps(t, slack)
+function Stepper({ steps }: { steps: { label: string; done: boolean; current: boolean }[] }) {
   return (
     <div className="flex items-start my-3">
       {steps.map((s, i) => (
@@ -66,7 +65,7 @@ export function PrCard({ t, slackSet, max, onSend, onDismiss }: { t: PrTrack; sl
       </div>
       <p className="text-[11px] text-gray-500 mt-0.5">{shortPr(t.url)}{v?.isDraft ? ' · draft' : ''} · review fixes sent {t.reviewRounds} · CI fixes sent {t.ciFixes}</p>
       {t.suggestion && onSend && onDismiss && <SuggestionBox s={t.suggestion} onSend={onSend} onDismiss={onDismiss} />}
-      <Stepper t={t} slack={slackSet} />
+      <Stepper steps={prSteps(t, slackSet)} />
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div>
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">GitHub</p>
@@ -131,6 +130,9 @@ export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, 
         </div>
         <p className="text-xs text-gray-500 mb-4 truncate">{sessionName}{pipeline ? ` · ${pipelineSummary(pipeline)}` : ''}</p>
 
+        {pipeline && isRunning(pipeline) && pipeline.prs.length === 0 && (
+          <div className="rounded-lg border border-gray-800 p-3 mb-4"><Stepper steps={preprSteps(pipeline)} /></div>
+        )}
         {pipeline?.suggestion && <div className="mb-4"><SuggestionBox s={pipeline.suggestion} onSend={() => onAct(pipeline.id, null)} onDismiss={() => onDismiss(pipeline.id, null)} /></div>}
         {pipeline && pipeline.prs.length > 0 && (
           <div className="space-y-3 mb-4">

@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const text = message(new MeetingStore(), params.id)
   if (!text) return NextResponse.json({ error: 'This meeting has no summary yet' }, { status: 404 })
   try {
-    await postToSlack({ id: String(body?.channel?.id ?? '').replace(/[^A-Z0-9]/gi, ''), name }, text)
+    await postToSlack({ id: String(body?.channel?.id ?? '').replace(/[^A-Z0-9]/gi, ''), name }, text, new MeetingStore().get(params.id)?.orgId)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 })

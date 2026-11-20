@@ -1,4 +1,5 @@
 'use client'
+import { withOrg } from '@/lib/activeOrg'
 import { useEffect, useState } from 'react'
 import type { SkillInfo } from '@/lib/skillsReader'
 import { Markdown } from './Markdown'
@@ -15,10 +16,10 @@ export function SkillsPage({ selected, onSelect, onChanged }: { selected: string
   const [mode, setMode] = useState<'view' | 'edit' | 'new'>('view')
   const [reload, setReload] = useState(0)
 
-  useEffect(() => { fetch('/api/skills').then(r => r.json()).then(d => setSkills(d.skills ?? [])).catch(() => setSkills([])) }, [reload])
+  useEffect(() => { fetch(withOrg('/api/skills')).then(r => r.json()).then(d => setSkills(d.skills ?? [])).catch(() => setSkills([])) }, [reload])
   useEffect(() => {
     setMode('view'); setDetail(null)
-    if (selected) fetch(`/api/skills/view?name=${encodeURIComponent(selected)}`).then(r => r.ok ? r.json() : null).then(setDetail).catch(() => {})
+    if (selected) fetch(withOrg(`/api/skills/view?name=${encodeURIComponent(selected)}`)).then(r => r.ok ? r.json() : null).then(setDetail).catch(() => {})
   }, [selected, reload])
 
   const changed = () => { setReload(n => n + 1); onChanged() }

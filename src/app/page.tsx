@@ -1,4 +1,5 @@
 'use client'
+import { withOrg } from '@/lib/activeOrg'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { Sidebar } from './components/Sidebar'
@@ -15,6 +16,9 @@ import { NotesPage } from './components/NotesPage'
 import { CommandPalette, type PaletteItem } from './components/CommandPalette'
 import { SlackInbox } from './components/SlackInbox'
 import { AutomationsPage } from './components/AutomationsPage'
+import { WatcherDialog } from './components/WatcherDialog'
+import { useSlackWatchers } from '@/hooks/useSlackWatchers'
+import { setActiveOrg } from '@/lib/activeOrg'
 import type { SlackMention } from '@/lib/slackBridge'
 import { useNotes } from '@/hooks/useNotes'
 import { usePipelines } from '@/hooks/usePipelines'
@@ -40,6 +44,8 @@ export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
   const { permission: notificationPermission, enabled: notificationsOn, requestPermission: requestNotificationPermission, notifyNeedsInput } = useDesktopNotifications()
   const { ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
+  const { watchers, watcherError, watcherCmd } = useSlackWatchers(ws, (title, body) => notifyNeedsInput(`👂 ${title}`, body))
+  const [showWatcherDialog, setShowWatcherDialog] = useState(false)
   const { pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr, actPipeline, dismissPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
   // prEntries still feeds the notification-suppression logic; the PRs tab
   // itself now renders the GitHub workload inbox
@@ -69,6 +75,8 @@ export default function Home() {
   // Saved value loads after mount — reading localStorage in the initializer
   // makes the server and client first-render disagree (hydration error).
   const [activeOrgId, setActiveOrgId] = useState<string>('all')
+  // Slack/skills calls follow the org switcher (set during render so children's first fetch sees it)
+  setActiveOrg(activeOrgId)
   useEffect(() => {
     try {
       const saved = localStorage.getItem('claude-active-org')
@@ -293,7 +301,7 @@ export default function Home() {
 
   // ⌘K palette: everything searchable, built when the palette opens
   const paletteSkills = useRef<{ name: string; description: string }[] | null>(null)
-  useEffect(() => { fetch('/api/skills').then(r => r.json()).then(d => { paletteSkills.current = d.skills ?? [] }).catch(() => {}) }, [skillsVersion])
+  useEffect(() => { fetch(withOrg('/api/skills')).then(r => r.json()).then(d => { paletteSkills.current = d.skills ?? [] }).catch(() => {}) }, [skillsVersion, activeOrgId])
   const paletteItems = useCallback((): PaletteItem[] => {
     const nameOf = (id: string, claudeId: string | null, cwd: string) =>
       sessionNameOverrides[id] || (claudeId && sessionNameOverrides[claudeId]) || sessions.find(h => h.sessionId === claudeId)?.firstUserMessage || cwd.split('/').at(-1) || 'Session'
@@ -419,11 +427,15 @@ export default function Home() {
           />
         )}
 
-        {view.mode === 'slack' && <SlackInbox onSendAgent={handleSlackAgent} />}
+        {view.mode === 'slack' && <SlackInbox key={activeOrgId} onSendAgent={handleSlackAgent} orgName={activeOrgId === 'all' ? 'Default' : orgs.find(o => o.id === activeOrgId)?.name ?? 'Default'} />}
 
         {view.mode === 'automations' && (
           <AutomationsPage
             pipelines={pipelines}
+            watchers={watchers}
+            watcherCmd={watcherCmd}
+            onNewWatcher={() => setShowWatcherDialog(true)}
+            sessions={liveSessions.filter(s => s.claudeSessionId).map(s => ({ id: s.id, label: (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session').slice(0, 70) }))}
             nameOf={id => { const s = liveSessions.find(x => x.id === id); return (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session' }}
             onOpen={id => setAutomateFor(id)}
             onStop={stopPipeline}
@@ -431,7 +443,7 @@ export default function Home() {
         )}
 
         {view.mode === 'skills' && (
-          <SkillsPage selected={view.name} onSelect={name => setView({ mode: 'skills', name })} onChanged={() => setSkillsVersion(v => v + 1)} />
+          <SkillsPage key={activeOrgId} selected={view.name} onSelect={name => setView({ mode: 'skills', name })} onChanged={() => setSkillsVersion(v => v + 1)} />
         )}
 
         {view.mode === 'notes' && (
@@ -495,6 +507,15 @@ export default function Home() {
       </div>
 
       <CommandPalette items={paletteItems} />
+
+      {showWatcherDialog && (
+        <WatcherDialog
+          sessions={liveSessions.filter(s => s.claudeSessionId).map(s => ({ id: s.id, label: (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session').slice(0, 70) }))}
+          error={watcherError}
+          onCreate={input => watcherCmd('watcher-create', { ...input, orgId: activeOrgId === 'all' ? 'default' : activeOrgId })}
+          onClose={() => setShowWatcherDialog(false)}
+        />
+      )}
 
       {automateFor && (() => {
         const s = liveSessions.find(x => x.id === automateFor)

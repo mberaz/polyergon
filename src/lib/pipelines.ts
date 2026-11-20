@@ -341,7 +341,7 @@ class PipelineEngine {
     const pr = await prSnapshot(t.url)
     if (pr) this.patchTrack(p, t, { view: pr.view })
     try {
-      const { permalink } = await postToSlack(ch, `:eyes: Ready for review: *${pr?.title ?? 'PR'}*\n${t.url}`)
+      const { permalink } = await postToSlack(ch, `:eyes: Ready for review: *${pr?.title ?? 'PR'}*\n${t.url}`, liveSessionStore.get(p.liveId)?.orgId)
       this.patchTrack(p, t, { slack: { channel: ch.name, permalink, checkedAt: Date.now() } }, `Posted ${shortPr(t.url)} to #${ch.name}`)
     } catch (e) {
       this.update(p, {}, `Slack post for ${shortPr(t.url)} failed: ${(e as Error).message}`)
@@ -354,7 +354,7 @@ class PipelineEngine {
     const slack = { ...t.slack, checkedAt: Date.now() }
     this.patchTrack(p, t, { slack }) // claim the slot before the slow call
     try {
-      const view = await readSlackThread(slack.permalink!)
+      const view = await readSlackThread(slack.permalink!, liveSessionStore.get(p.liveId)?.orgId)
       if (view) this.patchTrack(p, t, { slack: { ...slack, ...view } })
     } catch { /* next round */ }
   }

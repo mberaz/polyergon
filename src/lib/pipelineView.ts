@@ -42,3 +42,14 @@ export function prSteps(t: PrTrack, slack: boolean): { label: string; done: bool
     { label: 'Merged', done: merged, current: approved && !merged },
   ]
 }
+
+// Before any PR exists: Watching → PR → Review → Approved → Merged
+export function preprSteps(p: Pipeline): { label: string; done: boolean; current: boolean }[] {
+  return [
+    { label: p.phase === 'opening-pr' ? 'Session is opening a PR' : p.suggestion ? 'Waiting for you to open a PR' : 'Watching for code to ship', done: false, current: true },
+    { label: 'PR opened', done: false, current: false },
+    { label: 'In review', done: false, current: false },
+    { label: 'Approved', done: false, current: false },
+    { label: 'Merged', done: false, current: false },
+  ]
+}

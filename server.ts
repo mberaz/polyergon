@@ -14,6 +14,7 @@ import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
 import { pipelineEngine } from './src/lib/pipelines'
+import { slackWatchers } from './src/lib/slackWatchers'
 import { meetingStore, type ContextKind } from './src/lib/meetingStore'
 import { sessionNameStore } from './src/lib/sessionNameStore'
 import { firstUserMessageSync } from './src/lib/sessionStore'
@@ -109,6 +110,11 @@ app.prepare().then(async () => {
   // Meeting events go to every connected client — a meeting isn't "attached"
   // like a terminal session; any open tab shows its state.
   pipelineEngine.start()
+  slackWatchers.start()
+  slackWatchers.on((ev) => {
+    const msg = JSON.stringify(ev)
+    wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg) })
+  })
   onAnyStatusChange((id, status) => { if (status === 'waiting') flushRename(id) })
   pipelineEngine.on((ev) => {
     const msg = JSON.stringify(ev)
@@ -147,6 +153,7 @@ app.prepare().then(async () => {
     // one), so background-session completion can be surfaced in the sidebar
     // and trigger alerts/notifications regardless of what's currently open.
     send({ type: 'pipelines', items: pipelineEngine.list() })
+    send({ type: 'slack-watchers', items: slackWatchers.list() })
     const cleanupAnyStatus = onAnyStatusChange((id, status) => send({ type: 'sessionStatus', id, status }))
     const cleanupAnyPrUrl = onAnyPrUrlChange((id, prUrl) => send({ type: 'sessionPrUrl', id, prUrl }))
     const cleanupAnyRcUrl = onAnyRcUrlChange((id, rcUrl) => send({ type: 'sessionRcUrl', id, rcUrl }))
@@ -351,6 +358,25 @@ app.prepare().then(async () => {
       } else if (msg.type === 'pipeline-add-pr') {
         const err = pipelineEngine.addPr(msg.id as string, String(msg.url ?? '').trim())
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
+      } else if (msg.type === 'watcher-create') {
+        const c = (msg.channel ?? {}) as { id?: string; name?: string }
+        const result = slackWatchers.create({
+          channel: { id: String(c.id ?? '').replace(/[^A-Z0-9]/gi, ''), name: String(c.name ?? '').replace(/^#/, '').slice(0, 80) },
+          liveId: (msg.liveId as string) || null, mode: msg.mode === 'auto' ? 'auto' : 'approve', intervalMin: Number(msg.intervalMin) || 5,
+          orgId: typeof msg.orgId === 'string' && orgRegistry.get(msg.orgId) ? msg.orgId : DEFAULT_ORG_ID,
+        })
+        if ('error' in result) send({ type: 'watcher-error', message: result.error })
+        else slackWatchers.run(result.id)
+      } else if (msg.type === 'watcher-stop') {
+        slackWatchers.stop(msg.id as string)
+      } else if (msg.type === 'watcher-run') {
+        slackWatchers.run(msg.id as string)
+      } else if (msg.type === 'watcher-send') {
+        slackWatchers.send(msg.id as string, msg.permalink as string, String(msg.text ?? '')).then(err => { if (err) send({ type: 'watcher-error', message: err.error }) })
+      } else if (msg.type === 'watcher-dismiss') {
+        slackWatchers.dismiss(msg.id as string, msg.permalink as string)
+      } else if (msg.type === 'watcher-redraft') {
+        slackWatchers.redraft(msg.id as string, msg.permalink as string)
       } else if (msg.type === 'pipeline-act') {
         // The one place an automation's message reaches a session: your click
         const err = pipelineEngine.act(msg.id as string, (msg.prUrl as string) || null)

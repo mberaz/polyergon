@@ -15,24 +15,24 @@ export interface MarketplacePlugin {
   installed: boolean
 }
 
-const pluginsDir = () => join(process.env.HOME!, '.claude', 'plugins')
+const pluginsDir = (configDir?: string | null) => join(configDir || join(process.env.HOME!, '.claude'), 'plugins')
 const SAFE = /^[\w.-]{1,100}$/
 
-function installedIds(): Set<string> {
+function installedIds(configDir?: string | null): Set<string> {
   try {
-    const d = JSON.parse(readFileSync(join(pluginsDir(), 'installed_plugins.json'), 'utf-8'))
+    const d = JSON.parse(readFileSync(join(pluginsDir(configDir), 'installed_plugins.json'), 'utf-8'))
     return new Set(Object.keys(d.plugins ?? d))
   } catch { return new Set() }
 }
 
-export function listMarketplacePlugins(): MarketplacePlugin[] {
-  const installed = installedIds()
+export function listMarketplacePlugins(configDir?: string | null): MarketplacePlugin[] {
+  const installed = installedIds(configDir)
   const out: MarketplacePlugin[] = []
   let markets: string[] = []
-  try { markets = readdirSync(join(pluginsDir(), 'marketplaces')) } catch { return [] }
+  try { markets = readdirSync(join(pluginsDir(configDir), 'marketplaces')) } catch { return [] }
   for (const m of markets) {
     try {
-      const d = JSON.parse(readFileSync(join(pluginsDir(), 'marketplaces', m, '.claude-plugin', 'marketplace.json'), 'utf-8'))
+      const d = JSON.parse(readFileSync(join(pluginsDir(configDir), 'marketplaces', m, '.claude-plugin', 'marketplace.json'), 'utf-8'))
       const market = typeof d.name === 'string' ? d.name : m
       for (const p of d.plugins ?? []) {
         if (typeof p?.name !== 'string') continue
@@ -45,10 +45,10 @@ export function listMarketplacePlugins(): MarketplacePlugin[] {
 
 // Installs for the user (all projects). Plugins that need a marketplace-declared
 // command to be accepted are refused here; the error says to install in a terminal.
-export async function installPlugin(name: string, marketplace: string): Promise<void> {
+export async function installPlugin(name: string, marketplace: string, configDir?: string | null): Promise<void> {
   if (!SAFE.test(name) || !SAFE.test(marketplace)) throw new Error('Invalid plugin name')
   try {
-    await execFileAsync('claude', ['plugin', 'install', `${name}@${marketplace}`, '--scope', 'user', '--json'], { timeout: 180_000, maxBuffer: 5 * 1024 * 1024 })
+    await execFileAsync('claude', ['plugin', 'install', `${name}@${marketplace}`, '--scope', 'user', '--json'], { timeout: 180_000, maxBuffer: 5 * 1024 * 1024, env: { ...process.env, ...(configDir ? { CLAUDE_CONFIG_DIR: configDir } : {}) } })
   } catch (e) {
     const err = e as { stdout?: string; stderr?: string; message: string }
     const text = `${err.stdout ?? ''}\n${err.stderr ?? ''}`.trim() || err.message

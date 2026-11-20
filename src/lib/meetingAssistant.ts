@@ -6,13 +6,14 @@ const CALL_TIMEOUT_MS = 180_000
 
 // One headless `claude -p` call (optionally resuming a conversation). Runs with
 // permission prompts off so it can use web/file tools and MCP connectors.
-export function runClaude(prompt: string, opts: AssistantSpawnOpts & { resumeId?: string | null; timeoutMs?: number }): Promise<{ result: string; sessionId: string | null }> {
+// forkSession: resume a COPY of the conversation (new id); the original is untouched.
+export function runClaude(prompt: string, opts: AssistantSpawnOpts & { resumeId?: string | null; timeoutMs?: number; forkSession?: boolean }): Promise<{ result: string; sessionId: string | null }> {
   return new Promise((resolve, reject) => {
     const args = [
       '-p', '--output-format', 'json',
       '--permission-mode', 'bypassPermissions',
       ...(opts.model ? ['--model', opts.model] : []),
-      ...(opts.resumeId ? ['--resume', opts.resumeId] : []),
+      ...(opts.resumeId ? ['--resume', opts.resumeId, ...(opts.forkSession ? ['--fork-session'] : [])] : []),
     ]
     const env = {
       ...Object.fromEntries(

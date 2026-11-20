@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Combobox } from './Combobox'
+import { withOrg } from '@/lib/activeOrg'
 import type { SlackChannel } from '@/lib/slackBridge'
 
 // Text box with your Slack channels as suggestions (native <datalist>), loaded
@@ -17,7 +18,7 @@ export function SlackChannelPicker({ value, onChange, onEnter, className }: {
 
   function load(refresh = false) {
     setState('loading')
-    fetch(`/api/slack/channels${refresh ? '?refresh=1' : ''}`)
+    fetch(withOrg(`/api/slack/channels${refresh ? '?refresh=1' : ''}`))
       .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setChannels(d.channels); setState('ready') })
       .catch(e => { setError(e.message || 'Could not load channels'); setState('error') })
   }

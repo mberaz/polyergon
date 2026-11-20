@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import type { SlackMention } from '@/lib/slackBridge'
+import { withOrg } from '@/lib/activeOrg'
 
 function ago(iso: string): string {
   const t = Date.parse(iso)
@@ -25,7 +26,7 @@ function Card({ m, onGone, onAgent, suggesting }: { m: SlackMention; onGone: () 
 
   async function act(action: 'draft' | 'reply' | 'done' | 'react', extra: object = {}) {
     setBusy(action === 'reply' ? 'send' : action === 'react' ? null : action); setError('')
-    const r = await fetch('/api/slack/inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, permalink: m.permalink, ...extra }) })
+    const r = await fetch(withOrg('/api/slack/inbox'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, permalink: m.permalink, ...extra }) })
     const d = await r.json().catch(() => ({}))
     setBusy(null)
     if (!r.ok) { setError(d.error ?? 'Failed'); return null }
@@ -92,15 +93,15 @@ function Card({ m, onGone, onAgent, suggesting }: { m: SlackMention; onGone: () 
 }
 
 // Slack messages that tag you and are still open, as cards.
-export function SlackInbox({ onSendAgent }: { onSendAgent: (m: SlackMention) => void }) {
+export function SlackInbox({ onSendAgent, orgName }: { onSendAgent: (m: SlackMention) => void; orgName: string }) {
   const [data, setData] = useState<{ items: SlackMention[]; fetchedAt: number; refreshing: boolean; stage: 'idle' | 'searching' | 'checking' | 'suggesting'; startedAt: number; error: string | null } | null>(null)
   const [now, setNow] = useState(Date.now())
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState<'all' | 'dm' | 'channels'>('all')
 
-  const load = (refresh = false) => fetch(`/api/slack/inbox${refresh ? '?refresh=1' : ''}`).then(r => r.json()).then(setData).catch(() => {})
+  const load = (refresh = false) => fetch(withOrg(`/api/slack/inbox${refresh ? '?refresh=1' : ''}`)).then(r => r.json()).then(setData).catch(() => {})
   useEffect(() => {
-    fetch('/api/slack/inbox').then(r => r.json()).then(d => { setData(d); if (!d.fetchedAt || Date.now() - d.fetchedAt > 15 * 60_000) load(true) }).catch(() => {})
+    fetch(withOrg('/api/slack/inbox')).then(r => r.json()).then(d => { setData(d); if (!d.fetchedAt || Date.now() - d.fetchedAt > 15 * 60_000) load(true) }).catch(() => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // While a refresh runs on the server, check back every 3s and tick the timer
   useEffect(() => {
@@ -118,6 +119,7 @@ export function SlackInbox({ onSendAgent }: { onSendAgent: (m: SlackMention) => 
     <div className="absolute inset-0 flex flex-col bg-gray-950 text-gray-100">
       <div className="px-6 pt-5 pb-4 flex flex-wrap items-center gap-3 flex-shrink-0">
         <h1 className="text-lg font-semibold">Slack</h1>
+        <span className="px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300 text-[10px] font-medium" title="Slack workspace of this org's Claude setup">{orgName}</span>
         <span className="text-xs text-gray-500">{data ? `${items.length} waiting on you` : 'Loading…'}</span>
         <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-lg p-0.5">
           <button onClick={() => setFilter('all')} className={chip(filter === 'all')}>All</button>

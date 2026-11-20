@@ -1,4 +1,5 @@
 'use client'
+import { withOrg } from '@/lib/activeOrg'
 import { useEffect, useState } from 'react'
 
 // Create or edit a user skill (~/.claude/skills/<name>/SKILL.md).
@@ -15,7 +16,7 @@ export function SkillDialog({ editing, onClose, onSaved, inline = false }: { edi
 
   useEffect(() => {
     if (!editing) return
-    fetch(`/api/skills/${editing}`).then(r => r.json()).then(d => setRaw(d.raw ?? '')).catch(() => setError('Could not load the skill'))
+    fetch(withOrg(`/api/skills/${editing}`)).then(r => r.json()).then(d => setRaw(d.raw ?? '')).catch(() => setError('Could not load the skill'))
   }, [editing])
 
   function importFile(file: File | undefined) {
@@ -37,7 +38,7 @@ export function SkillDialog({ editing, onClose, onSaved, inline = false }: { edi
 
   async function remove() {
     if (!editing) return
-    const r = await fetch(`/api/skills/${editing}`, { method: 'DELETE' })
+    const r = await fetch(withOrg(`/api/skills/${editing}`), { method: 'DELETE' })
     if (!r.ok) { setError('Could not delete'); return }
     onSaved(); onClose()
   }

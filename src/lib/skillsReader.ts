@@ -66,9 +66,11 @@ function skillsUnder(skillsRoot: string, source: SkillInfo['source'], plugin?: s
 // User skills live in ~/.claude/skills/<name>/SKILL.md. Installed plugin skills
 // live under ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/skills/.
 // We read both, tag each with its source, and dedupe by name (user wins).
-export function listSkills(): SkillInfo[] {
-  const home = process.env.HOME!
-  const claudeDir = join(home, '.claude')
+const claudeRoot = (configDir?: string | null) => configDir || join(process.env.HOME!, '.claude')
+
+// configDir: the org's Claude config folder (null = ~/.claude)
+export function listSkills(configDir?: string | null): SkillInfo[] {
+  const claudeDir = claudeRoot(configDir)
 
   const user = skillsUnder(join(claudeDir, 'skills'), 'user')
 
@@ -103,7 +105,7 @@ function safeReaddir(dir: string): string[] {
 
 // ---- Writing user skills (~/.claude/skills/<name>/SKILL.md) ----
 
-const userSkillsRoot = () => join(process.env.HOME!, '.claude', 'skills')
+const userSkillsRoot = (configDir?: string | null) => join(claudeRoot(configDir), 'skills')
 // Claude Code skill names: lowercase letters, digits and hyphens.
 export const SKILL_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/
 
@@ -137,26 +139,26 @@ export function buildSkill(input: SkillInput): { name: string; content: string }
   return { name, content }
 }
 
-export function readUserSkill(name: string): string | null {
+export function readUserSkill(name: string, configDir?: string | null): string | null {
   if (!SKILL_NAME.test(name)) return null
-  try { return readFileSync(join(userSkillsRoot(), name, 'SKILL.md'), 'utf-8') } catch { return null }
+  try { return readFileSync(join(userSkillsRoot(configDir), name, 'SKILL.md'), 'utf-8') } catch { return null }
 }
 
 // replaces: the existing skill being edited (null = new skill, must not exist).
-export function saveUserSkill(input: SkillInput, replaces: string | null = null): string {
+export function saveUserSkill(input: SkillInput, replaces: string | null = null, configDir?: string | null): string {
   const { name, content } = buildSkill(input)
-  const dir = join(userSkillsRoot(), name)
+  const dir = join(userSkillsRoot(configDir), name)
   if (name !== replaces && existsSync(dir)) throw new Error(`A skill named "${name}" already exists`)
-  if (replaces && name !== replaces) trashUserSkill(replaces) // renamed
+  if (replaces && name !== replaces) trashUserSkill(replaces, configDir) // renamed
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'SKILL.md'), content)
   return name
 }
 
 // Moves the skill folder to <data>/trash/skills (never deletes).
-export function trashUserSkill(name: string): boolean {
+export function trashUserSkill(name: string, configDir?: string | null): boolean {
   if (!SKILL_NAME.test(name)) return false
-  const dir = join(userSkillsRoot(), name)
+  const dir = join(userSkillsRoot(configDir), name)
   if (!existsSync(dir)) return false
   const dest = join(DATA_DIR, 'trash', 'skills')
   mkdirSync(dest, { recursive: true })
@@ -164,8 +166,8 @@ export function trashUserSkill(name: string): boolean {
   return true
 }
 
-export function readSkillByName(name: string): { skill: SkillInfo; raw: string } | null {
-  const skill = listSkills().find(s => s.name === name)
+export function readSkillByName(name: string, configDir?: string | null): { skill: SkillInfo; raw: string } | null {
+  const skill = listSkills(configDir).find(s => s.name === name)
   if (!skill) return null
   try { return { skill, raw: readFileSync(join(skill.path, 'SKILL.md'), 'utf-8') } } catch { return null }
 }
