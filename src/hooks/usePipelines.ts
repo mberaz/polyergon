@@ -37,9 +37,16 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
     setError(null)
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-add-pr', id, liveId, url }))
   }, [])
+  const actPipeline = useCallback((id: string, liveId: string, prUrl: string | null) => {
+    setError(null)
+    wsRef.current?.send(JSON.stringify({ type: 'pipeline-act', id, liveId, prUrl }))
+  }, [])
+  const dismissPipeline = useCallback((id: string, prUrl: string | null) => {
+    wsRef.current?.send(JSON.stringify({ type: 'pipeline-dismiss', id, prUrl }))
+  }, [])
   const stopPipeline = useCallback((id: string) => {
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-stop', id }))
   }, [])
 
-  return { pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr }
+  return { pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, actPipeline, dismissPipeline }
 }

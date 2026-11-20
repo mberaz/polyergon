@@ -5,22 +5,34 @@ import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
-import { writeToSession, onAnyStatusChange, onAnyPrUrlChange } from './ptyManager'
+import { submitLine, onAnyStatusChange, onAnyPrUrlChange } from './ptyManager'
 import { summarizeChecks, isValidPrUrl } from './ghPrStatus'
 import { postToSlack, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
 import type { PrCheckStatus } from './prTypes'
 
 const execFileAsync = promisify(execFile)
 
-// Session automations ("⚡ Automate" on a card), template "Ship it":
-//   session finishes → open a PR → for EVERY PR the session opens (or you add):
-//   post to Slack → address review feedback / fix CI within limits → tell you
-//   when it's approved and green. Never merges. One session works on one fix at
-//   a time, so requests for different PRs queue.
+// Is there code to turn into a PR? A git repo with uncommitted changes, commits
+// not pushed, or a branch that was never pushed (other than main/master).
+export async function hasWorkToShip(cwd: string): Promise<boolean> {
+  const git = (...args: string[]) => execFileAsync('git', ['-C', cwd, ...args], { timeout: 10000 }).then(r => r.stdout.trim())
+  try {
+    if (await git('status', '--porcelain')) return true
+    const ahead = await git('rev-list', '--count', '@{u}..HEAD').catch(() => null)
+    if (ahead !== null) return Number(ahead) > 0
+    const branch = await git('rev-parse', '--abbrev-ref', 'HEAD')
+    return !['main', 'master', 'HEAD'].includes(branch)
+  } catch { return false } // not a git repo
+}
+
+// Session automations ("⚡ Automate" on a card), template "Ship it".
+// They NEVER type into the session. They watch the session, its PRs (GitHub +
+// Slack review post) and CI, and when something needs doing they notify you and
+// attach a suggested message; only your click (act()) sends it to the session.
 
 export type PipelinePhase =
-  | 'waiting-for-session' // session still working; act when it goes quiet
-  | 'opening-pr'          // asked the session to open a PR; waiting for its URL
+  | 'waiting-for-session' // no PR yet; suggests opening one when there is code to ship
+  | 'opening-pr'          // you sent the open-PR suggestion; waiting for its URL
   | 'tracking'            // watching one or more PRs
   | 'done'                // every tracked PR merged or closed
   | 'needs-you'
@@ -52,9 +64,13 @@ export interface SlackView extends Partial<SlackThreadView> {
   checkedAt: number
 }
 
+// A message the automation proposes; sent only when you click Send
+export interface Suggestion { kind: 'open-pr' | 'review' | 'ci'; text: string; at: number }
+
 export interface PrTrack {
   url: string
   state: PrTrackState
+  suggestion?: Suggestion | null
   view?: PrView
   slack?: SlackView
   seenFeedback: number // review + comment count already handled; -1 = not read yet
@@ -69,7 +85,8 @@ export interface Pipeline {
   config: PipelineConfig
   phase: PipelinePhase
   prs: PrTrack[]
-  workingOn: string | null // PR url the session is fixing right now
+  workingOn: string | null // PR url you sent the session to work on
+  suggestion?: Suggestion | null // open-PR proposal (before any PR exists)
   actedAt: number // when we last sent the session work
   log: { t: number; text: string }[]
   createdAt: number
@@ -204,6 +221,33 @@ class PipelineEngine {
     this.announce(p, t)
   }
 
+  // You clicked "Send to session" on a suggestion (prUrl = which PR's; none = open-PR)
+  act(id: string, prUrl: string | null): { error: string } | null {
+    const p = this.items.find(x => x.id === id)
+    if (!p) return { error: 'Automation not found' }
+    const t = prUrl ? p.prs.find(x => x.url === prUrl) : null
+    const sug = prUrl ? t?.suggestion : p.suggestion
+    if (!sug) return { error: 'Nothing to send' }
+    submitLine(p.liveId, sug.text)
+    if (t) {
+      if (sug.kind === 'review') t.reviewRounds++
+      if (sug.kind === 'ci') t.ciFixes++
+      this.patchTrack(p, t, { suggestion: null, state: 'working' })
+      this.update(p, { workingOn: t.url, actedAt: Date.now() }, `You sent the session: ${sug.kind === 'review' ? 'address review feedback' : 'fix CI'} on ${shortPr(t.url)}`)
+    } else {
+      this.update(p, { suggestion: null, phase: 'opening-pr', actedAt: Date.now() }, 'You sent the session: open a PR')
+    }
+    return null
+  }
+
+  dismiss(id: string, prUrl: string | null) {
+    const p = this.items.find(x => x.id === id)
+    if (!p) return
+    const t = prUrl ? p.prs.find(x => x.url === prUrl) : null
+    if (t) this.patchTrack(p, t, { suggestion: null }, `Dismissed suggestion on ${shortPr(t.url)}`)
+    else this.update(p, { suggestion: null }, 'Dismissed the open-PR suggestion')
+  }
+
   stop(id: string) {
     const p = this.items.find(x => x.id === id)
     if (p && ACTIVE_PHASES.includes(p.phase)) this.update(p, { phase: 'stopped', workingOn: null }, 'Stopped by you')
@@ -226,16 +270,20 @@ class PipelineEngine {
     if (!s) { this.update(p, { phase: 'needs-you' }, 'Session is gone'); return }
     const since = this.quietSince.get(p.liveId) ?? (s.status === 'waiting' ? 0 : Infinity)
     const quiet = s.status === 'waiting' && Date.now() - since >= QUIET_MS && Date.now() - p.actedAt > SETTLE_MS
-    const send = (text: string, logText: string, patch: Partial<Pipeline> = {}) => {
-      writeToSession(p.liveId, text + '\r')
-      this.update(p, { ...patch, actedAt: Date.now() }, logText)
+    const suggest = (t: PrTrack | null, kind: Suggestion['kind'], text: string, logText: string, title: string, body: string) => {
+      const sug: Suggestion = { kind, text, at: Date.now() }
+      if (t) this.patchTrack(p, t, { suggestion: sug }, logText, { title, body })
+      else this.update(p, { suggestion: sug }, logText, { title, body })
     }
 
     // Any PR link the session printed becomes a tracked PR
     if (s.prUrl && !p.prs.some(t => t.url === s.prUrl)) this.addTrack(p, s.prUrl, p.prs.length ? 'New PR' : 'PR opened')
 
     if (p.phase === 'waiting-for-session') {
-      if (quiet) send(PROMPTS.openPr, 'Asked the session to commit, push and open a PR', { phase: 'opening-pr' })
+      if (!quiet) return
+      if (p.suggestion) return // already proposed; waiting for you
+      if (await hasWorkToShip(s.cwd)) suggest(null, 'open-pr', PROMPTS.openPr, 'Code is ready to ship; suggested opening a PR', 'Ready to open a PR?', 'Click Send in the automation to ask the session')
+      else if (!p.log.at(-1)?.text.startsWith('Waiting: no code changes')) this.update(p, {}, 'Waiting: no code changes to ship yet in this folder')
       return
     }
     if (p.phase === 'opening-pr') {
@@ -255,10 +303,10 @@ class PipelineEngine {
     if (!refresh) return
 
     // Refresh every open PR, then pick at most one thing for the session to do
-    let action: { track: PrTrack; kind: 'review' | 'ci'; feedback: number } | null = null
     for (const t of p.prs.filter(t => OPEN_TRACK.includes(t.state))) {
       const pr = await prSnapshot(t.url)
       if (!pr) continue
+      const wasFailing = t.view?.checks === 'failing' // suggest CI fixes once per failure, not every poll
       this.patchTrack(p, t, { view: pr.view })
       this.refreshSlack(p, t)
       if (pr.state === 'MERGED' || pr.state === 'CLOSED') {
@@ -266,33 +314,21 @@ class PipelineEngine {
         continue
       }
       if (t.seenFeedback < 0) { this.patchTrack(p, t, { seenFeedback: pr.feedback }); continue }
-      const max = p.config.maxRounds
       if (pr.feedback > t.seenFeedback) {
-        if (t.reviewRounds >= max) { this.patchTrack(p, t, { state: 'needs-you', seenFeedback: pr.feedback }, `${shortPr(t.url)}: review round limit (${max}) reached`, { title: 'Automation needs you', body: `More review feedback on ${pr.title}` }); continue }
-        action ??= { track: t, kind: 'review', feedback: pr.feedback }
+        if (!t.suggestion) {
+          this.patchTrack(p, t, { seenFeedback: pr.feedback })
+          suggest(t, 'review', PROMPTS.review(t.url), `New review feedback on ${shortPr(t.url)}`, 'New review feedback', `${pr.title}: click Send to ask the session to address it`)
+        }
         continue
       }
       if (pr.checks === 'failing') {
-        if (t.ciFixes >= max) { this.patchTrack(p, t, { state: 'needs-you' }, `${shortPr(t.url)}: CI fix limit (${max}) reached`, { title: 'Automation needs you', body: `CI still failing on ${pr.title}` }); continue }
-        action ??= { track: t, kind: 'ci', feedback: pr.feedback }
+        if (!wasFailing && !t.suggestion) suggest(t, 'ci', PROMPTS.ci(t.url), `CI failing on ${shortPr(t.url)}`, 'CI failing', `${pr.title}: click Send to ask the session to fix it`)
         continue
       }
       if (pr.reviewDecision === 'APPROVED' && pr.checks !== 'pending' && t.state !== 'ready') {
         this.patchTrack(p, t, { state: 'ready' }, `${shortPr(t.url)} approved and CI is green. Ready for you to merge`, { title: 'Ready to merge', body: pr.title })
       } else if (t.state === 'ready' && pr.reviewDecision !== 'APPROVED') {
         this.patchTrack(p, t, { state: 'in-review' }, `${shortPr(t.url)} is no longer approved`)
-      }
-    }
-
-    if (action && quiet && !p.workingOn) {
-      const { track: t, kind, feedback } = action
-      const max = p.config.maxRounds
-      if (kind === 'review') {
-        this.patchTrack(p, t, { state: 'working', reviewRounds: t.reviewRounds + 1, seenFeedback: feedback })
-        send(PROMPTS.review(t.url), `New review feedback on ${shortPr(t.url)}; asked the session to address it (round ${t.reviewRounds}/${max})`, { workingOn: t.url })
-      } else {
-        this.patchTrack(p, t, { state: 'working', ciFixes: t.ciFixes + 1 })
-        send(PROMPTS.ci(t.url), `CI failing on ${shortPr(t.url)}; asked the session to fix it (${t.ciFixes}/${max})`, { workingOn: t.url })
       }
     }
 

@@ -40,7 +40,7 @@ export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
   const { permission: notificationPermission, enabled: notificationsOn, requestPermission: requestNotificationPermission, notifyNeedsInput } = useDesktopNotifications()
   const { ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
-  const { pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
+  const { pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr, actPipeline, dismissPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
   // prEntries still feeds the notification-suppression logic; the PRs tab
   // itself now renders the GitHub workload inbox
   const { entries: prEntries } = usePrSessions(ws)
@@ -507,6 +507,8 @@ export default function Home() {
             onStart={config => startPipeline(automateFor, config)}
             onStop={stopPipeline}
             onAddPr={(id, url) => addPipelinePr(id, automateFor, url)}
+            onAct={(id, prUrl) => actPipeline(id, automateFor, prUrl)}
+            onDismiss={dismissPipeline}
             onClose={() => setAutomateFor(null)}
           />
         )

@@ -9,7 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { isAllowedRequest } from './src/lib/requestGuard'
 import { v4 as uuid } from 'uuid'
 import { liveSessionStore, LiveSessionStore } from './src/lib/liveSessionStore'
-import { spawnSession, writeToSession, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onAnyPrUrlChange, onAnyRcUrlChange, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
+import { spawnSession, writeToSession, submitLine, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onAnyPrUrlChange, onAnyRcUrlChange, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
@@ -49,7 +49,7 @@ function flushRename(id: string) {
   const name = pendingRenames.get(id)
   if (!name) return
   pendingRenames.delete(id)
-  writeToSession(id, `/rename ${name}\r`)
+  submitLine(id, `/rename ${name}`)
 }
 
 app.prepare().then(async () => {
@@ -351,6 +351,12 @@ app.prepare().then(async () => {
       } else if (msg.type === 'pipeline-add-pr') {
         const err = pipelineEngine.addPr(msg.id as string, String(msg.url ?? '').trim())
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
+      } else if (msg.type === 'pipeline-act') {
+        // The one place an automation's message reaches a session: your click
+        const err = pipelineEngine.act(msg.id as string, (msg.prUrl as string) || null)
+        if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
+      } else if (msg.type === 'pipeline-dismiss') {
+        pipelineEngine.dismiss(msg.id as string, (msg.prUrl as string) || null)
       } else if (msg.type === 'pipeline-stop') {
         pipelineEngine.stop(msg.id as string)
       } else if (msg.type === 'meeting-resume') {

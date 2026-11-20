@@ -1,17 +1,33 @@
 'use client'
 import { useState } from 'react'
-import type { Pipeline, PipelineConfig, PrTrack } from '@/lib/pipelines'
+import type { Pipeline, PipelineConfig, PrTrack, Suggestion } from '@/lib/pipelines'
 import type { SlackChannel } from '@/lib/slackBridge'
 import { isRunning, pipelineSummary, shortPr, prSteps } from '@/lib/pipelineView'
 import { SlackChannelPicker } from './SlackChannelPicker'
 
 const STEPS = [
-  'When the session finishes its current work, ask it to commit, push and open a PR',
-  'For every PR it opens: post "ready for review" with the link to your Slack channel',
-  'When reviewers leave feedback, ask the session to address it and push',
-  'When CI fails, ask the session to fix it',
+  'When the session has code ready to ship, suggest opening a PR',
+  'For every PR the session opens: post "ready for review" with the link to your Slack channel',
+  'Track reviewers (GitHub and Slack) and CI for each PR',
+  'When reviewers leave feedback or CI fails, notify you with a suggested message for the session',
   'When a PR is approved and CI is green, notify you. You merge.',
 ]
+
+// A proposed message for the session. Only your click sends it.
+function SuggestionBox({ s, onSend, onDismiss }: { s: Suggestion; onSend: () => void; onDismiss: () => void }) {
+  const title = s.kind === 'open-pr' ? 'Ready to open a PR?' : s.kind === 'review' ? 'New review feedback' : 'CI is failing'
+  return (
+    <div className="mt-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-2.5">
+      <p className="text-xs font-medium text-amber-200">{title}</p>
+      <p className="text-[11px] text-gray-400 mt-1">Suggested message for the session:</p>
+      <p className="text-xs text-gray-200 mt-0.5 italic">&ldquo;{s.text}&rdquo;</p>
+      <div className="flex gap-2 mt-2">
+        <button onClick={onSend} className="text-xs px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white">Send to session</button>
+        <button onClick={onDismiss} className="text-xs px-2 py-1 rounded-md text-gray-400 hover:text-white">Dismiss</button>
+      </div>
+    </div>
+  )
+}
 
 const REVIEW_ICON: Record<string, string> = { APPROVED: '✓', CHANGES_REQUESTED: '✗', COMMENTED: '💬', DISMISSED: '–', PENDING: '…' }
 const REVIEW_COLOR: Record<string, string> = { APPROVED: 'text-emerald-300', CHANGES_REQUESTED: 'text-red-300', COMMENTED: 'text-gray-300' }
@@ -39,7 +55,7 @@ function Stepper({ t, slack }: { t: PrTrack; slack: boolean }) {
   )
 }
 
-export function PrCard({ t, slackSet, max }: { t: PrTrack; slackSet: boolean; max: number }) {
+export function PrCard({ t, slackSet, max, onSend, onDismiss }: { t: PrTrack; slackSet: boolean; max: number; onSend?: () => void; onDismiss?: () => void }) {
   const v = t.view
   const [label, cls] = TRACK_BADGE[t.state]
   return (
@@ -48,7 +64,8 @@ export function PrCard({ t, slackSet, max }: { t: PrTrack; slackSet: boolean; ma
         <a href={t.url} target="_blank" rel="noreferrer" className="text-sm font-medium text-gray-100 hover:underline truncate">{v?.title || shortPr(t.url)}</a>
         <span className={`ml-auto flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium ${cls}`}>{label}</span>
       </div>
-      <p className="text-[11px] text-gray-500 mt-0.5">{shortPr(t.url)}{v?.isDraft ? ' · draft' : ''} · review rounds {t.reviewRounds}/{max} · CI fixes {t.ciFixes}/{max}</p>
+      <p className="text-[11px] text-gray-500 mt-0.5">{shortPr(t.url)}{v?.isDraft ? ' · draft' : ''} · review fixes sent {t.reviewRounds} · CI fixes sent {t.ciFixes}</p>
+      {t.suggestion && onSend && onDismiss && <SuggestionBox s={t.suggestion} onSend={onSend} onDismiss={onDismiss} />}
       <Stepper t={t} slack={slackSet} />
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div>
@@ -82,13 +99,15 @@ export function PrCard({ t, slackSet, max }: { t: PrTrack; slackSet: boolean; ma
 }
 
 // Start a "Ship it" automation on a session, or watch / stop the running one.
-export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, onAddPr, onClose }: {
+export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, onAddPr, onAct, onDismiss, onClose }: {
   sessionName: string
   pipeline: Pipeline | null
   error: string | null
   onStart: (config: PipelineConfig) => void
   onStop: (id: string) => void
   onAddPr: (id: string, url: string) => void
+  onAct: (id: string, prUrl: string | null) => void
+  onDismiss: (id: string, prUrl: string | null) => void
   onClose: () => void
 }) {
   const [channelText, setChannelText] = useState('')
@@ -112,9 +131,11 @@ export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, 
         </div>
         <p className="text-xs text-gray-500 mb-4 truncate">{sessionName}{pipeline ? ` · ${pipelineSummary(pipeline)}` : ''}</p>
 
+        {pipeline?.suggestion && <div className="mb-4"><SuggestionBox s={pipeline.suggestion} onSend={() => onAct(pipeline.id, null)} onDismiss={() => onDismiss(pipeline.id, null)} /></div>}
         {pipeline && pipeline.prs.length > 0 && (
           <div className="space-y-3 mb-4">
-            {pipeline.prs.map(t => <PrCard key={t.url} t={t} slackSet={!!pipeline.config.slackChannel} max={pipeline.config.maxRounds} />)}
+            {pipeline.prs.map(t => <PrCard key={t.url} t={t} slackSet={!!pipeline.config.slackChannel} max={pipeline.config.maxRounds}
+              onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} />)}
           </div>
         )}
 
@@ -143,10 +164,7 @@ export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, 
             </ol>
             <label className="block text-xs text-gray-400 mb-1">Slack channel for &quot;ready for review&quot; (optional)</label>
             <SlackChannelPicker value={channelText} onChange={(v, c) => { setChannelText(v); setChannel(c) }} className={input} />
-            <label className="block text-xs text-gray-400 mt-3">Max review rounds and CI fixes, per PR
-              <input type="number" min={1} max={10} value={maxRounds} onChange={e => setMaxRounds(Number(e.target.value))} className={`${input} mt-1 w-24`} />
-            </label>
-            <p className="text-[11px] text-gray-500 mt-3">It sends messages to this session and posts to Slack on its own. It never merges. You can stop it any time.</p>
+            <p className="text-[11px] text-gray-500 mt-3">It never types into the session: it notifies you and suggests a message, and only your click sends it. It posts to Slack on its own if you set a channel. It never merges.</p>
           </>
         )}
 

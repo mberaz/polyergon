@@ -7,8 +7,14 @@ export const shortPr = (url: string) => url.replace(/^https:\/\/github\.com\//, 
 
 // Short card label, e.g. "2 PRs · 1 ready · 1 in review"
 export function pipelineSummary(p: Pipeline): string {
-  if (p.phase === 'waiting-for-session') return 'waiting for the session to finish'
-  if (p.phase === 'opening-pr') return 'opening a PR'
+  const waiting = (p.suggestion ? 1 : 0) + p.prs.filter(t => t.suggestion).length
+  const prefix = waiting ? `${waiting} suggestion${waiting > 1 ? 's' : ''} for you · ` : ''
+  return prefix + summaryBody(p)
+}
+
+function summaryBody(p: Pipeline): string {
+  if (p.phase === 'waiting-for-session') return 'watching for a PR'
+  if (p.phase === 'opening-pr') return 'session is opening a PR'
   if (p.phase === 'stopped') return 'stopped'
   if (p.phase === 'needs-you' && !p.prs.length) return 'needs you'
   if (p.phase === 'done') return p.prs.length > 1 ? `${p.prs.length} PRs done` : 'done'

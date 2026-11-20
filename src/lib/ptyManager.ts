@@ -306,6 +306,13 @@ export function writeToSession(id: string, data: string) {
   ptyProcesses.get(id)?.write(data)
 }
 
+// Types a line into the agent's prompt and submits it. Enter goes separately:
+// sent in the same write, the TUI treats it as part of a paste and doesn't submit.
+export function submitLine(id: string, text: string) {
+  ptyProcesses.get(id)?.write(text)
+  setTimeout(() => ptyProcesses.get(id)?.write('\r'), 250)
+}
+
 export function resizeSession(id: string, cols: number, rows: number) {
   lastCols = cols
   lastRows = rows
