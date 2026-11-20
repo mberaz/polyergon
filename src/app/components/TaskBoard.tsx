@@ -26,11 +26,12 @@ function columnOf(t: Task, s: LiveSessionInfo | undefined, pipe: Pipeline | unde
   return s?.status === 'thinking' ? 'running' : 'review'
 }
 
-export function TaskBoard({ orgId, folders, liveSessions, pipelines, onStart, onOpenSession, onReview, onAutomate, onAct, onDismiss }: {
+export function TaskBoard({ orgId, folders, liveSessions, pipelines, demoTasks, onStart, onOpenSession, onReview, onAutomate, onAct, onDismiss }: {
   orgId: string // active org ('all' shows every org)
   folders: string[]
   liveSessions: LiveSessionInfo[]
   pipelines: Pipeline[]
+  demoTasks?: Task[] // /demo only: show these instead of fetching /api/tasks
   onStart: (t: Task) => void
   onOpenSession: (liveId: string) => void
   onReview: (liveId: string) => void
@@ -38,7 +39,8 @@ export function TaskBoard({ orgId, folders, liveSessions, pipelines, onStart, on
   onAct: (pipelineId: string, liveId: string, prUrl: string | null) => void // your click: send a pipeline suggestion
   onDismiss: (pipelineId: string, prUrl: string | null) => void
 }) {
-  const [tasks, setTasks] = useState<Task[]>([])
+  const [fetched, setTasks] = useState<Task[]>([])
+  const tasks = demoTasks ?? fetched
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
   const [details, setDetails] = useState('')
@@ -51,7 +53,7 @@ export function TaskBoard({ orgId, folders, liveSessions, pipelines, onStart, on
   const [dragId, setDragId] = useState<string | null>(null)
   const [over, setOver] = useState<Col | null>(null)
 
-  const load = useCallback(() => { fetch('/api/tasks').then(r => r.json()).then(setTasks).catch(() => {}) }, [])
+  const load = useCallback(() => { if (demoTasks) return; fetch('/api/tasks').then(r => r.json()).then(setTasks).catch(() => {}) }, [demoTasks])
   useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t) }, [load])
 
   async function patch(id: string, body: object) {
@@ -148,7 +150,7 @@ export function TaskBoard({ orgId, folders, liveSessions, pipelines, onStart, on
                       {/* PR progress: steps, CI, open threads, and what's next */}
                       {pipe?.prs.filter(x => col === 'done' || x.state !== 'done').map(x => (
                         <div key={x.url} className="mt-2 rounded-md bg-gray-950/70 border border-gray-800 px-2 py-1.5">
-                          <div className="flex items-center gap-2 text-[11px]">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
                             <a href={x.url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">{shortPr(x.url).split('/').at(-1)}</a>
                             <span className="flex items-center">
                               {prSteps(x, !!pipe.config.slackChannel).map((st, i) => (
@@ -158,7 +160,7 @@ export function TaskBoard({ orgId, folders, liveSessions, pipelines, onStart, on
                                 </span>
                               ))}
                             </span>
-                            <span className={`ml-auto flex items-center gap-1 ${x.view?.checks === 'failing' ? 'text-red-400' : x.view?.checks === 'passing' ? 'text-emerald-400' : x.view?.checks === 'pending' ? 'text-amber-300' : 'text-gray-500'}`}>{x.view?.checks === 'pending' && <span className="w-2.5 h-2.5 rounded-full border-2 border-amber-300 border-t-transparent animate-spin motion-reduce:animate-none" />}CI {x.view?.checks === 'pending' ? 'running' : x.view?.checks ?? '…'}</span>
+                            <span className={`ml-auto flex items-center gap-1 whitespace-nowrap ${x.view?.checks === 'failing' ? 'text-red-400' : x.view?.checks === 'passing' ? 'text-emerald-400' : x.view?.checks === 'pending' ? 'text-amber-300' : 'text-gray-500'}`}>{x.view?.checks === 'pending' && <span className="w-2.5 h-2.5 rounded-full border-2 border-amber-300 border-t-transparent animate-spin motion-reduce:animate-none" />}CI {x.view?.checks === 'pending' ? 'running' : x.view?.checks ?? '…'}</span>
                           </div>
                           {(x.view?.isDraft || !!x.view?.unresolved) && <p className="text-[11px] text-amber-300 mt-0.5">{[x.view?.isDraft && 'draft', x.view?.unresolved && `${x.view.unresolved} unresolved thread${x.view.unresolved > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}</p>}
                           {x.suggestion && (x.suggestion.kind === 'merge' && !auto.merge
