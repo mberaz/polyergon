@@ -475,7 +475,8 @@ export default function Home() {
           const lid = view.liveId
           const s = liveSessions.find(x => x.id === lid)
           const name = (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session'
-          return <DiffPage key={lid} liveId={lid} sessionName={name} onSend={text => sendToLive(lid, text)} onOpenSession={() => handleAttachLive(lid)} />
+          const prUrls = Array.from(new Set([...(s?.prUrl ? [s.prUrl] : []), ...pipelines.filter(p => p.liveId === lid).flatMap(p => p.prs.map(t => t.url))]))
+          return <DiffPage key={lid} liveId={lid} sessionName={name} hasRepo={!!s?.gitRoot} prUrls={prUrls} onSend={text => sendToLive(lid, text)} onOpenSession={() => handleAttachLive(lid)} />
         })()}
         {view.mode === 'pipeline' && (() => {
           const lid = view.liveId

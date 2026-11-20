@@ -9,9 +9,11 @@ const STATUS: Record<DiffFile['status'], [string, string]> = {
 }
 
 // Review what a session changed, comment on lines, then send it all back in one message.
-export function DiffPage({ sessionName, liveId, onSend, onOpenSession }: {
+export function DiffPage({ sessionName, liveId, hasRepo, prUrls, onSend, onOpenSession }: {
   sessionName: string
   liveId: string
+  hasRepo: boolean // session folder is a git repo: offer its local changes
+  prUrls: string[] // the session's PRs: offer each PR's diff
   onSend: (text: string) => void
   onOpenSession: () => void
 }) {
@@ -26,13 +28,15 @@ export function DiffPage({ sessionName, liveId, onSend, onOpenSession }: {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [sent, setSent] = useState<'feedback' | 'approve' | null>(null)
   const refs = useRef<Record<string, HTMLElement | null>>({})
+  // What to review: 'local' (the session folder) or a PR url
+  const [source, setSource] = useState<string>(hasRepo || !prUrls.length ? 'local' : prUrls[0])
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/diff?id=${encodeURIComponent(liveId)}`).then(r => r.json()).then(d => {
+    fetch(source === 'local' ? `/api/diff?id=${encodeURIComponent(liveId)}` : `/api/diff?pr=${encodeURIComponent(source)}`).then(r => r.json()).then(d => {
       if (d.error) { setError(d.error); setData(null) } else { setData(d); setError(null); setCollapsed(new Set(d.files.filter((f: DiffFile) => f.lines.length > 600).map((f: DiffFile) => f.path))) }
     }).catch(() => setError('Could not load the changes')).finally(() => setLoading(false))
-  }, [liveId, reload])
+  }, [liveId, source, reload])
 
   const totals = useMemo(() => (data?.files ?? []).reduce((a, f) => ({ add: a.add + f.additions, del: a.del + f.deletions }), { add: 0, del: 0 }), [data])
   const list = Object.values(comments)
@@ -44,11 +48,14 @@ export function DiffPage({ sessionName, liveId, onSend, onOpenSession }: {
 
   function sendFeedback() {
     const items = list.map((c, i) => `${i + 1}. ${c.path}:${c.line}${c.code ? ` (\`${c.code}\`)` : ''}\n   ${c.text.replace(/\n/g, '\n   ')}`)
-    const text = `Review feedback on your changes${data ? ` (branch ${data.branch})` : ''}:\n\n${items.join('\n')}${general.trim() ? `\n\nOverall: ${general.trim()}` : ''}\n\nPlease address each point, then tell me what you changed.`
+    const where = source === 'local' ? (data ? ` (branch ${data.branch})` : '') : ` in ${source}`
+    const text = `Review feedback on your changes${where}:\n\n${items.join('\n')}${general.trim() ? `\n\nOverall: ${general.trim()}` : ''}\n\nPlease address each point, then tell me what you changed.`
     onSend(text); setSent('feedback'); setComments({}); setGeneral('')
   }
   function approve() {
-    onSend(`I reviewed your changes${data ? ` on ${data.branch}` : ''} and they look good.${general.trim() ? ` ${general.trim()}` : ''} Commit anything uncommitted with a clear message and push the branch.`)
+    onSend(source === 'local'
+      ? `I reviewed your changes${data ? ` on ${data.branch}` : ''} and they look good.${general.trim() ? ` ${general.trim()}` : ''} Commit anything uncommitted with a clear message and push the branch.`
+      : `I reviewed ${source} and it looks good.${general.trim() ? ` ${general.trim()}` : ''} Make sure everything is pushed.`)
     setSent('approve'); setGeneral('')
   }
 
@@ -60,6 +67,13 @@ export function DiffPage({ sessionName, liveId, onSend, onOpenSession }: {
           <h1 className="text-lg font-semibold truncate">{sessionName}</h1>
           {data && <p className="text-xs text-gray-400 mt-0.5"><span className="font-mono text-gray-300">{data.branch}</span> vs {data.baseLabel} · {data.files.length} file{data.files.length === 1 ? '' : 's'} · <span className="text-emerald-400">+{totals.add}</span> <span className="text-red-400">−{totals.del}</span></p>}
         </div>
+        {(hasRepo ? 1 : 0) + prUrls.length > 1 && (
+          <select value={source} onChange={e => { setSource(e.target.value); setComments({}); setSent(null) }}
+            className="text-sm bg-gray-900 border border-gray-700 rounded-lg px-2.5 py-1.5" title="What to review">
+            {hasRepo && <option value="local">Local changes</option>}
+            {prUrls.map(u => <option key={u} value={u}>PR {u.replace('https://github.com/', '').replace('/pull/', '#')}</option>)}
+          </select>
+        )}
         <button onClick={() => setReload(n => n + 1)} className="text-sm px-3 py-1.5 rounded-lg border border-gray-700 hover:bg-gray-800">Refresh</button>
         <button onClick={onOpenSession} className="text-sm px-3 py-1.5 rounded-lg border border-gray-700 hover:bg-gray-800">Open session</button>
       </header>

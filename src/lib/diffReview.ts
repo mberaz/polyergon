@@ -50,6 +50,17 @@ function findBase(cwd: string): { base: string; label: string } {
   return { base: head, label: 'last commit' }
 }
 
+// A pull request's diff from GitHub (needs gh). For sessions that worked outside their own folder.
+export function prDiff(url: string): DiffResult {
+  const env = { ...process.env }; delete env.GITHUB_TOKEN; delete env.GH_TOKEN
+  const run = (args: string[]) => execFileSync('gh', args, { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 20_000_000, timeout: 30_000, env }).toString()
+  let text = run(['pr', 'diff', url])
+  let truncated = false
+  if (text.length > MAX_BYTES) { text = text.slice(0, MAX_BYTES); truncated = true }
+  const meta = JSON.parse(run(['pr', 'view', url, '--json', 'headRefName,baseRefName']))
+  return { base: meta.baseRefName, baseLabel: meta.baseRefName, branch: meta.headRefName, files: parseUnifiedDiff(text), truncated }
+}
+
 export function sessionDiff(cwd: string): DiffResult {
   const { base, label } = findBase(cwd)
   const branch = git(cwd, ['branch', '--show-current']).trim() || 'detached'

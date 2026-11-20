@@ -19,7 +19,8 @@ import { createWorktree, removeWorktree } from './src/lib/worktrees'
 import type { LiveSession } from './src/lib/liveSessionStore'
 
 // What the browser sees of a live session
-const sessionView = (s: LiveSession) => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot, status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId, worktree: s.worktree ? { branch: s.worktree.branch, repo: s.worktree.repo } : null })
+const sessionView = (s: LiveSession) => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot ?? getGitRoot(s.cwd), // restored sessions may lack it (cached lookup)
+  status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId, worktree: s.worktree ? { branch: s.worktree.branch, repo: s.worktree.repo } : null })
 import { slackWatchers } from './src/lib/slackWatchers'
 import { meetingStore, type ContextKind } from './src/lib/meetingStore'
 import { sessionNameStore } from './src/lib/sessionNameStore'

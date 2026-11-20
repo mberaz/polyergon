@@ -399,13 +399,6 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
               title="Rename"
             >✎</button>
           )}
-          {s.gitRoot && (
-            <button
-              onClick={e => { e.stopPropagation(); onReview(s.id) }}
-              className="opacity-0 group-hover/live:opacity-100 text-gray-500 hover:text-emerald-300 text-xs flex-shrink-0 font-mono"
-              title="Review changes: see what this session changed, comment on lines, send feedback or approve"
-            >±</button>
-          )}
           {(
             <button
               onClick={e => { e.stopPropagation(); onAutomate(s.id) }}
@@ -542,6 +535,13 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
               onClick={e => { e.stopPropagation(); onResume(s.id) }}
               className="text-[11px] text-blue-500 hover:text-blue-300"
             >Resume</button>
+          )}
+          {!!(s.gitRoot || s.prUrl || pipeline?.prs.length) && (
+            <button
+              onClick={e => { e.stopPropagation(); onReview(s.id) }}
+              className="text-[11px] text-emerald-500 hover:text-emerald-300"
+              title="See what this session changed, comment on lines, then send feedback or approve"
+            >Review changes</button>
           )}
           <button
             onClick={e => { e.stopPropagation(); onKillLive(s.id) }}
