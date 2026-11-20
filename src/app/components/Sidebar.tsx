@@ -12,7 +12,7 @@ import type { SkillInfo } from '@/lib/skillsReader'
 import { OrgsDialog } from './OrgsDialog'
 import { SETTINGS_CHANGED_EVENT } from '@/hooks/useDesktopNotifications'
 import type { Pipeline } from '@/lib/pipelines'
-import { pipelineSummary, isRunning } from '@/lib/pipelineView'
+import { pipelineSummary, isRunning, prSteps, shortPr } from '@/lib/pipelineView'
 import type { Org } from '@/lib/orgRegistry'
 import type { Meeting } from '@/lib/meetingStore'
 import type { UsageReport, OrgUsage } from '@/lib/usageStore'
@@ -420,6 +420,31 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
             >📱</button>
           )}
         </div>
+
+        {pipeline && pipeline.phase !== 'stopped' && pipeline.prs.length > 0 && (
+          <div onClick={e => { e.stopPropagation(); onAutomate(s.id) }} className="mt-1.5 ml-4 space-y-1 cursor-pointer" title="Open automation">
+            {pipeline.prs.slice(0, 3).map(t => (
+              <div key={t.url} className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                <span className="tabular-nums w-14 truncate">{shortPr(t.url).split('/').at(-1)}</span>
+                <span className="flex items-center">
+                  {prSteps(t, !!pipeline.config.slackChannel).map((st, i) => (
+                    <span key={st.label} className="flex items-center" title={st.label}>
+                      {i > 0 && <span className={`w-2 h-px ${st.done || st.current ? 'bg-blue-500/70' : 'bg-gray-700'}`} />}
+                      <span className={`w-1.5 h-1.5 rounded-full ${st.done ? 'bg-emerald-400' : st.current ? 'bg-blue-400 animate-pulse' : 'bg-gray-700'}`} />
+                    </span>
+                  ))}
+                </span>
+                <span className="flex -space-x-1 ml-1">
+                  {[...(t.view?.reviews ?? []).map(r => ({ who: r.login, c: r.state === 'APPROVED' ? 'bg-emerald-600' : r.state === 'CHANGES_REQUESTED' ? 'bg-red-600' : 'bg-gray-600' })),
+                    ...(t.view?.requested ?? []).map(r => ({ who: r, c: 'bg-gray-800 ring-gray-600' }))].slice(0, 4).map(r => (
+                    <span key={r.who} title={r.who} className={`w-3.5 h-3.5 rounded-full ring-1 ring-gray-900 text-[8px] leading-[14px] text-center text-white uppercase ${r.c}`}>{r.who[0]}</span>
+                  ))}
+                </span>
+                {t.view?.checks === 'failing' && <span className="text-red-400" title="CI failing">✗ CI</span>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {pipeline && pipeline.phase !== 'stopped' && (
           <button onClick={e => { e.stopPropagation(); onAutomate(s.id) }}

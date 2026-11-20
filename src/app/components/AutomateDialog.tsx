@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import type { Pipeline, PipelineConfig, PrTrack } from '@/lib/pipelines'
 import type { SlackChannel } from '@/lib/slackBridge'
-import { isRunning, pipelineSummary, shortPr } from '@/lib/pipelineView'
+import { isRunning, pipelineSummary, shortPr, prSteps } from '@/lib/pipelineView'
 import { SlackChannelPicker } from './SlackChannelPicker'
 
 const STEPS = [
@@ -25,15 +25,7 @@ const TRACK_BADGE: Record<PrTrack['state'], [string, string]> = {
 
 // PR opened → Slack → In review → Approved → Merged for one PR
 function Stepper({ t, slack }: { t: PrTrack; slack: boolean }) {
-  const merged = t.view?.state === 'MERGED'
-  const approved = merged || t.view?.reviewDecision === 'APPROVED' || t.state === 'ready'
-  const steps = [
-    { label: 'PR opened', done: true, current: false },
-    ...(slack ? [{ label: 'Posted to Slack', done: !!t.slack, current: !t.slack }] : []),
-    { label: 'In review', done: approved, current: !approved },
-    { label: 'Approved', done: approved, current: false },
-    { label: 'Merged', done: merged, current: approved && !merged },
-  ]
+  const steps = prSteps(t, slack)
   return (
     <div className="flex items-start my-3">
       {steps.map((s, i) => (

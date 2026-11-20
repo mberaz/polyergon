@@ -1,5 +1,5 @@
 // Browser-safe helpers for showing automations (no Node imports here).
-import type { Pipeline, PipelinePhase, PrTrackState } from './pipelines'
+import type { Pipeline, PipelinePhase, PrTrackState, PrTrack } from './pipelines'
 
 export const ACTIVE_PHASES: PipelinePhase[] = ['waiting-for-session', 'opening-pr', 'tracking']
 export const isRunning = (p: Pipeline | null | undefined) => !!p && ACTIVE_PHASES.includes(p.phase)
@@ -23,3 +23,16 @@ export function pipelineSummary(p: Pipeline): string {
   return `${p.prs.length > 1 ? `${p.prs.length} PRs · ` : ''}${parts.join(' · ') || 'in review'}`
 }
 
+
+// PR → Slack → Review → Approved → Merged, as done/current flags for one PR
+export function prSteps(t: PrTrack, slack: boolean): { label: string; done: boolean; current: boolean }[] {
+  const merged = t.view?.state === 'MERGED'
+  const approved = merged || t.view?.reviewDecision === 'APPROVED' || t.state === 'ready'
+  return [
+    { label: 'PR opened', done: true, current: false },
+    ...(slack ? [{ label: 'Posted to Slack', done: !!t.slack, current: !t.slack }] : []),
+    { label: 'In review', done: approved, current: !approved },
+    { label: 'Approved', done: approved, current: false },
+    { label: 'Merged', done: merged, current: approved && !merged },
+  ]
+}
