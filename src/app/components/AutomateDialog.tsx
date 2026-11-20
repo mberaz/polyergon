@@ -54,7 +54,7 @@ function Stepper({ steps }: { steps: { label: string; done: boolean; current: bo
   )
 }
 
-export function PrCard({ t, slackSet, max, onSend, onDismiss }: { t: PrTrack; slackSet: boolean; max: number; onSend?: () => void; onDismiss?: () => void }) {
+export function PrCard({ t, slackSet, max, onSend, onDismiss, onAutoFix }: { t: PrTrack; slackSet: boolean; max: number; onSend?: () => void; onDismiss?: () => void; onAutoFix?: (on: boolean) => void }) {
   const v = t.view
   const [label, cls] = TRACK_BADGE[t.state]
   return (
@@ -63,8 +63,19 @@ export function PrCard({ t, slackSet, max, onSend, onDismiss }: { t: PrTrack; sl
         <a href={t.url} target="_blank" rel="noreferrer" className="text-sm font-medium text-gray-100 hover:underline truncate">{v?.title || shortPr(t.url)}</a>
         <span className={`ml-auto flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium ${cls}`}>{label}</span>
       </div>
-      <p className="text-[11px] text-gray-500 mt-0.5">{shortPr(t.url)}{v?.isDraft ? ' · draft' : ''} · review fixes sent {t.reviewRounds} · CI fixes sent {t.ciFixes}</p>
+      <div className="flex items-center gap-2 mt-0.5">
+        <p className="text-[11px] text-gray-500">{shortPr(t.url)}{v?.isDraft ? ' · draft' : ''} · review fixes {t.reviewRounds}/{max} · CI fixes {t.ciFixes}/{max}</p>
+        {onAutoFix && (
+          <label className="ml-auto flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer whitespace-nowrap"
+            title={`When reviewers comment or CI fails, the session is asked to fix it, push, and reply on the PR — without your click. Up to ${max} rounds each; then it asks you. Never merges.`}>
+            <input type="checkbox" checked={t.autoFix !== false} onChange={e => onAutoFix(e.target.checked)} />
+            Auto-fix comments &amp; CI
+          </label>
+        )}
+      </div>
       {t.suggestion && onSend && onDismiss && <SuggestionBox s={t.suggestion} onSend={onSend} onDismiss={onDismiss} />}
+      {t.suggestion && t.autoFix !== false && t.suggestion.kind !== 'open-pr' && (t.suggestion.kind === 'review' ? t.reviewRounds : t.ciFixes) < max &&
+        <p className="text-[11px] text-amber-300/80 mt-1">Auto-fix will send this as soon as the session is idle.</p>}
       <Stepper steps={prSteps(t, slackSet)} />
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div>
@@ -98,7 +109,7 @@ export function PrCard({ t, slackSet, max, onSend, onDismiss }: { t: PrTrack; sl
 }
 
 // Start a "Ship it" automation on a session, or watch / stop the running one.
-export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, onAddPr, onAct, onDismiss, onClose }: {
+export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, onAddPr, onAct, onDismiss, onAutoFix, onClose }: {
   sessionName: string
   pipeline: Pipeline | null
   error: string | null
@@ -107,6 +118,7 @@ export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, 
   onAddPr: (id: string, url: string) => void
   onAct: (id: string, prUrl: string | null) => void
   onDismiss: (id: string, prUrl: string | null) => void
+  onAutoFix: (id: string, prUrl: string, on: boolean) => void
   onClose: () => void
 }) {
   const [channelText, setChannelText] = useState('')
@@ -137,7 +149,7 @@ export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, 
         {pipeline && pipeline.prs.length > 0 && (
           <div className="space-y-3 mb-4">
             {pipeline.prs.map(t => <PrCard key={t.url} t={t} slackSet={!!pipeline.config.slackChannel} max={pipeline.config.maxRounds}
-              onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} />)}
+              onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onAutoFix={on => onAutoFix(pipeline.id, t.url, on)} />)}
           </div>
         )}
 

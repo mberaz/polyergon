@@ -76,6 +76,9 @@ export interface PrTrack {
   seenFeedback: number // review + comment count already handled; -1 = not read yet
   reviewRounds: number
   ciFixes: number
+  // On unless you turn it off: review/CI fix messages go to the session without your click
+  // (capped at config.maxRounds each). Merging always stays yours.
+  autoFix?: boolean
 }
 
 export interface Pipeline {
@@ -240,6 +243,14 @@ class PipelineEngine {
     return null
   }
 
+  setAutoFix(id: string, prUrl: string, on: boolean) {
+    const p = this.items.find(x => x.id === id)
+    const t = p?.prs.find(x => x.url === prUrl)
+    if (!p || !t) return
+    this.patchTrack(p, t, { autoFix: on }, `Auto-fix ${on ? 'on' : 'off'} for ${shortPr(t.url)}`)
+    if (on) this.step(p.id)
+  }
+
   dismiss(id: string, prUrl: string | null) {
     const p = this.items.find(x => x.id === id)
     if (!p) return
@@ -329,6 +340,20 @@ class PipelineEngine {
         this.patchTrack(p, t, { state: 'ready' }, `${shortPr(t.url)} approved and CI is green. Ready for you to merge`, { title: 'Ready to merge', body: pr.title })
       } else if (t.state === 'ready' && pr.reviewDecision !== 'APPROVED') {
         this.patchTrack(p, t, { state: 'in-review' }, `${shortPr(t.url)} is no longer approved`)
+      }
+    }
+
+    // Auto-fix: send one pending review/CI suggestion when the session is idle and nothing is in flight
+    if (quiet && !p.workingOn) {
+      const auto = p.prs.find(t => t.autoFix !== false && t.suggestion && (t.suggestion.kind === 'review' || t.suggestion.kind === 'ci'))
+      if (auto?.suggestion) {
+        const used = auto.suggestion.kind === 'review' ? auto.reviewRounds : auto.ciFixes
+        if (used < p.config.maxRounds) {
+          this.update(p, {}, `Auto-fix: sending ${auto.suggestion.kind === 'review' ? 'review feedback' : 'CI failure'} on ${shortPr(auto.url)} to the session`)
+          this.act(p.id, auto.url)
+        } else if (!p.log.at(-1)?.text.startsWith('Auto-fix limit')) {
+          this.update(p, {}, `Auto-fix limit reached (${p.config.maxRounds} rounds) on ${shortPr(auto.url)}: click Send to continue`, { title: 'Auto-fix needs you', body: `${shortPr(auto.url)} hit ${p.config.maxRounds} fix rounds` })
+        }
       }
     }
 

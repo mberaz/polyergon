@@ -32,7 +32,7 @@ const later = () => { now += 60_000 }
 const flush = () => new Promise(r => setImmediate(r))
 const U1 = 'https://github.com/o/r/pull/1', U2 = 'https://github.com/o/r/pull/2'
 
-test('never writes to the session on its own; suggestions are sent only by act()', async () => {
+test('with auto-fix off, never writes to the session on its own; suggestions are sent only by act()', async () => {
   prs[U1] = base(1); prs[U2] = base(2)
   const p = pipelineEngine.create('L1', { slackChannel: { id: 'C1', name: 'reviews' }, maxRounds: 3 })
   await flush(); later(); await pipelineEngine.step(p.id, true)
@@ -49,6 +49,7 @@ test('never writes to the session on its own; suggestions are sent only by act()
   expect(posts.at(-1)).toContain(U1)
   expect(pipelineEngine.addPr(p.id, U2)).toBeNull(); await flush()
 
+  pipelineEngine.setAutoFix(p.id, U1, false); pipelineEngine.setAutoFix(p.id, U2, false); await flush()
   later(); await pipelineEngine.step(p.id, true) // baselines
   const before = writes.length
   prs[U1].latestReviews = [{ author: { login: 'bob' }, state: 'CHANGES_REQUESTED' }]
@@ -77,4 +78,27 @@ test('no open-PR suggestion without code to ship; one automation per session', a
   await flush(); later(); await pipelineEngine.step(p.id, true)
   expect(p.suggestion ?? null).toBeNull()
   expect(pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3 })).toEqual({ error: 'This session already has a running automation' })
+})
+
+test('auto-fix (default on) sends review feedback to the idle session, up to maxRounds', async () => {
+  pipelineEngine.list().forEach((x: { id: string }) => pipelineEngine.stop(x.id))
+  const U3 = 'https://github.com/o/r/pull/3'
+  prs[U3] = base(3); session.prUrl = U3
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 1 })
+  await flush(); later(); await pipelineEngine.step(p.id, true); await flush()
+  later(); await pipelineEngine.step(p.id, true) // baseline feedback
+  const before = writes.length
+  prs[U3].reviews = [{ author: { login: 'bob' } }]
+  later(); await pipelineEngine.step(p.id, true)
+  expect(writes.length).toBe(before + 1)
+  expect(writes.at(-1)).toContain(U3)
+  expect(p.prs[0].reviewRounds).toBe(1)
+
+  // session finishes; more feedback; limit (1) reached → stays a suggestion for you
+  later(); await pipelineEngine.step(p.id, true)
+  prs[U3].reviews = [{ author: { login: 'bob' } }, { author: { login: 'carol' } }]
+  later(); await pipelineEngine.step(p.id, true)
+  later(); await pipelineEngine.step(p.id, true)
+  expect(writes.length).toBe(before + 1)
+  expect(p.prs[0].suggestion).toMatchObject({ kind: 'review' })
 })

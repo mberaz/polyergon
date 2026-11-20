@@ -391,6 +391,8 @@ app.prepare().then(async () => {
         // The one place an automation's message reaches a session: your click
         const err = pipelineEngine.act(msg.id as string, (msg.prUrl as string) || null)
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
+      } else if (msg.type === 'pipeline-autofix') {
+        pipelineEngine.setAutoFix(msg.id as string, String(msg.prUrl ?? ''), msg.on === true)
       } else if (msg.type === 'pipeline-dismiss') {
         pipelineEngine.dismiss(msg.id as string, (msg.prUrl as string) || null)
       } else if (msg.type === 'pipeline-stop') {
