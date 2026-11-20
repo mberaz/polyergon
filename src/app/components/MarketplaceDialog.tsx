@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import type { MarketplacePlugin } from '@/lib/marketplace'
 
 // Browse plugins (skill bundles) from your Claude Code marketplaces and install them.
-export function MarketplaceDialog({ onClose, onInstalled }: { onClose: () => void; onInstalled: () => void }) {
+export function MarketplaceDialog({ onClose, onInstalled, inline = false }: { onClose: () => void; onInstalled: () => void; inline?: boolean }) {
   const [plugins, setPlugins] = useState<MarketplacePlugin[] | null>(null)
   const [q, setQ] = useState('')
   const [market, setMarket] = useState('all')
@@ -28,12 +28,14 @@ export function MarketplaceDialog({ onClose, onInstalled }: { onClose: () => voi
   const shown = (plugins ?? []).filter(p => (market === 'all' || p.marketplace === market) && (!s || p.name.toLowerCase().includes(s) || p.description.toLowerCase().includes(s)))
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="w-full max-w-2xl h-[80vh] flex flex-col bg-gray-900 border border-gray-700 rounded-xl p-5 text-white" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-base font-semibold">Skills marketplace</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label="Close">✕</button>
-        </div>
+    <div className={inline ? 'h-full' : 'fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4'} onClick={inline ? undefined : onClose}>
+      <div className={inline ? 'h-full flex flex-col text-white' : 'w-full max-w-2xl h-[80vh] flex flex-col bg-gray-900 border border-gray-700 rounded-xl p-5 text-white'} onClick={e => e.stopPropagation()}>
+        {!inline && (
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-base font-semibold">Skills marketplace</h2>
+            <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label="Close">✕</button>
+          </div>
+        )}
         <p className="text-xs text-gray-500 mb-3">Plugins from the marketplaces your Claude Code knows. A plugin can bundle skills, commands and tools, and runs as you. Install only ones you trust.</p>
         <div className="flex gap-2 mb-3">
           <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search plugins"

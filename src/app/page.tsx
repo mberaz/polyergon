@@ -10,6 +10,9 @@ import { RecordMeetingDialog } from './components/RecordMeetingDialog'
 import { MeetingView } from './components/MeetingView'
 import { MeetingsLibrary } from './components/MeetingsLibrary'
 import { AutomateDialog } from './components/AutomateDialog'
+import { SkillsPage } from './components/SkillsPage'
+import { NotesPage } from './components/NotesPage'
+import { useNotes } from '@/hooks/useNotes'
 import { usePipelines } from '@/hooks/usePipelines'
 import { PrDashboard } from './components/PrDashboard'
 import { UsageDashboard } from './components/UsageDashboard'
@@ -27,7 +30,7 @@ const MIN_SIDEBAR = 160
 const MAX_SIDEBAR = 600
 const DEFAULT_SIDEBAR = 288 // w-72
 
-type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' }
+type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null }
 
 export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
@@ -39,6 +42,8 @@ export default function Home() {
   const { entries: prEntries } = usePrSessions(ws)
   const { inbox, loading: inboxLoading, refreshing: inboxRefreshing, refresh: refreshInbox } = usePrInbox(ws)
   const { orgs, addOrg, refreshOrgs } = useOrgs()
+  const { notes, setNotes } = useNotes()
+  const [skillsVersion, setSkillsVersion] = useState(0)
   const { meetings, live: meetingLive, activeMeeting, startMeeting, resumeMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings } = useMeetings(ws)
   const { usage } = useUsage()
   const { limits } = useLimits()
@@ -308,6 +313,14 @@ export default function Home() {
           onOpenMeetingLibrary={() => setView({ mode: 'meetinglib' })}
           pipelines={pipelines}
           onOrgsChanged={refreshOrgs}
+          onRenameLive={(id, name) => ws?.send(JSON.stringify({ type: 'rename-live', id, name }))}
+          notes={notes}
+          setNotes={setNotes}
+          onOpenNotes={id => setView({ mode: 'notes', id })}
+          onOpenSkills={name => setView({ mode: 'skills', name })}
+          selectedNoteId={view.mode === 'notes' ? view.id : null}
+          selectedSkill={view.mode === 'skills' ? view.name : null}
+          skillsVersion={skillsVersion}
           onAutomate={setAutomateFor}
           usage={usage}
           onOpenUsage={() => setView({ mode: 'usagedash' })}
@@ -360,6 +373,14 @@ export default function Home() {
           />
         )}
 
+        {view.mode === 'skills' && (
+          <SkillsPage selected={view.name} onSelect={name => setView({ mode: 'skills', name })} onChanged={() => setSkillsVersion(v => v + 1)} />
+        )}
+
+        {view.mode === 'notes' && (
+          <NotesPage notes={notes} setNotes={setNotes} orgs={orgs} activeOrgId={activeOrgId} selected={view.id} onSelect={id => setView({ mode: 'notes', id })} />
+        )}
+
         {view.mode === 'meetinglib' && (
           <MeetingsLibrary
             orgs={orgs}
@@ -385,10 +406,9 @@ export default function Home() {
               const name = (live && sessionNameOverrides[live.id]) || sessionNameOverrides[h.sessionId] || h.firstUserMessage || h.cwd?.split('/').at(-1) || 'Session'
               const short = name.length > 60 ? name.slice(0, 60) + '…' : name
               const date = h.lastTimestamp ? new Date(h.lastTimestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
-              // Unique label (datalist matches by text): add a short id
-              return { id: h.sessionId, label: `${short}${date ? ` · ${date}` : ''} · ${h.sessionId.slice(0, 4)}` }
+              return { id: h.sessionId, label: short, hint: date }
             })}
-            meetingOptions={meetings.filter(m => m.status !== 'recording').map(m => ({ id: m.id, label: `${m.title} · ${new Date(m.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${m.id.slice(0, 4)}` }))}
+            meetingOptions={meetings.filter(m => m.status !== 'recording').map(m => ({ id: m.id, label: m.title, hint: new Date(m.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }))}
           />
         )}
 

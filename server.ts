@@ -43,6 +43,15 @@ function rcNameFor(s: { id: string; cwd: string; claudeSessionId: string | null;
   return path.basename(s.cwd)
 }
 
+// Session renames waiting for the Claude prompt to be idle (see 'rename-live')
+const pendingRenames = new Map<string, string>()
+function flushRename(id: string) {
+  const name = pendingRenames.get(id)
+  if (!name) return
+  pendingRenames.delete(id)
+  writeToSession(id, `/rename ${name}\r`)
+}
+
 app.prepare().then(async () => {
   // A restarted server can't resume audio capture — mark stale recordings
   meetingStore.markInterrupted()
@@ -100,6 +109,7 @@ app.prepare().then(async () => {
   // Meeting events go to every connected client — a meeting isn't "attached"
   // like a terminal session; any open tab shows its state.
   pipelineEngine.start()
+  onAnyStatusChange((id, status) => { if (status === 'waiting') flushRename(id) })
   pipelineEngine.on((ev) => {
     const msg = JSON.stringify(ev)
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg) })
@@ -324,6 +334,15 @@ app.prepare().then(async () => {
         if ('error' in result) send({ type: 'meeting-error', meetingId: null, message: result.error })
         else send({ type: 'meeting-started', meeting: result })
 
+      } else if (msg.type === 'rename-live') {
+        // Rename the running Claude conversation too, so Remote Control and
+        // claude.ai show the title. Sent now if the prompt is idle, else on next idle.
+        const name = String(msg.name ?? '').replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0, 80)
+        const target = liveSessionStore.get(msg.id as string)
+        if (name && target && target.backend !== 'copilot') {
+          pendingRenames.set(target.id, name)
+          if (target.status === 'waiting') flushRename(target.id)
+        }
       } else if (msg.type === 'pipeline-start') {
         const cfg = (msg.config ?? {}) as { slackChannel?: { id?: string; name?: string } | null; maxRounds?: number }
         const ch = cfg.slackChannel?.name ? { id: String(cfg.slackChannel.id ?? '').replace(/[^A-Z0-9]/gi, ''), name: cfg.slackChannel.name.replace(/^#/, '').slice(0, 80) } : null

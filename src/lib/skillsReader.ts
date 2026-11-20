@@ -163,3 +163,9 @@ export function trashUserSkill(name: string): boolean {
   renameSync(dir, join(dest, `${name}-${Date.now()}`))
   return true
 }
+
+export function readSkillByName(name: string): { skill: SkillInfo; raw: string } | null {
+  const skill = listSkills().find(s => s.name === name)
+  if (!skill) return null
+  try { return { skill, raw: readFileSync(join(skill.path, 'SKILL.md'), 'utf-8') } } catch { return null }
+}

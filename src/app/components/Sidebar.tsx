@@ -6,13 +6,11 @@ import type { PrSessionEntry, PrStatus } from '@/lib/prTypes'
 import type { PrInbox, InboxPr } from '@/lib/ghInbox'
 import { repoInOrg } from '@/lib/orgFilter'
 import { useSessionNames } from '@/hooks/useSessionNames'
-import { useNotes } from '@/hooks/useNotes'
 import type { Note } from '@/lib/notesStore'
 import { findDueReminder } from '@/lib/reminders'
 import type { SkillInfo } from '@/lib/skillsReader'
-import { SkillDialog } from './SkillDialog'
 import { OrgsDialog } from './OrgsDialog'
-import { MarketplaceDialog } from './MarketplaceDialog'
+import { SETTINGS_CHANGED_EVENT } from '@/hooks/useDesktopNotifications'
 import type { Pipeline } from '@/lib/pipelines'
 import { PHASE_LABEL } from './AutomateDialog'
 import type { Org } from '@/lib/orgRegistry'
@@ -77,6 +75,14 @@ interface Props {
   onOpenMeetingLibrary: () => void
   pipelines: Pipeline[]
   onOrgsChanged: () => void
+  onRenameLive: (id: string, name: string) => void
+  notes: Note[]
+  setNotes: (updater: (prev: Note[]) => Note[]) => void
+  onOpenNotes: (id: string | null) => void
+  onOpenSkills: (name: string | null) => void
+  selectedNoteId: string | null
+  selectedSkill: string | null
+  skillsVersion: number
   onAutomate: (liveId: string) => void
   usage: UsageReport | null
   onOpenUsage: () => void
@@ -280,9 +286,11 @@ function getLiveSessionTitle(s: LiveSessionInfo, sessionNames: Record<string, st
     ?? s.cwd
 }
 
-function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, contextTokens, pipeline, onAutomate, onAttachLive, onKillLive, onDeleteLive, onResume, onCompact, onSetRemote, onRename }: {
+function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, contextTokens, compactAt, pipeline, onAutomate, onRenameLive, onAttachLive, onKillLive, onDeleteLive, onResume, onCompact, onSetRemote, onRename }: {
   pipeline: Pipeline | null
   onAutomate: (id: string) => void
+  onRenameLive: (id: string, name: string) => void
+  compactAt: number | null
   s: LiveSessionInfo
   isActive: boolean
   sessionNames: Record<string, string>
@@ -347,6 +355,7 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
     // Save under s.id (stable) and also claudeSessionId (for history tab lookup)
     onRename(s.id, trimmed)
     if (s.claudeSessionId) onRename(s.claudeSessionId, trimmed)
+    onRenameLive(s.id, trimmed)
   }
 
   return (
@@ -422,21 +431,36 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
           <span className={`flex-shrink-0 font-medium ${STATUS_TEXT[s.status]}`}>{STATUS_LABEL[s.status]}</span>
           {folderLabel && <><span className="text-gray-700">·</span><span className="truncate text-gray-500">{folderLabel}</span></>}
           {time && <><span className="text-gray-700">·</span><span className="flex-shrink-0 text-gray-600">{time}</span></>}
-          {cost !== undefined && cost > 0 && (
-            <span className={`flex-shrink-0 text-emerald-600 font-medium ${contextTokens ? '' : 'ml-auto'}`} title="Estimated API-equivalent cost of this session">{fmtCost(cost)}</span>
-          )}
-          {!!contextTokens && contextTokens > 0 && (
-            <span
-              className={`flex-shrink-0 px-1.5 rounded font-medium ${!(cost && cost > 0) ? 'ml-auto' : ''} ${
-                contextTokens >= CTX_RED ? 'bg-red-900/60 text-red-300' : contextTokens >= CTX_WARN ? 'bg-amber-900/50 text-amber-300' : 'text-gray-600'}`}
-              title={`Context on last turn: ${contextTokens.toLocaleString()} tokens. Quality drops and cost climbs past ~600k — compact it.`}
-            >{fmtCtx(contextTokens)} ctx</span>
-          )}
         </div>
+
+        {/* Stats row: cost pill + context meter (fills toward auto-compact, or 600k when it's off) */}
+        {((cost !== undefined && cost > 0) || (!!contextTokens && contextTokens > 0)) && (() => {
+          const max = compactAt ?? CTX_RED
+          const level = !contextTokens ? 0 : contextTokens >= max ? 2 : contextTokens >= max * 0.8 ? 1 : 0
+          return (
+            <div className="flex items-center gap-2 mt-1.5 pl-4 text-[11px]">
+              {cost !== undefined && cost > 0 && (
+                <span className="flex-shrink-0 px-1.5 py-px rounded bg-emerald-500/10 text-emerald-400 font-medium tabular-nums" title="Estimated API-equivalent cost of this session">{fmtCost(cost)}</span>
+              )}
+              {!!contextTokens && contextTokens > 0 && (
+                <span className="flex items-center gap-1.5 flex-1 min-w-0"
+                  title={compactAt
+                    ? `Context on last turn: ${contextTokens.toLocaleString()} tokens. Auto-compact runs at ${fmtCtx(compactAt)} (Settings).`
+                    : `Context on last turn: ${contextTokens.toLocaleString()} tokens. Auto-compact is off. Quality drops past ~600k; compact it.`}>
+                  <span className="flex-1 h-1 rounded-full bg-gray-800 overflow-hidden max-w-[90px]">
+                    <span className={`block h-full rounded-full ${level === 2 ? 'bg-red-400' : level === 1 ? 'bg-amber-400' : 'bg-gray-500'}`}
+                      style={{ width: `${Math.min(100, Math.max(4, (contextTokens / max) * 100))}%` }} />
+                  </span>
+                  <span className={`flex-shrink-0 tabular-nums ${level === 2 ? 'text-red-300' : level === 1 ? 'text-amber-300' : 'text-gray-500'}`}>{fmtCtx(contextTokens)} / {fmtCtx(max)}</span>
+                </span>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Hover actions — collapsed to zero height until hover */}
         <div className="flex items-center gap-3 pl-4 max-h-0 opacity-0 overflow-hidden group-hover/live:max-h-8 group-hover/live:opacity-100 group-hover/live:mt-2 transition-all duration-150">
-          {s.status === 'waiting' && !!contextTokens && contextTokens >= CTX_WARN && (
+          {s.status === 'waiting' && !!contextTokens && contextTokens >= (compactAt ? compactAt * 0.8 : CTX_WARN) && (
             <button
               onClick={e => { e.stopPropagation(); onCompact(s.id) }}
               className="text-[11px] text-amber-400 hover:text-amber-200 font-medium"
@@ -555,7 +579,7 @@ function FolderIcon({ open }: { open: boolean }) {
   )
 }
 
-export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onAutomate, usage, onOpenUsage }: Props) {
+export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   // Search text is remembered per org, so switching orgs and back restores
   // whatever you'd typed in each
@@ -589,8 +613,6 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
   const [dismissedPrs, setDismissedPrs] = useLocalStorage<Record<string, boolean>>('claude-dismissed-prs', {})
   const [showDismissedPrs, setShowDismissedPrs] = useState(false)
   const [mergedCollapsed, setMergedCollapsed] = useState(true)
-  const { notes, setNotes } = useNotes()
-  const [draftNote, setDraftNote] = useState('')
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null)
   const [dragOverLiveId, setDragOverLiveId] = useState<string | null>(null)
@@ -598,8 +620,15 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [skillsLoaded, setSkillsLoaded] = useState(false)
   const [showOrgs, setShowOrgs] = useState(false)
-  const [showMarket, setShowMarket] = useState(false)
-  const [skillDialog, setSkillDialog] = useState<{ editing: string | null } | null>(null)
+  const [compactAt, setCompactAt] = useState<number | null>(null)
+  useEffect(() => {
+    const load = () => fetch('/api/settings').then(r => r.json())
+      .then(st => setCompactAt(st?.autoCompact?.enabled ? st.autoCompact.windowTokens : null)).catch(() => {})
+    load()
+    window.addEventListener(SETTINGS_CHANGED_EVENT, load)
+    return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, load)
+  }, [])
+  useEffect(() => { setSkillsLoaded(false) }, [skillsVersion])
   // Lazy-load skills the first time the Skills tab is opened.
   useEffect(() => {
     if (tab !== 'skills' || skillsLoaded) return
@@ -680,18 +709,6 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
   }
 
   // (Legacy localStorage notes are migrated up to the server inside useNotes.)
-
-  function addNote() {
-    const trimmed = draftNote.trim()
-    if (!trimmed) return
-    setNotes(prev => [{
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      text: trimmed,
-      createdAt: Date.now(),
-      ...(activeOrgId !== 'all' ? { orgId: activeOrgId } : {}),
-    }, ...prev])
-    setDraftNote('')
-  }
 
   // --- reminders ---
   const notesRef = useRef(notes)
@@ -887,7 +904,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
           )}
         </button>
         <button
-          onClick={() => setTab('notes')}
+          onClick={() => { setTab('notes'); onOpenNotes(null) }}
           className={`py-2.5 text-xs font-semibold tracking-wide flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
             tab === 'notes'
               ? 'border-blue-500 text-blue-400'
@@ -920,7 +937,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
           Usage
         </button>
         <button
-          onClick={() => setTab('skills')}
+          onClick={() => { setTab('skills'); onOpenSkills(null) }}
           className={`py-2.5 text-xs font-semibold tracking-wide flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
             tab === 'skills'
               ? 'border-blue-500 text-blue-400'
@@ -1019,6 +1036,8 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
                       onDeleteLive={onDeleteLive}
                       onResume={onResumeLive}
                       onRename={renameSession}
+                      onRenameLive={onRenameLive}
+                      compactAt={compactAt}
                     />
                   </div>
                 ))}
@@ -1327,60 +1346,20 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
 
       {/* Notes tab */}
       {tab === 'notes' && (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-3 py-2.5 border-b border-gray-800/40 flex flex-col gap-2">
-            <textarea
-              value={draftNote}
-              onChange={e => setDraftNote(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addNote() } }}
-              placeholder="Write a note… (⌘/Ctrl+Enter to save)"
-              rows={3}
-              className="w-full resize-none bg-gray-900 text-gray-100 rounded-lg p-2.5 text-sm placeholder-gray-600 outline-none border border-gray-800 focus:border-gray-600 transition-colors"
-            />
-            <button
-              onClick={addNote}
-              disabled={!draftNote.trim()}
-              className="self-end bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded px-3 py-1.5 text-xs font-medium"
-            >Save Note</button>
-          </div>
-          <div className="flex-1 overflow-y-auto px-3 py-3">
-            {orgNotes.length === 0
-              ? <p className="text-xs text-gray-600 text-center mt-8">No notes yet</p>
-              : <div className="flex flex-col gap-1.5">
-                  {orgNotes.map(n => (
-                    <div key={n.id} className="group/note rounded-lg bg-gray-900 px-3 py-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm text-gray-100 whitespace-pre-wrap break-words flex-1 min-w-0">{n.text}</p>
-                        <button
-                          onClick={() => removeNote(n.id)}
-                          className="opacity-0 group-hover/note:opacity-100 text-gray-600 hover:text-red-400 text-xs flex-shrink-0"
-                          title="Remove note"
-                        >×</button>
-                      </div>
-                      <p className="text-xs text-gray-600 mt-1 flex items-center gap-1.5 flex-wrap">
-                        {new Date(n.createdAt).toLocaleString()}
-                        <span className="text-gray-700">·</span>
-                        <label className={`flex items-center gap-1 ${n.remindAt ? (n.reminderDone ? 'text-gray-600' : 'text-amber-400') : 'text-gray-600 hover:text-gray-300'}`} title={n.remindAt ? (n.reminderDone ? 'Reminder fired' : 'Reminder set') : 'Set a reminder'}>
-                          ⏰
-                          <input
-                            type="datetime-local"
-                            value={n.remindAt ? toLocalInput(n.remindAt) : ''}
-                            onChange={e => setReminder(n.id, e.target.value)}
-                            className="bg-transparent text-[11px] outline-none w-[140px] [color-scheme:dark]"
-                          />
-                          {n.remindAt && n.reminderDone && <span className="text-[10px]">✓</span>}
-                        </label>
-                        {activeOrgId === 'all' && n.orgId && n.orgId !== 'default' && (
-                          <span className="px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300 text-[10px] font-medium">
-                            {orgs.find(o => o.id === n.orgId)?.name ?? 'org'}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-            }
-          </div>
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          <button onClick={() => onOpenNotes(null)} className="w-full mb-2 text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1.5">Open notes</button>
+          {orgNotes.length === 0
+            ? <p className="text-xs text-gray-600 text-center mt-8">No notes yet</p>
+            : <div className="flex flex-col gap-1.5">
+                {orgNotes.map(n => (
+                  <button key={n.id} onClick={() => onOpenNotes(n.id)}
+                    className={`text-left rounded-lg px-3 py-2 ${selectedNoteId === n.id ? 'bg-gray-800' : 'bg-gray-900 hover:bg-gray-800/70'}`}>
+                    <p className="text-sm text-gray-100 truncate">{n.text.split('\n').find(l => l.trim())?.trim() || 'Untitled'}</p>
+                    <p className="text-[11px] text-gray-600 mt-0.5">{new Date(n.createdAt).toLocaleDateString()}{n.remindAt && !n.reminderDone ? ' · ⏰' : ''}</p>
+                  </button>
+                ))}
+              </div>
+          }
         </div>
       )}
 
@@ -1396,24 +1375,18 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
                 if (shown.length === 0) return (
                   <div className="text-center mt-8 space-y-3">
                     <p className="text-xs text-gray-600">{skills.length === 0 ? 'No skills installed' : 'No matching skills'}</p>
-                    <button onClick={() => setSkillDialog({ editing: null })} className="text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1">+ New skill</button>
                   </div>
                 )
                 return (
                   <>
                     <div className="flex flex-col gap-2 mb-2">
-                      <span className="flex gap-1.5 [&>button]:flex-1">
-                        <button onClick={() => setShowMarket(true)} className="text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1">Marketplace</button>
-                        <button onClick={() => setSkillDialog({ editing: null })} className="text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1">+ New skill</button>
-                      </span>
                       <p className="text-[11px] text-gray-600">{shown.length} skill{shown.length === 1 ? '' : 's'}{q ? ` matching “${search}”` : ' installed'}</p>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       {shown.map(sk => (
                         <div key={sk.path}
-                          onClick={sk.source === 'user' ? () => setSkillDialog({ editing: sk.name }) : undefined}
-                          title={sk.source === 'user' ? 'Click to edit' : 'Plugin skills are read-only'}
-                          className={`rounded-lg bg-gray-900 border border-gray-800 px-3 py-2 ${sk.source === 'user' ? 'cursor-pointer hover:border-gray-600' : ''}`}>
+                          onClick={() => onOpenSkills(sk.name)}
+                          className={`rounded-lg border px-3 py-2 cursor-pointer ${selectedSkill === sk.name ? 'bg-gray-800 border-gray-600' : 'bg-gray-900 border-gray-800 hover:border-gray-600'}`}>
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="text-sm text-gray-100 font-medium truncate flex-1" title={sk.name}>{sk.name}</span>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${sk.source === 'user' ? 'bg-blue-900/50 text-blue-300' : 'bg-gray-800 text-gray-400'}`} title={sk.source === 'plugin' ? `Plugin: ${sk.plugin}` : 'Your skill'}>
@@ -1431,10 +1404,6 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
               })()
           }
         </div>
-      )}
-      {showMarket && <MarketplaceDialog onClose={() => setShowMarket(false)} onInstalled={() => setSkillsLoaded(false)} />}
-      {skillDialog && (
-        <SkillDialog editing={skillDialog.editing} onClose={() => setSkillDialog(null)} onSaved={() => setSkillsLoaded(false)} />
       )}
       {dueNote && (
         <div className="fixed bottom-4 left-4 z-50 w-80 rounded-lg border border-amber-700/60 bg-gray-900 shadow-xl p-3">

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 
 // Create or edit a user skill (~/.claude/skills/<name>/SKILL.md).
 // editing = existing skill name, or null for a new one.
-export function SkillDialog({ editing, onClose, onSaved }: { editing: string | null; onClose: () => void; onSaved: () => void }) {
+export function SkillDialog({ editing, onClose, onSaved, inline = false }: { editing: string | null; onClose: () => void; onSaved: () => void; inline?: boolean }) {
   const [mode, setMode] = useState<'form' | 'raw'>(editing ? 'raw' : 'form')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -48,11 +48,11 @@ export function SkillDialog({ editing, onClose, onSaved }: { editing: string | n
   )
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-gray-900 border border-gray-700 rounded-xl p-5 text-white" onClick={e => e.stopPropagation()}>
+    <div className={inline ? '' : 'fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4'} onClick={inline ? undefined : onClose}>
+      <div className={inline ? 'text-white' : 'w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-gray-900 border border-gray-700 rounded-xl p-5 text-white'} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
           <h2 className="text-base font-semibold">{editing ? `Edit skill: ${editing}` : 'New skill'}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label="Close">✕</button>
+          {!inline && <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label="Close">✕</button>}
         </div>
         <p className="text-xs text-gray-500 mb-4">Saved to <code>~/.claude/skills/&lt;name&gt;/SKILL.md</code>. Claude Code loads it in sessions started after you save.</p>
 
@@ -79,7 +79,7 @@ export function SkillDialog({ editing, onClose, onSaved }: { editing: string | n
             </label>
           </div>
         ) : (
-          <textarea value={raw} onChange={e => setRaw(e.target.value)} rows={18} spellCheck={false}
+          <textarea value={raw} onChange={e => setRaw(e.target.value)} rows={inline ? 26 : 18} spellCheck={false}
             placeholder={'---\nname: release-notes\ndescription: Use when writing release notes\n---\n\n# Instructions…'}
             className={`${field} font-mono text-xs resize-y`} />
         )}

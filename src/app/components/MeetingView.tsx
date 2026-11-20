@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import type { Meeting, MeetingNotes, TranscriptSegment, ContextItem, ContextKind } from '@/lib/meetingStore'
 import type { MeetingLive } from '@/hooks/useMeetings'
 import { Markdown } from './Markdown'
+import { Combobox } from './Combobox'
 import { SlackChannelPicker } from './SlackChannelPicker'
 import { SendToSlackDialog } from './SendToSlackDialog'
 
@@ -15,8 +16,8 @@ interface Props {
   onAsk: (id: string, question: string) => void
   onAddContext: (id: string, kind: ContextKind, value: string) => void
   onBack: () => void
-  sessionOptions: { id: string; label: string }[]
-  meetingOptions: { id: string; label: string }[]
+  sessionOptions: { id: string; label: string; hint?: string }[]
+  meetingOptions: { id: string; label: string; hint?: string }[]
 }
 
 function fmtTime(ms: number): string {
@@ -79,8 +80,8 @@ function ContextPanel({ items, isLive, onAdd, sessionOptions, meetingOptions }: 
   items: ContextItem[]
   isLive: boolean
   onAdd: (kind: ContextKind, value: string) => void
-  sessionOptions: { id: string; label: string }[]
-  meetingOptions: { id: string; label: string }[]
+  sessionOptions: { id: string; label: string; hint?: string }[]
+  meetingOptions: { id: string; label: string; hint?: string }[]
 }) {
   const [kind, setKind] = useState<ContextKind>('link')
   const [value, setValue] = useState('')
@@ -129,10 +130,15 @@ function ContextPanel({ items, isLive, onAdd, sessionOptions, meetingOptions }: 
           )}
           {(kind === 'session' || kind === 'meeting') && (
             <>
-              <input list={`ctx-${kind}`} value={pickText} onChange={e => { setPickText(e.target.value); setValue(options.find(o => o.label === e.target.value)?.id ?? '') }}
-                onKeyDown={e => { if (e.key === 'Enter') add() }}
-                placeholder={options.length ? `Type to find a ${kind === 'session' ? 'session' : 'meeting'}…` : 'None available'} className={input} />
-              <datalist id={`ctx-${kind}`}>{options.map(o => <option key={o.id} value={o.label} />)}</datalist>
+              <Combobox
+                options={options}
+                value={pickText}
+                onChange={t => { setPickText(t); setValue('') }}
+                onPick={o => { setPickText(o.label); setValue(o.id) }}
+                onEnter={add}
+                placeholder={options.length ? `Type to find a ${kind === 'session' ? 'session' : 'meeting'}…` : 'None available'}
+                className={input}
+              />
               {pickText && !value && <p className="text-[11px] text-gray-500">Pick one of the suggestions.</p>}
             </>
           )}

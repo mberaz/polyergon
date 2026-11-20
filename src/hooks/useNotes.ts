@@ -52,10 +52,16 @@ export function useNotes(): {
     return () => { cancelled = true }
   }, [])
 
+  // Saves the whole list, debounced so typing in the editor isn't a POST per key.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const setNotes = useCallback((updater: Note[] | ((prev: Note[]) => Note[])) => {
     const next = typeof updater === 'function' ? (updater as (p: Note[]) => Note[])(notesRef.current) : updater
+    notesRef.current = next
     setNotesState(next)
-    fetch('/api/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ notes: next }) }).catch(() => {})
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      fetch('/api/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ notes: notesRef.current }) }).catch(() => {})
+    }, 300)
   }, [])
 
   return { notes, setNotes, loaded }
