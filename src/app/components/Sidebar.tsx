@@ -82,6 +82,7 @@ interface Props {
   onOpenNotes: (id: string | null) => void
   onOpenSkills: (name: string | null) => void
   onOpenSettings: () => void
+  onOpenBoard: () => void
   onOpenSlack?: () => void // undefined = Slack not set up for this org: tab hidden
   onOpenAutomations: () => void
   onHome: () => void
@@ -642,7 +643,7 @@ function FolderIcon({ open }: { open: boolean }) {
   )
 }
 
-export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onRemoveWorktree, onReview, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenSettings, onOpenAutomations, onHome, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
+export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onRemoveWorktree, onReview, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenSettings, onOpenBoard, onOpenAutomations, onHome, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
   // Search text is remembered per org, so switching orgs and back restores
   // whatever you'd typed in each
   const [searchByOrg, setSearchByOrg] = useState<Record<string, string>>({})
@@ -1035,6 +1036,10 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
       {/* Live tab */}
       {tab === 'live' && (
         <div className="flex-1 overflow-y-auto px-3 py-3">
+          <button onClick={onOpenBoard} title="Task board: To do, In progress, Review, Done. Each task runs in its own session."
+            className="w-full mb-2 flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-gray-800 hover:border-gray-700 hover:bg-gray-900 text-xs text-gray-300">
+            <span className="text-gray-500">▦</span> Task board
+          </button>
           {orgLive.length > 1 && (
             <div className="flex items-center justify-end gap-1 mb-2 text-[11px]">
               <span className="text-gray-600 mr-0.5">Sort:</span>

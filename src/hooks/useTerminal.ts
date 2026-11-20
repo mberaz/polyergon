@@ -15,6 +15,7 @@ export interface LiveSessionInfo {
   rc?: boolean
   orgId: string
   worktree?: { branch: string; repo: string } | null
+  backend?: string
 }
 
 export function useTerminal() {
@@ -135,8 +136,8 @@ export function useTerminal() {
   // Remote Control list via `--remote-control <name>`. backend/model choose the
   // agent CLI and model; omitted → server falls back to claude + org default.
   // prompt: sent by the server once the session reaches its input prompt
-  const createSession = useCallback((cwd: string, orgId?: string, name?: string, backend?: string, model?: string, prompt?: string, worktree?: boolean) => {
-    wsRef.current?.send(JSON.stringify({ type: 'create', cwd, orgId, name, backend, model, prompt, worktree: !!worktree }))
+  const createSession = useCallback((cwd: string, orgId?: string, name?: string, backend?: string, model?: string, prompt?: string, worktree?: boolean, taskId?: string) => {
+    wsRef.current?.send(JSON.stringify({ type: 'create', cwd, orgId, name, backend, model, prompt, worktree: !!worktree, taskId }))
   }, [])
   // Stops the session and deletes its worktree folder (branch kept)
   const removeWorktree = useCallback((sessionId: string) => {

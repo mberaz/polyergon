@@ -20,6 +20,7 @@ import { WatcherDialog } from './components/WatcherDialog'
 import { SettingsPage } from './components/SettingsPage'
 import { PipelinePage } from './components/PipelinePage'
 import { DiffPage } from './components/DiffPage'
+import { TaskBoard } from './components/TaskBoard'
 import { useSlackWatchers } from '@/hooks/useSlackWatchers'
 import type { SlackWatcher } from '@/lib/slackWatchers'
 import { setActiveOrg } from '@/lib/activeOrg'
@@ -43,7 +44,7 @@ const MIN_SIDEBAR = 160
 const MAX_SIDEBAR = 600
 const DEFAULT_SIDEBAR = 288 // w-72
 
-type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null } | { mode: 'slack' } | { mode: 'automations' } | { mode: 'settings' } | { mode: 'pipeline'; liveId: string } | { mode: 'diff'; liveId: string }
+type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null } | { mode: 'slack' } | { mode: 'automations' } | { mode: 'settings' } | { mode: 'pipeline'; liveId: string } | { mode: 'diff'; liveId: string } | { mode: 'board' }
 
 export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
@@ -331,6 +332,7 @@ export default function Home() {
       { id: 'recordings', group: 'Actions', label: 'Open recordings', run: () => setView({ mode: 'meetinglib' }) },
       { id: 'notes', group: 'Actions', label: 'Open notes', run: () => setView({ mode: 'notes', id: null }) },
       { id: 'settings', group: 'Actions', label: 'Open settings', run: () => setView({ mode: 'settings' }) },
+      { id: 'board', group: 'Actions', label: 'Open task board', run: () => setView({ mode: 'board' }) },
       { id: 'skills', group: 'Actions', label: 'Open skills', run: () => setView({ mode: 'skills', name: null }) },
       { id: 'usage', group: 'Actions', label: 'Open usage', run: () => setView({ mode: 'usagedash' }) },
       { id: 'prs', group: 'Actions', label: 'Open PR dashboard', run: () => setView({ mode: 'prdash' }) },
@@ -392,6 +394,7 @@ export default function Home() {
           onOpenNotes={id => setView({ mode: 'notes', id })}
           onOpenSkills={name => setView({ mode: 'skills', name })}
           onOpenSettings={() => setView({ mode: 'settings' })}
+          onOpenBoard={() => setView({ mode: 'board' })}
           onOpenSlack={slackOn ? () => setView({ mode: 'slack' }) : undefined}
           onOpenAutomations={() => setView({ mode: 'automations' })}
           onHome={() => setView({ mode: 'empty' })}
@@ -471,6 +474,18 @@ export default function Home() {
           />
         )}
 
+        {view.mode === 'board' && (
+          <TaskBoard
+            orgId={activeOrgId}
+            folders={Array.from(new Set([...sessions.map(s => s.cwd).filter(Boolean) as string[], ...customPaths])).filter(p => !/\/General(\/[^/]+)?$|\/\.(claude-session-manager|polyergon[^/]*)(\/|$)|^\/private\/(tmp|var\/folders)\//.test(p)).sort((a, b) => (a.split('/').at(-1) ?? a).localeCompare(b.split('/').at(-1) ?? b))}
+            liveSessions={liveSessions}
+            pipelines={pipelines}
+            onStart={t => { pendingNameRef.current = t.title.slice(0, 60); createSession(t.cwd, t.orgId, t.title.slice(0, 60), undefined, undefined, t.details ? `${t.title}\n\n${t.details}` : t.title, t.worktree, t.id) }}
+            onOpenSession={handleAttachLive}
+            onReview={id => setView({ mode: 'diff', liveId: id })}
+            onAutomate={id => setView({ mode: 'pipeline', liveId: id })}
+          />
+        )}
         {view.mode === 'diff' && (() => {
           const lid = view.liveId
           const s = liveSessions.find(x => x.id === lid)

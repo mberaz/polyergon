@@ -16,11 +16,12 @@ import { meetingManager } from './src/lib/meetingManager'
 import { pipelineEngine } from './src/lib/pipelines'
 import { keepAwake } from './src/lib/keepAwake'
 import { createWorktree, removeWorktree } from './src/lib/worktrees'
+import { updateTask } from './src/lib/taskStore'
 import type { LiveSession } from './src/lib/liveSessionStore'
 
 // What the browser sees of a live session
 const sessionView = (s: LiveSession) => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot ?? getGitRoot(s.cwd), // restored sessions may lack it (cached lookup)
-  status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId, worktree: s.worktree ? { branch: s.worktree.branch, repo: s.worktree.repo } : null })
+  status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId, backend: s.backend ?? 'claude', worktree: s.worktree ? { branch: s.worktree.branch, repo: s.worktree.repo } : null })
 import { slackWatchers } from './src/lib/slackWatchers'
 import { meetingStore, type ContextKind } from './src/lib/meetingStore'
 import { sessionNameStore } from './src/lib/sessionNameStore'
@@ -224,6 +225,7 @@ app.prepare().then(async () => {
         const rc = !!msg.rc
         liveSessionStore.add({ id, cwd, gitRoot, claudeSessionId: null, status: 'thinking', createdAt: Date.now(), prUrl: null, orgId, backend, model, rc, worktree })
         spawnSession(id, cwd, undefined, org?.configDir ?? null, model, rcName, backend, rc)
+        if (typeof msg.taskId === 'string') updateTask(msg.taskId, { liveId: id }) // board: this session works on that task
         send({ type: 'created', id, cwd, gitRoot, orgId })
         attachToSession(id)
         // First prompt (e.g. "cr <url>", "/mcp"): sent only once Claude is at its input prompt
