@@ -81,6 +81,7 @@ export interface PrTrack {
   slack?: SlackView
   seenFeedback: number // review + comment count already handled; -1 = not read yet
   seenUnresolved?: number // unresolved-thread count we already asked the session about
+  copilotRequestedFor?: string // head commit we last asked Copilot to re-review
   reviewRounds: number
   ciFixes: number
   mergeAttempts?: number
@@ -128,7 +129,15 @@ const PROMPTS = {
 
 import { shortPr } from './pipelineView'
 
-interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrCheckStatus; feedback: number; title: string; view: PrView; unresolved: number; isDraft: boolean; reviewBlockers: string[] }
+interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrCheckStatus; feedback: number; title: string; view: PrView; unresolved: number; isDraft: boolean; reviewBlockers: string[]; headOid: string; copilotStale: boolean }
+
+// Asks Copilot to review the PR again (it only reviews when requested)
+async function requestCopilotReview(url: string): Promise<void> {
+  const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/)
+  if (!m) throw new Error('Not a PR link')
+  const env = { ...process.env }; delete env.GITHUB_TOKEN; delete env.GH_TOKEN
+  await execFileAsync('gh', ['api', '-X', 'POST', `repos/${m[1]}/${m[2]}/pulls/${m[3]}/requested_reviewers`, '-f', 'reviewers[]=copilot-pull-request-reviewer'], { timeout: 15000, env })
+}
 
 const isBot = (login: string) => /\[bot\]$|^copilot/i.test(login)
 
@@ -185,7 +194,7 @@ async function prSnapshot(url: string): Promise<PrSnapshot | null> {
     const requestedPeople = (j.reviewRequests ?? []).map((r: { login?: string }) => r.login ?? '').filter((x: string) => x && !reviewed.has(x))
     const reviewBlockers = reviewBlockersOf(gate.reviews.filter(r => r.login !== author), gate.headOid, requestedPeople)
     const view: PrView = { number: j.number, title: j.title ?? '', state: j.state, isDraft: !!j.isDraft, reviewDecision: j.reviewDecision ?? null, checks, requested, reviews, fetchedAt: Date.now(), unresolved: Math.max(0, unresolved), blockers: reviewBlockers }
-    return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks, feedback: others(j.reviews) + others(j.comments), title: j.title ?? '', view, unresolved, isDraft: !!j.isDraft, reviewBlockers }
+    return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks, feedback: others(j.reviews) + others(j.comments), title: j.title ?? '', view, unresolved, isDraft: !!j.isDraft, reviewBlockers, headOid: gate.headOid, copilotStale: reviewBlockers.some(b => /^copilot hasn't reviewed the latest commit/.test(b)) }
   } catch { return null }
 }
 
@@ -421,6 +430,13 @@ class PipelineEngine {
       if (pr.unresolved > 0 && pr.unresolved > (t.seenUnresolved ?? 0) && !t.suggestion && t.state !== 'working') {
         this.patchTrack(p, t, { seenUnresolved: pr.unresolved })
         suggest(t, 'review', PROMPTS.unresolved(t.url, pr.unresolved), `${pr.unresolved} unresolved review thread${pr.unresolved > 1 ? 's' : ''} on ${shortPr(t.url)}`, 'Unresolved review comments', `${pr.title}: ${pr.unresolved} open thread(s)`)
+      }
+      // Copilot reviewed an older commit: ask it for a fresh review, once per new commit
+      if (pr.copilotStale && pr.headOid && t.copilotRequestedFor !== pr.headOid) {
+        this.patchTrack(p, t, { copilotRequestedFor: pr.headOid })
+        requestCopilotReview(t.url)
+          .then(() => this.update(p, {}, `Asked Copilot to review the latest commit on ${shortPr(t.url)}`))
+          .catch(e => this.update(p, {}, `Couldn't request a Copilot review on ${shortPr(t.url)}: ${(e as Error).message.split('\n').at(-1)}`))
       }
       // Mergeable only when approved, CI done, not a draft and no open threads (unknown thread count = not ready)
       const blockers = [pr.isDraft && 'still a draft', pr.unresolved !== 0 && (pr.unresolved < 0 ? 'review threads unknown' : `${pr.unresolved} unresolved review thread${pr.unresolved > 1 ? 's' : ''}`), pr.reviewDecision !== 'APPROVED' && 'not approved', pr.checks === 'pending' && 'CI running', ...pr.reviewBlockers].filter(Boolean) as string[]

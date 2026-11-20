@@ -19,6 +19,7 @@ jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writ
 jest.mock('../slackBridge', () => ({ postToSlack: async (_c: unknown, t: string) => { posts.push(t); return { permalink: null } }, readSlackThread: async () => null }))
 jest.mock('child_process', () => ({ execFile: (cmd: string, a: string[], _o: object, cb: (e: Error | null, r?: { stdout: string }) => void) => {
   if (cmd === 'git') return a.includes('--porcelain') ? cb(null, { stdout: dirty ? ' M file.ts' : '' }) : cb(new Error('no upstream'))
+  if (a[0] === 'api' && a[1] === '-X') { posts.push(`gh ${a.slice(2).join(' ')}`); return cb(null, { stdout: '{}' }) }
   if (a[0] === 'api') return cb(null, { stdout: JSON.stringify({ data: { repository: { pullRequest: { headRefOid: 'H2', reviewThreads: { nodes: threads }, latestReviews: { nodes: gqlReviews } } } } }) })
   const pr = prs[a[2]]
   pr ? cb(null, { stdout: JSON.stringify(pr) }) : cb(new Error('no pr'))
@@ -132,6 +133,10 @@ test('ready to merge only when approved, green, not a draft and no unresolved th
   later(); await pipelineEngine.step(p.id, true)
   expect(p.prs[0].state).toBe('in-review')
   expect(p.prs[0].view?.blockers).toEqual(["copilot hasn't reviewed the latest commit", "bob hasn't approved"])
+  await flush()
+  expect(posts.filter(x => x.includes('requested_reviewers'))).toHaveLength(1) // asked Copilot once for this commit
+  later(); await pipelineEngine.step(p.id, true); await flush()
+  expect(posts.filter(x => x.includes('requested_reviewers'))).toHaveLength(1)
   gqlReviews = [{ author: { login: 'copilot-pull-request-reviewer' }, state: 'COMMENTED', commit: { oid: 'H2' } }, { author: { login: 'bob' }, state: 'APPROVED', commit: { oid: 'H2' } }]
   later(); await pipelineEngine.step(p.id, true)
   expect(p.prs[0].state).toBe('ready')
