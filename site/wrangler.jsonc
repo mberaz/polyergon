@@ -1,0 +1,11 @@
+// Deploy: cd site && npx wrangler deploy  (static assets on Cloudflare, polyergon.ai + www)
+{
+  "name": "polyergon",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "polyergon.ai", "custom_domain": true },
+    { "pattern": "www.polyergon.ai", "custom_domain": true }
+  ],
+  "assets": { "directory": "." }
+}
