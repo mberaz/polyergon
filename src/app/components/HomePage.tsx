@@ -49,7 +49,7 @@ export function HomePage({ orgName, live, nameOf, meetings, notes, pipelines, wa
   const hello = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
   const todo: { key: string; text: string; sub?: string; tone: string; go: () => void }[] = [
-    ...waiting.slice(0, 6).map(s => ({ key: `w-${s.id}`, text: nameOf(s.id), sub: 'waiting for your input', tone: 'text-green-300', go: () => onAttach(s.id) })),
+    ...waiting.slice(0, 6).map(s => ({ key: `w-${s.id}`, text: nameOf(s.id), sub: 'waiting for your input', tone: 'text-amber-300', go: () => onAttach(s.id) })),
     ...(returned ? [{ key: 'ret', text: `${returned} PR${returned > 1 ? 's' : ''} back with you`, sub: 'changes requested or CI failing', tone: 'text-red-300', go: () => onOpen('prdash') }] : []),
     ...(reviewReqs ? [{ key: 'rev', text: `${reviewReqs} review request${reviewReqs > 1 ? 's' : ''}`, sub: 'PRs waiting for your review', tone: 'text-amber-300', go: () => onOpen('prdash') }] : []),
     ...(ready.length ? [{ key: 'ready', text: `${ready.length} PR${ready.length > 1 ? 's' : ''} ready to merge`, sub: 'approved, CI green', tone: 'text-emerald-300', go: () => onOpen('automations') }] : []),

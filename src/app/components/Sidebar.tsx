@@ -18,15 +18,16 @@ import type { Meeting } from '@/lib/meetingStore'
 import type { UsageReport, OrgUsage } from '@/lib/usageStore'
 import { notificationsEnabled } from '@/hooks/useDesktopNotifications'
 
+// One meaning per color: blue = working, amber = needs you, gray = idle. Green is kept for done/ready.
 const STATUS_BORDER: Record<SessionStatus, string> = {
-  thinking: 'border-l-yellow-400',
-  waiting:  'border-l-green-400',
-  idle:     'border-l-gray-600',
+  thinking: 'border-l-blue-400',
+  waiting:  'border-l-amber-400',
+  idle:     'border-l-gray-700',
 }
 
 const STATUS_DOT: Record<SessionStatus, string> = {
-  thinking: 'bg-yellow-400 animate-pulse',
-  waiting:  'bg-green-400 animate-pulse',
+  thinking: 'border-2 border-blue-400 border-t-transparent animate-spin motion-reduce:animate-none',
+  waiting:  'bg-amber-400',
   idle:     'bg-gray-600',
 }
 
@@ -37,8 +38,8 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
 }
 
 const STATUS_TEXT: Record<SessionStatus, string> = {
-  thinking: 'text-yellow-400',
-  waiting:  'text-green-400',
+  thinking: 'text-blue-300',
+  waiting:  'text-amber-300',
   idle:     'text-gray-500',
 }
 
@@ -475,7 +476,7 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
         )}
         {!!(s.gitRoot || s.prUrl || pipeline?.prs.length) && (
           <button onClick={e => { e.stopPropagation(); onReview(s.id) }}
-            className="mt-1.5 ml-4 flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+            className="mt-1.5 ml-4 flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border border-gray-700/80 text-gray-300 hover:bg-gray-800 hover:text-white"
             title="See what this session changed, comment on lines, then send feedback or approve">
             <span className="font-mono">±</span> Review changes
           </button>
@@ -485,7 +486,7 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
         <div className="flex items-center gap-1.5 mt-1.5 pl-4 text-[11px] min-w-0">
           <span className={`flex-shrink-0 font-medium ${STATUS_TEXT[s.status]}`}>{STATUS_LABEL[s.status]}</span>
           {s.worktree
-            ? <><span className="text-gray-700">·</span><span className="truncate text-emerald-400/80" title={`Own worktree of ${s.worktree.repo} on branch ${s.worktree.branch}`}>⑂ {s.worktree.branch.replace(/^polyergon\//, '')}</span></>
+            ? <><span className="text-gray-700">·</span><span className="truncate text-gray-400" title={`Own worktree of ${s.worktree.repo} on branch ${s.worktree.branch}`}>⑂ {s.worktree.branch.replace(/^polyergon\//, '')}</span></>
             : folderLabel && <><span className="text-gray-700">·</span><span className="truncate text-gray-500">{folderLabel}</span></>}
           {time && <><span className="text-gray-700">·</span><span className="flex-shrink-0 text-gray-600">{time}</span></>}
         </div>
@@ -497,7 +498,7 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
           return (
             <div className="flex items-center gap-2 mt-1.5 pl-4 text-[11px]">
               {cost !== undefined && cost > 0 && (
-                <span className="flex-shrink-0 px-1.5 py-px rounded bg-emerald-500/10 text-emerald-400 font-medium tabular-nums" title="Estimated API-equivalent cost of this session">{fmtCost(cost)}</span>
+                <span className="flex-shrink-0 px-1.5 py-px rounded bg-gray-800 text-gray-300 font-medium tabular-nums" title="Estimated API-equivalent cost of this session">{fmtCost(cost)}</span>
               )}
               {!!contextTokens && contextTokens > 0 && (
                 <span className="flex items-center gap-1.5 flex-1 min-w-0"
