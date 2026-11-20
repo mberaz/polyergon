@@ -137,6 +137,11 @@ test('ready to merge only when approved, green, not a draft and no unresolved th
   expect(posts.filter(x => x.includes('--add-reviewer @copilot'))).toHaveLength(1) // asked Copilot once for this commit
   later(); await pipelineEngine.step(p.id, true); await flush()
   expect(posts.filter(x => x.includes('--add-reviewer @copilot'))).toHaveLength(1)
+  // while Copilot re-reviews, GitHub drops its old review: still not ready
+  gqlReviews = [{ author: { login: 'bob' }, state: 'APPROVED', commit: { oid: 'H2' } }]
+  later(); await pipelineEngine.step(p.id, true)
+  expect(p.prs[0].state).toBe('in-review')
+  expect(p.prs[0].view?.blockers).toContain('copilot is reviewing the latest commit')
   gqlReviews = [{ author: { login: 'copilot-pull-request-reviewer' }, state: 'COMMENTED', commit: { oid: 'H2' } }, { author: { login: 'bob' }, state: 'APPROVED', commit: { oid: 'H2' } }]
   later(); await pipelineEngine.step(p.id, true)
   expect(p.prs[0].state).toBe('ready')

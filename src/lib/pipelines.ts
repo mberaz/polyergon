@@ -129,7 +129,7 @@ const PROMPTS = {
 
 import { shortPr } from './pipelineView'
 
-interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrCheckStatus; feedback: number; title: string; view: PrView; unresolved: number; isDraft: boolean; reviewBlockers: string[]; headOid: string; copilotStale: boolean }
+interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrCheckStatus; feedback: number; title: string; view: PrView; unresolved: number; isDraft: boolean; reviewBlockers: string[]; headOid: string; copilotStale: boolean; copilotOnHead: boolean }
 
 // Asks Copilot to review the PR again (it only reviews when requested)
 async function requestCopilotReview(url: string): Promise<void> {
@@ -194,7 +194,7 @@ async function prSnapshot(url: string): Promise<PrSnapshot | null> {
     const requestedPeople = (j.reviewRequests ?? []).map((r: { login?: string }) => r.login ?? '').filter((x: string) => x && !reviewed.has(x))
     const reviewBlockers = reviewBlockersOf(gate.reviews.filter(r => r.login !== author), gate.headOid, requestedPeople)
     const view: PrView = { number: j.number, title: j.title ?? '', state: j.state, isDraft: !!j.isDraft, reviewDecision: j.reviewDecision ?? null, checks, requested, reviews, fetchedAt: Date.now(), unresolved: Math.max(0, unresolved), blockers: reviewBlockers }
-    return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks, feedback: others(j.reviews) + others(j.comments), title: j.title ?? '', view, unresolved, isDraft: !!j.isDraft, reviewBlockers, headOid: gate.headOid, copilotStale: reviewBlockers.some(b => /^copilot hasn't reviewed the latest commit/.test(b)) }
+    return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks, feedback: others(j.reviews) + others(j.comments), title: j.title ?? '', view, unresolved, isDraft: !!j.isDraft, reviewBlockers, headOid: gate.headOid, copilotStale: reviewBlockers.some(b => /^copilot hasn't reviewed the latest commit/.test(b)), copilotOnHead: gate.reviews.some(r => isBot(r.login) && r.commit === gate.headOid) }
   } catch { return null }
 }
 
@@ -438,6 +438,8 @@ class PipelineEngine {
           .then(() => this.update(p, {}, `Asked Copilot to review the latest commit on ${shortPr(t.url)}`))
           .catch(e => this.update(p, {}, `Couldn't request a Copilot review on ${shortPr(t.url)}: ${(e as Error).message}`))
       }
+      // We asked Copilot for this commit: GitHub hides its old review meanwhile, so wait for the new one
+      if (t.copilotRequestedFor && t.copilotRequestedFor === pr.headOid && !pr.copilotOnHead && !pr.copilotStale) { pr.reviewBlockers.push('copilot is reviewing the latest commit'); this.patchTrack(p, t, { view: { ...pr.view, blockers: pr.reviewBlockers } }) }
       // Mergeable only when approved, CI done, not a draft and no open threads (unknown thread count = not ready)
       const blockers = [pr.isDraft && 'still a draft', pr.unresolved !== 0 && (pr.unresolved < 0 ? 'review threads unknown' : `${pr.unresolved} unresolved review thread${pr.unresolved > 1 ? 's' : ''}`), pr.reviewDecision !== 'APPROVED' && 'not approved', pr.checks === 'pending' && 'CI running', ...pr.reviewBlockers].filter(Boolean) as string[]
       if (!blockers.length && t.state !== 'ready') {
