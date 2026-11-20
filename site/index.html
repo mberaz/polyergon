@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Polyergon · Run every Claude Code session from one screen</title>
+<meta name="description" content="Open-source, local web app for running many Claude Code and Copilot CLI sessions. Ship PRs, answer Slack and record meetings from one screen.">
+<meta property="og:title" content="Polyergon">
+<meta property="og:description" content="Run every Claude Code session from one screen. Open source, runs on your machine.">
+<meta property="og:image" content="https://polyergon.ai/img/pipeline.jpg">
+<meta property="og:url" content="https://polyergon.ai">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2310b981'/><path d='M9 23V9h8a5 5 0 0 1 0 10h-4' fill='none' stroke='%23052e1f' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1" defer></script>
+<link rel="preload" as="image" href="img/pipeline.jpg">
+<style>
+  :root {
+    --bg: #09090b; --bg-2: #111114; --bg-3: #17171b;
+    --line: #26262c; --line-2: #34343c;
+    --text: #f4f4f5; --muted: #a1a1aa; --dim: #71717a;
+    --accent: #10b981; --accent-ink: #052e1f; --accent-soft: rgb(16 185 129 / .12);
+    --radius: 16px;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafafa; --bg-2: #ffffff; --bg-3: #f4f4f5;
+      --line: #e4e4e7; --line-2: #d4d4d8;
+      --text: #18181b; --muted: #52525b; --dim: #71717a;
+      --accent: #059669; --accent-ink: #ffffff; --accent-soft: rgb(5 150 105 / .10);
+      color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 Geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; height: auto; display: block; }
+  code, pre, .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding-inline: 24px; }
+
+  /* Nav */
+  nav { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    background: color-mix(in srgb, var(--bg) 80%, transparent); border-bottom: 1px solid var(--line); }
+  nav .wrap { height: 64px; display: flex; align-items: center; gap: 28px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.01em; }
+  .mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); display: grid; place-items: center; color: var(--accent-ink); font-size: 15px; }
+  nav .links { display: flex; gap: 24px; margin-left: auto; font-size: 14px; color: var(--muted); }
+  nav .links a:hover { color: var(--text); }
+  @media (max-width: 640px) { nav .links a:not(.gh) { display: none; } }
+
+  /* Buttons (pill system: buttons are full-pill, cards 16px, code 12px) */
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px; border-radius: 999px; font-weight: 500; font-size: 15px; white-space: nowrap;
+    transition: transform .15s ease, background .2s ease, border-color .2s ease; }
+  .btn:active { transform: translateY(1px) scale(.98); }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-primary:hover { background: color-mix(in srgb, var(--accent) 88%, white); }
+  .btn-ghost { border: 1px solid var(--line-2); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--muted); }
+
+  /* Hero */
+  .hero { padding-top: 72px; padding-bottom: 48px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; align-items: center; }
+  .hero h1 { font-size: clamp(40px, 5.2vw, 64px); line-height: 1.02; letter-spacing: -.035em; font-weight: 600; margin: 0; }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero p { font-size: 19px; color: var(--muted); max-width: 30ch; margin: 22px 0 32px; line-height: 1.5; }
+  .ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+  .shot { position: relative; border-radius: var(--radius); border: 1px solid var(--line-2); overflow: hidden; background: var(--bg-2);
+    box-shadow: 0 40px 120px -40px rgb(16 185 129 / .35), 0 20px 60px -20px rgb(0 0 0 / .6); }
+  .shot .bar { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--bg-3); }
+  .shot .bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--line-2); }
+  .shot .bar span { margin-left: 12px; font-size: 12px; color: var(--dim); }
+  .shot img { width: 100%; }
+  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; padding-top: 48px; gap: 40px; } .hero p { max-width: 40ch; } }
+
+  section { padding-block: 96px; }
+  h2 { font-size: clamp(30px, 3.4vw, 44px); line-height: 1.08; letter-spacing: -.03em; font-weight: 600; margin: 0 0 14px; }
+  .lead { color: var(--muted); font-size: 18px; max-width: 60ch; margin: 0; }
+
+  /* Bento: 5 cells */
+  .bento { display: grid; gap: 16px; margin-top: 48px; grid-template-columns: repeat(6, 1fr); grid-auto-rows: minmax(210px, auto); }
+  .cell { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); padding: 28px; position: relative; overflow: hidden; }
+  .cell h3 { margin: 14px 0 8px; font-size: 20px; letter-spacing: -.015em; font-weight: 600; }
+  .cell p { margin: 0; color: var(--muted); font-size: 15px; max-width: 46ch; }
+  .cell .ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 21px; }
+  .c-ship { grid-column: span 4; grid-row: span 2; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 28px; align-items: center;
+    background: radial-gradient(120% 120% at 100% 0%, rgb(16 185 129 / .16), transparent 55%), var(--bg-2); }
+  .c-ship img { border-radius: 12px; border: 1px solid var(--line-2); }
+  .c-live { grid-column: span 2; grid-row: span 2; background: linear-gradient(180deg, var(--bg-3), var(--bg-2)); display: flex; flex-direction: column; }
+  .meter { margin-top: auto; padding-top: 28px; display: grid; gap: 14px; }
+  .meter div { display: grid; grid-template-columns: 1fr auto; gap: 6px; font-size: 13px; color: var(--muted); }
+  .meter b { font-weight: 500; color: var(--text); }
+  .meter s { grid-column: 1 / -1; height: 6px; border-radius: 99px; background: var(--line); position: relative; text-decoration: none; overflow: hidden; }
+  .meter s::after { content: ""; position: absolute; inset: 0; width: var(--w); background: var(--accent); border-radius: inherit; transform-origin: left; }
+  .c-slack, .c-meet, .c-org { grid-column: span 2; }
+  .c-meet { background: repeating-linear-gradient(90deg, transparent 0 22px, rgb(16 185 129 / .05) 22px 24px), var(--bg-2); }
+  @media (max-width: 1000px) { .bento { grid-template-columns: 1fr 1fr; } .c-ship { grid-column: span 2; grid-row: auto; grid-template-columns: 1fr; } .c-live { grid-column: span 2; grid-row: auto; } .c-slack, .c-meet { grid-column: span 1; } .c-org { grid-column: span 2; } }
+  @media (max-width: 640px) { .bento { grid-template-columns: 1fr; } .c-ship, .c-live, .c-slack, .c-meet, .c-org { grid-column: auto; } }
+
+  /* Pipeline track */
+  .track { margin-top: 56px; display: grid; grid-template-columns: repeat(5, 1fr); position: relative; }
+  .track::before { content: ""; position: absolute; top: 27px; left: 10%; right: 10%; height: 2px; background: linear-gradient(90deg, var(--accent) 0 80%, var(--line-2) 80%); }
+  .node { text-align: center; position: relative; padding-inline: 8px; }
+  .node .dot { width: 56px; height: 56px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; font-size: 24px;
+    background: var(--bg-2); border: 2px solid var(--accent); color: var(--accent); }
+  .node.you .dot { border-color: var(--line-2); color: var(--text); background: var(--bg-3); }
+  .node h4 { margin: 16px 0 6px; font-size: 16px; font-weight: 600; }
+  .node p { margin: 0 auto; color: var(--muted); font-size: 14px; max-width: 22ch; }
+  .tag { display: inline-block; margin-top: 12px; font-size: 12px; padding: 3px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+  .node.you .tag { background: var(--bg-3); color: var(--text); border: 1px solid var(--line-2); }
+  @media (max-width: 800px) { .track { grid-template-columns: 1fr; gap: 28px; } .track::before { display: none; } .node { display: grid; grid-template-columns: 56px 1fr; gap: 0 18px; text-align: left; } .node .dot { grid-row: span 3; margin: 0; } .node h4 { margin-top: 4px; } .node p { margin: 0; max-width: none; } .tag { justify-self: start; } }
+
+  /* Local-first */
+  .local { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 64px; align-items: start; }
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 32px 28px; }
+  .fact i { font-size: 24px; color: var(--accent); }
+  .fact h4 { margin: 10px 0 6px; font-size: 16px; font-weight: 600; }
+  .fact p { margin: 0; color: var(--muted); font-size: 15px; }
+  @media (max-width: 860px) { .local { grid-template-columns: 1fr; gap: 40px; } }
+  @media (max-width: 520px) { .facts { grid-template-columns: 1fr; } }
+
+  /* Install */
+  .install { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); padding: 48px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 48px; align-items: center; }
+  pre { margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 22px 24px; font-size: 14px; line-height: 1.9; overflow-x: auto; color: var(--text); }
+  pre .p { color: var(--accent); user-select: none; }
+  pre .c { color: var(--dim); }
+  .req { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; color: var(--muted); font-size: 14px; }
+  .req li::before { content: "+ "; color: var(--accent); }
+  @media (max-width: 860px) { .install { grid-template-columns: 1fr; padding: 28px; gap: 28px; } }
+
+  footer { border-top: 1px solid var(--line); padding-block: 40px; color: var(--dim); font-size: 14px; }
+  footer .wrap { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+  footer .links { margin-left: auto; display: flex; gap: 22px; flex-wrap: wrap; }
+  footer a:hover { color: var(--text); }
+
+  /* Motion: entrance for the hero, reveal on scroll for sections. Off for reduced motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    .rise { opacity: 0; transform: translateY(16px); animation: rise .8s cubic-bezier(.16, 1, .3, 1) forwards; animation-delay: calc(var(--i, 0) * 90ms); }
+    @keyframes rise { to { opacity: 1; transform: none; } }
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s cubic-bezier(.16, 1, .3, 1), transform .7s cubic-bezier(.16, 1, .3, 1); transition-delay: calc(var(--i, 0) * 70ms); }
+    .reveal.in { opacity: 1; transform: none; }
+    .reveal.in .meter s::after { animation: fill 1.2s cubic-bezier(.16, 1, .3, 1) both; }
+    @keyframes fill { from { transform: scaleX(0); } }
+    .cell { transition: border-color .25s ease, transform .25s ease; }
+    .cell:hover { border-color: var(--line-2); transform: translateY(-2px); }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="mark"><i class="ph-bold ph-stack"></i></span>Polyergon</a>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#ship-it">Ship it</a>
+      <a href="#install">Install</a>
+      <a class="gh" href="https://github.com/polyergon/polyergon">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<main id="top">
+  <header class="wrap hero">
+    <div>
+      <h1 class="rise">Every Claude Code session. <em>One screen.</em></h1>
+      <p class="rise" style="--i:1">Run your Claude Code and Copilot sessions side by side, ship their PRs, and keep Slack under control.</p>
+      <div class="ctas rise" style="--i:2">
+        <a class="btn btn-primary" href="https://github.com/polyergon/polyergon"><i class="ph-bold ph-github-logo"></i>Get it on GitHub</a>
+        <a class="btn btn-ghost" href="#ship-it">How it works</a>
+      </div>
+    </div>
+    <div class="shot rise" style="--i:3">
+      <div class="bar"><i></i><i></i><i></i><span>localhost:3030</span></div>
+      <img src="img/pipeline.jpg" width="2880" height="1800" alt="Polyergon pipeline view: two pull requests with their review, CI and Slack status, and the automation's activity log">
+    </div>
+  </header>
+
+  <section id="features" class="wrap">
+    <h2 class="reveal">Built for people who run ten sessions at once</h2>
+    <p class="lead reveal" style="--i:1">Everything a busy session needs from you, in one place, with nothing to set up per project.</p>
+
+    <div class="bento">
+      <article class="cell c-ship reveal">
+        <div>
+          <span class="ic"><i class="ph ph-git-pull-request"></i></span>
+          <h3>PRs that move on their own</h3>
+          <p>Ship it opens the PR, posts it for review, and sends review comments and failing CI back to the session. You choose which steps are automatic. Merging asks you by default.</p>
+        </div>
+        <img src="img/steps.png" width="472" height="356" alt="Ship it steps: open the PR, fix review comments and fix failing CI set to Auto, merge set to Ask me">
+      </article>
+
+      <article class="cell c-live reveal" style="--i:1">
+        <span class="ic"><i class="ph ph-terminal-window"></i></span>
+        <h3>Know who needs you</h3>
+        <p>Real terminals in the browser. Each card shows if a session is thinking, waiting for you or idle, what it cost, and how close it is to compacting.</p>
+        <div class="meter" aria-hidden="true">
+          <div>api-refactor <b>thinking</b><s style="--w:62%"></s></div>
+          <div>billing-retries <b>waiting for you</b><s style="--w:84%"></s></div>
+          <div>docs-cleanup <b>idle</b><s style="--w:27%"></s></div>
+        </div>
+      </article>
+
+      <article class="cell c-slack reveal">
+        <span class="ic"><i class="ph ph-chat-circle-text"></i></span>
+        <h3>A Slack inbox that drafts</h3>
+        <p>Mentions and DMs still waiting on you, each with a suggested reply. Answer, react, or hand it to the session that knows the code.</p>
+      </article>
+
+      <article class="cell c-meet reveal" style="--i:1">
+        <span class="ic"><i class="ph ph-microphone"></i></span>
+        <h3>Meetings with context</h3>
+        <p>Record, transcribe and summarize calls. Add links, Slack threads, past meetings or sessions so the notes know what you know.</p>
+      </article>
+
+      <article class="cell c-org reveal" style="--i:2">
+        <span class="ic"><i class="ph ph-buildings"></i></span>
+        <h3>One app, many orgs</h3>
+        <p>Keep work and side projects apart. Each org has its own Claude login, Slack workspace, skills and automations.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="ship-it" class="wrap">
+    <h2 class="reveal">From finished code to merged PR</h2>
+    <p class="lead reveal" style="--i:1">Turn on Ship it for a session. When the code is ready, it takes over the loop you usually babysit.</p>
+    <div class="track">
+      <div class="node reveal"><span class="dot"><i class="ph ph-git-branch"></i></span><h4>Open the PR</h4><p>Commit, push and open it with a clear description.</p><span class="tag">Auto</span></div>
+      <div class="node reveal" style="--i:1"><span class="dot"><i class="ph ph-paper-plane-tilt"></i></span><h4>Post for review</h4><p>Shares the link in your review channel and tracks who picked it up.</p><span class="tag">Auto</span></div>
+      <div class="node reveal" style="--i:2"><span class="dot"><i class="ph ph-chats"></i></span><h4>Fix comments</h4><p>Sends new review feedback to the session, then replies on the PR.</p><span class="tag">Auto</span></div>
+      <div class="node reveal" style="--i:3"><span class="dot"><i class="ph ph-wrench"></i></span><h4>Fix CI</h4><p>Finds the failing check, fixes the cause and pushes.</p><span class="tag">Auto</span></div>
+      <div class="node you reveal" style="--i:4"><span class="dot"><i class="ph ph-git-merge"></i></span><h4>You merge</h4><p>Approved and green? One click, or let it merge too.</p><span class="tag">Ask me</span></div>
+    </div>
+  </section>
+
+  <section class="wrap local">
+    <div class="reveal">
+      <h2>Runs on your machine, not ours</h2>
+      <p class="lead">Polyergon is a local app around the CLIs you already use. Your code, keys and transcripts stay on your computer.</p>
+    </div>
+    <div class="facts">
+      <div class="fact reveal"><i class="ph ph-house-line"></i><h4>Local only</h4><p>Listens on 127.0.0.1 and rejects requests from other websites.</p></div>
+      <div class="fact reveal" style="--i:1"><i class="ph ph-key"></i><h4>Keys stay put</h4><p>API keys live in a file only your user can read. The browser never sees them.</p></div>
+      <div class="fact reveal" style="--i:2"><i class="ph ph-hand"></i><h4>You stay in charge</h4><p>Sessions ask before running commands, unless you turn that off.</p></div>
+      <div class="fact reveal" style="--i:3"><i class="ph ph-scales"></i><h4>MIT licensed</h4><p>Free and open source. Read it, fork it, change it.</p></div>
+    </div>
+  </section>
+
+  <section id="install" class="wrap">
+    <div class="install reveal">
+      <div>
+        <h2>Up in a minute</h2>
+        <p class="lead">macOS today. Linux should work for sessions.</p>
+        <ul class="req">
+          <li>Node.js 20 or newer</li>
+          <li>Claude Code or GitHub Copilot CLI, logged in</li>
+          <li><code>gh</code> for PRs and Ship it (optional)</li>
+        </ul>
+      </div>
+      <pre><span class="p">$</span> git clone https://github.com/polyergon/polyergon.git
+<span class="p">$</span> cd polyergon
+<span class="p">$</span> npm ci &amp;&amp; npm run build
+<span class="p">$</span> npm start <span class="c"># opens http://localhost:3030</span></pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="brand"><span class="mark"><i class="ph-bold ph-stack"></i></span>Polyergon</span>
+    <span>MIT License</span>
+    <div class="links">
+      <a href="https://github.com/polyergon/polyergon">GitHub</a>
+      <a href="mailto:hello@polyergon.ai">hello@polyergon.ai</a>
+      <a href="mailto:security@polyergon.ai">Report a vulnerability</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Reveal sections as they enter the viewport (IntersectionObserver, no scroll listeners)
+  const io = new IntersectionObserver(entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target) } }), { threshold: 0.15 })
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el))
+</script>
+</body>
+</html>
