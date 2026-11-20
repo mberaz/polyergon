@@ -6,6 +6,8 @@ Polyergon is a local app for people who run many Claude Code (or GitHub Copilot 
 
 [polyergon.ai](https://polyergon.ai) · [npm](https://www.npmjs.com/package/polyergon)
 
+![Task board demo: a task is started, a session works on it, it waits for your review, its PR goes through CI and review, and it lands in Ready to merge](site/img/demo.gif)
+
 ![The Ship it pipeline: two pull requests with review, CI and Slack status, and the automation's activity log](site/img/pipeline.jpg)
 
 > **Status:** early (v0.1). Built and tested on macOS. Sessions should work on Linux but are untested. Windows is not supported.
