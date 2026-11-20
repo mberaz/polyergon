@@ -443,10 +443,17 @@ app.prepare().then(async () => {
   })
 
   server.listen(PORT, '127.0.0.1', () => {
+    const appUrl = `http://polyergon.localhost:${PORT}`
     if (process.env.POLYERGON_OPEN === '1') {
-      const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
-      import('child_process').then(cp => cp.spawn(opener, [`http://localhost:${PORT}`], { stdio: 'ignore', detached: true }).on('error', () => {}).unref())
+      // Own window (no tabs or address bar) when Chrome is installed; POLYERGON_WINDOW=browser opens a normal tab
+      import('child_process').then(cp => {
+        const chrome = '/Applications/Google Chrome.app'
+        const [cmd, args] = process.platform !== 'darwin' ? ['xdg-open', [appUrl]]
+          : process.env.POLYERGON_WINDOW !== 'browser' && existsSync(chrome) ? ['open', ['-na', chrome, '--args', `--app=${appUrl}`]]
+          : ['open', [appUrl]]
+        cp.spawn(cmd, args as string[], { stdio: 'ignore', detached: true }).on('error', () => {}).unref()
+      })
     }
-    console.log(`> Polyergon ready on http://localhost:${PORT}`)
+    console.log(`> Polyergon ready on ${appUrl}`)
   })
 })

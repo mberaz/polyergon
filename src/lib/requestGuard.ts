@@ -1,7 +1,8 @@
 // Polyergon drives shells with permission checks off, so only the app's own
 // pages may talk to it. Blocks other websites (cross-site WebSocket / CSRF via
 // the Origin header) and DNS rebinding (via the Host header).
-const DEFAULT_HOSTS = ['localhost', '127.0.0.1', '[::1]', 'polyergon']
+// polyergon.localhost: browsers resolve *.localhost to this machine with no setup
+const DEFAULT_HOSTS = ['localhost', '127.0.0.1', '[::1]', 'polyergon', 'polyergon.localhost']
 
 export function allowedHosts(): string[] {
   const extra = (process.env.POLYERGON_ALLOWED_HOSTS ?? '').split(',').map(h => h.trim()).filter(Boolean)

@@ -28,8 +28,10 @@ git clone https://github.com/polyergon/polyergon.git
 cd polyergon
 npm ci
 npm run build
-npm start          # opens http://localhost:3030
+npm start          # opens Polyergon in its own window
 ```
+
+Polyergon opens in its own window (no address bar) at `http://polyergon.localhost:3030`. To keep it in the Dock, choose **Install Polyergon** from Chrome's menu.
 
 Development mode with hot reload: `npm run dev`.
 
@@ -40,6 +42,7 @@ Development mode with hot reload: `npm run dev`.
 | `PORT` | `3030` | Port to listen on |
 | `POLYERGON_DATA_DIR` | `~/.claude-session-manager` | Where sessions, names, notes, meetings and settings are stored |
 | `POLYERGON_NO_OPEN` | unset | Set to `1` to not open the browser on start |
+| `POLYERGON_WINDOW` | unset | Set to `browser` to open a normal browser tab instead of the Polyergon app window |
 | `POLYERGON_ALLOWED_HOSTS` | unset | Extra host names allowed to reach the app (comma-separated) |
 
 Auto-compact, notifications and the transcription key are set in the app under **Settings**.
