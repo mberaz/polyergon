@@ -45,7 +45,7 @@ type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId:
 export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
   const { permission: notificationPermission, enabled: notificationsOn, requestPermission: requestNotificationPermission, notifyNeedsInput } = useDesktopNotifications()
-  const { ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
+  const { sendToLive, ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
   const { watchers, watcherError, watcherCmd } = useSlackWatchers(ws, (title, body) => notifyNeedsInput(`👂 ${title}`, body))
   const [showWatcherDialog, setShowWatcherDialog] = useState(false)
   const { pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr, actPipeline, dismissPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
@@ -234,6 +234,12 @@ export default function Home() {
     // view switches to 'live' when activeSessionId updates via useEffect
   }
 
+  // Slack tab only when Slack is set up for this org
+  const [slackOn, setSlackOn] = useState(false)
+  useEffect(() => {
+    fetch(`/api/slack/configured?org=${encodeURIComponent(activeOrgId)}`).then(r => r.json()).then(d => setSlackOn(!!d.configured)).catch(() => {})
+  }, [activeOrgId])
+
   function handleAttachLive(id: string) {
     attachSession(id)
     setView({ mode: 'live' })
@@ -378,7 +384,7 @@ export default function Home() {
           setNotes={setNotes}
           onOpenNotes={id => setView({ mode: 'notes', id })}
           onOpenSkills={name => setView({ mode: 'skills', name })}
-          onOpenSlack={() => setView({ mode: 'slack' })}
+          onOpenSlack={slackOn ? () => setView({ mode: 'slack' }) : undefined}
           onOpenAutomations={() => setView({ mode: 'automations' })}
           onHome={() => setView({ mode: 'empty' })}
           selectedNoteId={view.mode === 'notes' ? view.id : null}
@@ -436,7 +442,10 @@ export default function Home() {
           />
         )}
 
-        {view.mode === 'slack' && <SlackInbox key={activeOrgId} onSendAgent={handleSlackAgent} orgName={activeOrgId === 'all' ? 'Default' : orgs.find(o => o.id === activeOrgId)?.name ?? 'Default'} />}
+        {view.mode === 'slack' && <SlackInbox key={activeOrgId} onSendAgent={handleSlackAgent}
+          sessions={liveSessions.filter(s => s.claudeSessionId && (activeOrgId === 'all' || (s.orgId ?? 'default') === activeOrgId)).map(s => ({ id: s.id, resumeId: s.claudeSessionId!, cwd: s.cwd, label: (sessionNameOverrides[s.id] || sessionNameOverrides[s.claudeSessionId!] || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session').slice(0, 70) }))}
+          onOpenSession={handleAttachLive}
+          onAskSession={(id, m) => sendToLive(id, `${m.isDm ? `${m.author} sent me a Slack DM` : `${m.author} tagged me in Slack #${m.channel}`} about this work: ${m.permalink} . Read the message and its thread with the Slack connector, check it against what we did here, and draft a reply for me. Do not post anything to Slack until I approve it.`)} orgName={activeOrgId === 'all' ? 'Default' : orgs.find(o => o.id === activeOrgId)?.name ?? 'Default'} />}
 
         {view.mode === 'automations' && (
           <AutomationsPage

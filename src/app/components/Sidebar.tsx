@@ -80,7 +80,7 @@ interface Props {
   setNotes: (updater: (prev: Note[]) => Note[]) => void
   onOpenNotes: (id: string | null) => void
   onOpenSkills: (name: string | null) => void
-  onOpenSlack: () => void
+  onOpenSlack?: () => void // undefined = Slack not set up for this org: tab hidden
   onOpenAutomations: () => void
   onHome: () => void
   selectedNoteId: string | null
@@ -973,14 +973,14 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
         >
           Skills
         </button>
-        <button
+        {onOpenSlack && <button
           onClick={() => { setTab('slack'); onOpenSlack() }}
           className={`py-2.5 text-xs font-semibold tracking-wide flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
             tab === 'slack' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
           }`}
         >
           Slack
-        </button>
+        </button>}
         <button
           onClick={() => { setTab('automations'); onOpenAutomations() }}
           className={`py-2.5 text-xs font-semibold tracking-wide flex items-center justify-center gap-1.5 transition-colors border-b-2 ${

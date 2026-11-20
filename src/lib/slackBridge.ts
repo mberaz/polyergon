@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
+import { homedir } from 'os'
 import { join } from 'path'
 import { DATA_DIR } from './dataDir'
 import { runClaude } from './meetingAssistant'
@@ -220,13 +221,17 @@ export async function addReaction(permalink: string, emoji: string, orgId: strin
 }
 
 // Suggested reply, in the user's voice, from the message and its thread.
-export async function draftReply(permalink: string, orgId: string = DEFAULT_ORG_ID): Promise<string> {
-  const { result } = await runClaude(
+// ctx: a related session. Drafts from a FORKED copy of it (knows the work; live session untouched).
+export async function draftReply(permalink: string, orgId: string = DEFAULT_ORG_ID, ctx: { resumeId: string; cwd: string } | null = null): Promise<string> {
+  const prompt =
     `Use the Slack connector to read the Slack message at ${permalink} and its whole thread. ` +
     'Write a short, helpful reply that I (the signed-in user, who was tagged) could send. Match the thread\'s language and tone. ' +
-    'If you cannot know the answer, write a reply that says what I will check and by when. Respond with ONLY the reply text.',
-    opts('claude-sonnet-5-5', orgId),
-  )
+    (ctx ? 'Use what you know from this conversation and the code here. ' : '') +
+    'If you cannot know the answer, write a reply that says what I will check and by when. Respond with ONLY the reply text.'
+  const base = opts('claude-sonnet-5-5', orgId)
+  const { result } = ctx
+    ? await runClaude(prompt, { ...base, cwd: ctx.cwd, model: null, resumeId: ctx.resumeId, forkSession: true, timeoutMs: 300_000 })
+    : await runClaude(prompt, base)
   return result.trim()
 }
 
@@ -262,4 +267,16 @@ export async function draftChannelReply(r: ChannelRequest, channel: string, ctx:
     ? await runClaude(prompt, { cwd: ctx.cwd, configDir: ctx.configDir, model: null, extraEnv: slackEnv(ctx.configDir), resumeId: ctx.resumeId, forkSession: true, timeoutMs: 300_000 })
     : await runClaude(prompt, { ...opts('claude-sonnet-5-5', orgId), timeoutMs: 240_000 })
   return result.trim()
+}
+
+// Cheap check (no Claude call): Slack plugin enabled, a Slack MCP server configured,
+// or Slack already worked for this org. claude.ai connectors aren't visible on disk,
+// so the last check covers those after the first successful run.
+export function slackConfigured(orgId: string = DEFAULT_ORG_ID): boolean {
+  if (existsSync(orgFile('slack-me', orgId)) || existsSync(orgFile('slack-channels', orgId))) return true
+  const dir = orgRegistry.get(orgId)?.configDir ?? null
+  const read = (f: string) => { try { return JSON.parse(readFileSync(f, 'utf-8')) } catch { return {} } }
+  const plugins = read(join(dir ?? join(homedir(), '.claude'), 'settings.json')).enabledPlugins ?? {}
+  const servers = read(dir ? join(dir, '.claude.json') : join(homedir(), '.claude.json')).mcpServers ?? {}
+  return Object.entries(plugins).some(([k, on]) => on && /^slack@/.test(k)) || Object.keys(servers).some(k => /slack/i.test(k))
 }

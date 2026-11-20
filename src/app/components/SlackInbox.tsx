@@ -17,7 +17,24 @@ const REACTIONS: [string, string][] = [['thumbsup', '👍'], ['eyes', '👀'], [
 const COLORS = ['bg-rose-600', 'bg-amber-600', 'bg-emerald-600', 'bg-sky-600', 'bg-violet-600', 'bg-pink-600', 'bg-teal-600']
 const colorFor = (name: string) => COLORS[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length]
 
-function Card({ m, onGone, onAgent, suggesting }: { m: SlackMention; onGone: () => void; onAgent: (m: SlackMention) => void; suggesting: boolean }) {
+export interface LinkableSession { id: string; label: string; resumeId: string; cwd: string }
+
+// Card ↔ related session links, per browser (permalink → live session id)
+const LINKS_KEY = 'polyergon:slack-links'
+function loadLinks(): Record<string, string> { try { return JSON.parse(localStorage.getItem(LINKS_KEY) ?? '{}') } catch { return {} } }
+function saveLink(permalink: string, id: string | null) {
+  try { const l = loadLinks(); if (id) l[permalink] = id; else delete l[permalink]; localStorage.setItem(LINKS_KEY, JSON.stringify(l)) } catch {}
+}
+
+interface SessionActions { sessions: LinkableSession[]; onOpenSession: (id: string) => void; onAskSession: (id: string, m: SlackMention) => void }
+
+function Card({ m, onGone, onAgent, suggesting, sessions, onOpenSession, onAskSession }: { m: SlackMention; onGone: () => void; onAgent: (m: SlackMention) => void; suggesting: boolean } & SessionActions) {
+  const [linkedId, setLinkedId] = useState<string | null>(null)
+  const [linking, setLinking] = useState(false)
+  const [asked, setAsked] = useState(false)
+  useEffect(() => { setLinkedId(loadLinks()[m.permalink] ?? null) }, [m.permalink])
+  const linked = sessions.find(x => x.id === linkedId) ?? null
+  const link = (id: string | null) => { saveLink(m.permalink, id); setLinkedId(id); setLinking(false); setAsked(false) }
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState<'draft' | 'send' | 'done' | null>(null)
@@ -62,14 +79,30 @@ function Card({ m, onGone, onAgent, suggesting }: { m: SlackMention; onGone: () 
           <textarea dir="auto" value={text} onChange={e => setText(e.target.value)} rows={4} autoFocus placeholder="Write a reply…"
             className="w-full bg-gray-950 border border-gray-800 focus:border-gray-600 rounded-md px-2.5 py-2 text-sm text-gray-100 outline-none resize-y placeholder-gray-600" />
           <div className="flex gap-2">
-            <button onClick={async () => { const d = await act('draft'); if (d?.text) setText(d.text) }} disabled={!!busy}
-              className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800 disabled:opacity-40">{busy === 'draft' ? 'Drafting…' : '✨ Draft with Claude'}</button>
+            <button onClick={async () => { const d = await act('draft', linked ? { session: { resumeId: linked.resumeId, cwd: linked.cwd } } : {}); if (d?.text) setText(d.text) }} disabled={!!busy}
+              className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800 disabled:opacity-40">{busy === 'draft' ? (linked ? 'Drafting from session…' : 'Drafting…') : '✨ Draft with Claude'}</button>
             <button onClick={async () => { if (await act('reply', { text })) onGone() }} disabled={!!busy || !text.trim()}
               className="ml-auto text-xs px-3 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40">{busy === 'send' ? 'Sending…' : 'Send in thread'}</button>
           </div>
         </div>
       )}
 
+      {linked && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-900/60 bg-emerald-950/30 px-2.5 py-1.5 text-xs">
+          <button onClick={() => onOpenSession(linked.id)} title="Open this session" className="text-emerald-200 hover:underline truncate flex-1 text-left">🔗 {linked.label}</button>
+          <button onClick={() => { onAskSession(linked.id, m); setAsked(true) }} disabled={asked}
+            title="Send this Slack thread into the session (when it's idle) and ask it to look into it and draft a reply. Nothing is posted to Slack."
+            className="px-2 py-0.5 rounded border border-emerald-800 text-emerald-200 hover:bg-emerald-900/40 disabled:opacity-50 flex-shrink-0">{asked ? 'Sent ✓' : 'Ask session'}</button>
+          <button onClick={() => link(null)} title="Unlink" className="text-gray-500 hover:text-gray-200 flex-shrink-0">✕</button>
+        </div>
+      )}
+      {linking && (
+        <select autoFocus defaultValue="" onChange={e => e.target.value && link(e.target.value)} onBlur={() => setLinking(false)}
+          className="mt-3 w-full bg-gray-950 border border-gray-700 rounded-md px-2 py-1.5 text-xs text-gray-200">
+          <option value="" disabled>{sessions.length ? 'Which session is this about?' : 'No running sessions in this org'}</option>
+          {sessions.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+        </select>
+      )}
       {reacted.length > 0 && <p className="text-xs text-gray-400 mt-2">You reacted {reacted.join(' ')}</p>}
       {picker && (
         <div className="flex gap-1 mt-2 bg-gray-950 border border-gray-800 rounded-lg p-1 w-fit">
@@ -84,7 +117,9 @@ function Card({ m, onGone, onAgent, suggesting }: { m: SlackMention; onGone: () 
       <div className="flex items-center gap-1.5 pt-3 whitespace-nowrap">
         {!open && <button onClick={() => setOpen(true)} className="text-xs px-3 h-7 rounded-md bg-blue-600 hover:bg-blue-500 text-white">Reply</button>}
         <button onClick={() => setPicker(p => !p)} className="text-sm w-8 h-7 rounded-md border border-gray-700 hover:bg-gray-800 flex items-center justify-center disabled:opacity-40" title="React with an emoji">🙂</button>
-        <button onClick={() => onAgent(m)} className="text-sm w-8 h-7 rounded-md border border-gray-700 hover:bg-gray-800 flex items-center justify-center disabled:opacity-40" title="Send an agent: a Claude session reads the thread, looks into it and drafts a reply for you">🤖</button>
+        <button onClick={() => onAgent(m)} className="text-sm w-8 h-7 rounded-md border border-gray-700 hover:bg-gray-800 flex items-center justify-center disabled:opacity-40" title="Send an agent: a NEW Claude session reads the thread, looks into it and drafts a reply for you">🤖</button>
+        <button onClick={() => setLinking(l => !l)} className={`text-sm w-8 h-7 rounded-md border hover:bg-gray-800 flex items-center justify-center ${linked ? 'border-emerald-700' : 'border-gray-700'}`}
+          title="Related session: link this message to a running session. Drafts then use what that session knows, and you can ask it directly.">🔗</button>
         <button onClick={async () => { if (await act('done', { react: true })) onGone() }} disabled={!!busy}
           className="text-sm w-8 h-7 rounded-md border border-gray-700 hover:bg-gray-800 flex items-center justify-center disabled:opacity-40 ml-auto" title="Done: adds a ✅ reaction in Slack and hides it here">{busy === 'done' ? '…' : '✅'}</button>
         <button onClick={async () => { if (await act('done', { react: false })) onGone() }} disabled={!!busy}
@@ -95,7 +130,7 @@ function Card({ m, onGone, onAgent, suggesting }: { m: SlackMention; onGone: () 
 }
 
 // Slack messages that tag you and are still open, as cards.
-export function SlackInbox({ onSendAgent, orgName }: { onSendAgent: (m: SlackMention) => void; orgName: string }) {
+export function SlackInbox({ onSendAgent, orgName, sessions, onOpenSession, onAskSession }: { onSendAgent: (m: SlackMention) => void; orgName: string } & SessionActions) {
   const [data, setData] = useState<{ items: SlackMention[]; fetchedAt: number; refreshing: boolean; stage: 'idle' | 'searching' | 'checking' | 'suggesting'; startedAt: number; error: string | null; problem?: SlackProblem | null } | null>(null)
   const [now, setNow] = useState(Date.now())
   const [hidden, setHidden] = useState<Set<string>>(new Set())
@@ -159,7 +194,7 @@ export function SlackInbox({ onSendAgent, orgName }: { onSendAgent: (m: SlackMen
               <div className="mt-4 space-y-2"><div className="h-2.5 rounded bg-gray-800" /><div className="h-2.5 rounded bg-gray-800 w-5/6" /><div className="h-2.5 rounded bg-gray-800 w-2/3" /></div>
             </div>
           ))}
-          {items.map(m => <Card key={m.permalink} m={m} suggesting={data?.stage === 'suggesting'} onGone={() => setHidden(h => new Set(h).add(m.permalink))} onAgent={onSendAgent} />)}
+          {items.map(m => <Card key={m.permalink} m={m} suggesting={data?.stage === 'suggesting'} onGone={() => setHidden(h => new Set(h).add(m.permalink))} onAgent={onSendAgent} sessions={sessions} onOpenSession={onOpenSession} onAskSession={onAskSession} />)}
         </div>
       </div>
     </div>

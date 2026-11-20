@@ -410,6 +410,11 @@ app.prepare().then(async () => {
       } else if (msg.type === 'meeting-mic-test') {
         meetingManager.micTest().then(result => send({ type: 'meeting-mic-test-result', ...result }))
 
+      } else if (msg.type === 'send-to-live') {
+        // User clicked "Ask session" on a Slack card: queue the text for when the session is idle
+        const text = String(msg.text ?? '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, ' ').trim().slice(0, 20000)
+        if (text && liveSessionStore.get(msg.id as string)) sendWhenReady(msg.id as string, text)
+
       } else if (msg.type === 'input') {
         if (currentSessionId) writeToSession(currentSessionId, msg.data as string)
 

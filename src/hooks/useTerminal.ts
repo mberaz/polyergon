@@ -177,5 +177,10 @@ export function useTerminal() {
     }
   }, [])
 
-  return { ws, liveSessions, activeSessionId, activeStatus, lastCreatedId, sessionError, setSessionError, createSession, resumeSession, resumeAllSessions, attachSession, killLiveSession, compactSession, restartSession, setRemote }
+  // Your click only: text goes into that session when it's idle
+  const sendToLive = useCallback((id: string, text: string) => {
+    wsRef.current?.send(JSON.stringify({ type: 'send-to-live', id, text }))
+  }, [])
+
+  return { sendToLive, ws, liveSessions, activeSessionId, activeStatus, lastCreatedId, sessionError, setSessionError, createSession, resumeSession, resumeAllSessions, attachSession, killLiveSession, compactSession, restartSession, setRemote }
 }

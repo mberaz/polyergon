@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getInbox, refreshInbox, markDone } from '@/lib/slackInbox'
 import { replyInThread, addReaction, draftReply } from '@/lib/slackBridge'
 import { orgParam } from '@/lib/orgParam'
+import { existsSync } from 'fs'
 
 // Emoji the inbox offers (Slack names)
 const REACTIONS = ['thumbsup', 'eyes', 'white_check_mark', 'pray', 'heart', 'joy', 'raised_hands', 'fire']
@@ -22,7 +23,12 @@ export async function POST(req: NextRequest) {
   if (!b || !isPermalink(b.permalink)) return NextResponse.json({ error: 'Bad Slack link' }, { status: 400 })
   const org = orgParam(req)
   try {
-    if (b.action === 'draft') return NextResponse.json({ text: await draftReply(b.permalink, org) })
+    if (b.action === 'draft') {
+      const s = (b as { session?: { resumeId?: string; cwd?: string } }).session
+      const ctx = s && typeof s.resumeId === 'string' && /^[0-9a-f-]{36}$/i.test(s.resumeId) && typeof s.cwd === 'string' && s.cwd.startsWith('/') && existsSync(s.cwd)
+        ? { resumeId: s.resumeId, cwd: s.cwd } : null
+      return NextResponse.json({ text: await draftReply(b.permalink, org, ctx) })
+    }
     if (b.action === 'reply') {
       const text = String(b.text ?? '').trim()
       if (!text) return NextResponse.json({ error: 'Write a reply first' }, { status: 400 })
