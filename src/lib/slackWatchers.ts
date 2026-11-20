@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
 import { orgRegistry } from './orgRegistry'
-import { newChannelRequests, draftChannelReply, replyInThread, type SlackChannel } from './slackBridge'
+import { newChannelRequests, draftChannelReply, replyInThread, timeFromPermalink, type SlackChannel } from './slackBridge'
 
 // "Slack channel watcher" automations: every few minutes, find new unanswered
 // questions in a channel and draft replies (optionally from a forked copy of a
@@ -16,7 +16,7 @@ export interface WatchItem {
   author: string
   text: string
   time: string
-  state: 'drafting' | 'pending' | 'sent' | 'dismissed' | 'failed'
+  state: 'drafting' | 'pending' | 'sending' | 'sent' | 'dismissed' | 'failed'
   draft: string | null
   error?: string
 }
@@ -32,13 +32,21 @@ export interface SlackWatcher {
   lastRunAt: number
   checking: boolean
   items: WatchItem[]
-  log: { t: number; text: string }[]
+  log: WatchLog[]
   createdAt: number
+  // Extra knowledge for drafts: one source per line (links, file/folder paths, #channels, notes)
+  knowledge?: string
+  // How to answer (tone, what to never promise, who to tag...)
+  instructions?: string
+  checkedOnce?: boolean // first check looks back BACKLOG_MS
 }
 
 export type WatcherEvent = { type: 'slack-watchers'; items: SlackWatcher[]; notify?: { title: string; body: string } }
 
 const FILE = join(DATA_DIR, 'slack-watchers.json')
+
+// Audit trail: what the watcher did, with the text and Slack link when there is one
+export interface WatchLog { t: number; text: string; detail?: string; link?: string }
 
 class SlackWatcherEngine {
   private items: SlackWatcher[] = []
@@ -60,22 +68,45 @@ class SlackWatcherEngine {
     writeFileSync(FILE, JSON.stringify(this.items, null, 2))
     this.listeners.forEach(fn => fn({ type: 'slack-watchers', items: this.items, notify }))
   }
-  private log(w: SlackWatcher, text: string, notify?: WatcherEvent['notify']) {
-    w.log = [...w.log, { t: Date.now(), text }].slice(-60)
+  private log(w: SlackWatcher, text: string, notify?: WatcherEvent['notify'], extra: Omit<WatchLog, 't' | 'text'> = {}) {
+    w.log = [...w.log, { t: Date.now(), text, ...extra }].slice(-200)
     this.save(notify)
   }
 
-  create(input: { channel: SlackChannel; liveId: string | null; mode: 'approve' | 'auto'; intervalMin: number; orgId: string }): SlackWatcher | { error: string } {
+  create(input: { channel: SlackChannel; liveId: string | null; mode: 'approve' | 'auto'; intervalMin: number; orgId: string; knowledge?: string; instructions?: string }): SlackWatcher | { error: string } {
     if (!input.channel?.name) return { error: 'Pick a channel' }
     if (input.liveId && !liveSessionStore.get(input.liveId)?.claudeSessionId) return { error: 'That session has no Claude conversation yet' }
     const w: SlackWatcher = {
       id: randomUUID(), channel: input.channel, liveId: input.liveId, orgId: (input.liveId && liveSessionStore.get(input.liveId)?.orgId) || input.orgId, mode: input.mode === 'auto' ? 'auto' : 'approve',
       intervalMin: Math.min(60, Math.max(2, Math.round(input.intervalMin) || 5)), status: 'running',
       lastRunAt: Date.now(), checking: false, items: [], log: [], createdAt: Date.now(),
+      knowledge: String(input.knowledge ?? '').slice(0, 4000), instructions: String(input.instructions ?? '').slice(0, 4000),
     }
     this.items = [...this.items, w]
     this.log(w, `Watching #${w.channel.name} for new questions (every ${w.intervalMin} min)`)
     return w
+  }
+
+  // Edit: everything but the channel
+  update(id: string, patch: { liveId?: string | null; mode?: 'approve' | 'auto'; intervalMin?: number; knowledge?: string; instructions?: string }): { error: string } | null {
+    const w = this.items.find(x => x.id === id)
+    if (!w) return { error: 'Not found' }
+    if (patch.liveId && !liveSessionStore.get(patch.liveId)?.claudeSessionId) return { error: 'That session has no Claude conversation yet' }
+    if (patch.liveId !== undefined) w.liveId = patch.liveId || null
+    if (patch.mode) w.mode = patch.mode === 'auto' ? 'auto' : 'approve'
+    if (patch.intervalMin !== undefined) w.intervalMin = Math.min(60, Math.max(2, Math.round(patch.intervalMin) || 5))
+    if (patch.knowledge !== undefined) w.knowledge = String(patch.knowledge).slice(0, 4000)
+    if (patch.instructions !== undefined) w.instructions = String(patch.instructions).slice(0, 4000)
+    this.log(w, 'You edited the watcher', undefined, { detail: [`Mode: ${w.mode === 'auto' ? 'answer automatically' : 'you approve'}`, `Every ${w.intervalMin} min`, w.knowledge ? `Knowledge:\n${w.knowledge}` : '', w.instructions ? `Instructions:\n${w.instructions}` : ''].filter(Boolean).join('\n') })
+    return null
+  }
+
+  setSession(id: string, liveId: string | null) {
+    const w = this.items.find(x => x.id === id)
+    if (!w) return
+    if (liveId && !liveSessionStore.get(liveId)?.claudeSessionId) return
+    w.liveId = liveId
+    this.log(w, liveId ? 'Drafts now use a session\'s knowledge' : 'Drafts now use general knowledge')
   }
 
   stop(id: string) {
@@ -83,20 +114,29 @@ class SlackWatcherEngine {
     if (w && w.status === 'running') { w.status = 'stopped'; this.log(w, 'Stopped by you') }
   }
 
+  private static BACKLOG_MS = 24 * 60 * 60_000
+
   // Check the channel now (also runs on the interval).
   async run(id: string) {
     const w = this.items.find(x => x.id === id)
     if (!w || w.status !== 'running' || w.checking) return
-    const since = new Date(w.lastRunAt - 2 * 60_000).toISOString() // small overlap; dedupe below
+    // First check: last 24h too, so questions already waiting are caught. Later: since last check (small overlap; dedupe below)
+    const since = new Date(w.checkedOnce ? w.lastRunAt - 2 * 60_000 : w.createdAt - SlackWatcherEngine.BACKLOG_MS).toISOString()
     w.checking = true; w.lastRunAt = Date.now(); this.save()
     try {
       const seen = new Set(w.items.map(i => i.permalink))
       const fresh = (await newChannelRequests(w.channel, since, w.orgId)).filter(r => !seen.has(r.permalink))
       if (fresh.length) {
         w.items = [...fresh.map(r => ({ ...r, state: 'drafting' as const, draft: null })), ...w.items].slice(0, 100)
-        this.log(w, `${fresh.length} new question${fresh.length > 1 ? 's' : ''} in #${w.channel.name}`)
+        this.log(w, `Found ${fresh.length} question${fresh.length > 1 ? 's' : ''} in #${w.channel.name}`, undefined, { detail: fresh.map(r => `${r.author}: ${r.text}`).join('\n\n') })
         for (const r of fresh) await this.draft(w, r.permalink)
+      } else {
+        // One rolling line, not one per check
+        const line = `Checked ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: no new questions`
+        if (w.log.at(-1)?.text.startsWith('Checked ')) w.log = w.log.slice(0, -1)
+        this.log(w, line)
       }
+      w.checkedOnce = true
     } catch (e) {
       this.log(w, `Check failed: ${(e as Error).message}`)
     } finally {
@@ -113,18 +153,20 @@ class SlackWatcherEngine {
     const it = w.items.find(i => i.permalink === permalink)
     if (!it) return
     try {
-      it.draft = await draftChannelReply(it, w.channel.name, this.ctxFor(w), w.orgId)
-      if (w.mode === 'auto') {
+      it.draft = await draftChannelReply(it, w.channel.name, this.ctxFor(w), w.orgId, { knowledge: w.knowledge, instructions: w.instructions })
+      // Auto-answer only messages posted after you started the watcher; older backlog waits for your approval
+      const backlog = !(Date.parse(timeFromPermalink(it.permalink) || '') >= w.createdAt) // unknown time counts as backlog
+      if (w.mode === 'auto' && !backlog) {
         await replyInThread(it.permalink, it.draft, w.orgId)
         it.state = 'sent'
-        this.log(w, `Answered ${it.author} automatically`)
+        this.log(w, `Answered ${it.author} automatically`, undefined, { detail: it.draft, link: it.permalink })
       } else {
         it.state = 'pending'
-        this.log(w, `Draft ready for ${it.author}`, { title: `#${w.channel.name}: reply ready`, body: `${it.author}: ${it.text.slice(0, 80)}` })
+        this.log(w, `Drafted a reply to ${it.author}${backlog && w.mode === 'auto' ? ' (older message: waits for your OK)' : ''}`, { title: `#${w.channel.name}: reply ready`, body: `${it.author}: ${it.text.slice(0, 80)}` }, { detail: it.draft, link: it.permalink })
       }
     } catch (e) {
       it.state = 'failed'; it.error = (e as Error).message
-      this.save()
+      this.log(w, `Couldn't draft for ${it.author}`, undefined, { detail: it.error, link: it.permalink })
     }
   }
 
@@ -133,19 +175,24 @@ class SlackWatcherEngine {
     const w = this.items.find(x => x.id === id)
     const it = w?.items.find(i => i.permalink === permalink)
     if (!w || !it) return { error: 'Not found' }
+    // Only one send per question: a second click while posting (or after) does nothing
+    if (it.state !== 'pending' && it.state !== 'failed') return { error: it.state === 'sent' ? 'Already answered' : 'Already sending' }
     const body = (text || it.draft || '').trim()
     if (!body) return { error: 'Nothing to send' }
+    const before = it.state
+    it.state = 'sending'; this.save()
     try {
       await replyInThread(permalink, body.slice(0, 4000), w.orgId)
       it.draft = body; it.state = 'sent'
-      this.log(w, `You answered ${it.author}`)
+      this.log(w, `You sent a reply to ${it.author}`, undefined, { detail: body, link: permalink })
       return null
-    } catch (e) { return { error: (e as Error).message } }
+    } catch (e) { it.state = before; this.save(); return { error: (e as Error).message } }
   }
 
   dismiss(id: string, permalink: string) {
-    const it = this.items.find(x => x.id === id)?.items.find(i => i.permalink === permalink)
-    if (it) { it.state = 'dismissed'; this.save() }
+    const w = this.items.find(x => x.id === id)
+    const it = w?.items.find(i => i.permalink === permalink)
+    if (w && it) { it.state = 'dismissed'; this.log(w, `You dismissed ${it.author}'s question`, undefined, { link: permalink }) }
   }
 
   redraft(id: string, permalink: string) {

@@ -247,8 +247,11 @@ export function parseRequests(raw: string): ChannelRequest[] {
 export async function newChannelRequests(channel: SlackChannel, sinceIso: string, orgId: string = DEFAULT_ORG_ID): Promise<ChannelRequest[]> {
   const target = channel.id ? `${channel.id} (#${channel.name})` : `#${channel.name}`
   const { result } = await runClaude(
-    `Use the Slack connector to read the Slack channel ${target}: messages posted after ${sinceIso}, including thread replies. ` +
-    'Pick the ones that ask a question or request something and that nobody has answered yet. Skip bots, my own messages, and chatter that needs no answer. ' +
+    `Use the Slack connector to read the Slack channel ${target}: messages posted after ${sinceIso}. ` +
+    'Channel history shows only top-level posts, so ALSO open every thread whose latest reply is after that time (even if the thread started earlier) and read its replies. ' +
+    'Pick the messages (top-level or thread replies) that ask a question or request something and that nobody but the asker has answered since. ' +
+    'Several follow-ups from the same person in one thread count as one request: return only their latest message, with the request summarized in "text". ' +
+    'Skip bots, my own messages, and chatter that needs no answer. ' +
     'Respond with ONLY a JSON array, no prose: [{"permalink": "https://…slack.com/archives/…", "author": "display name", "text": "the message text"}]',
     { ...opts('claude-sonnet-5-5', orgId), timeoutMs: 240_000 },
   )
@@ -257,10 +260,12 @@ export async function newChannelRequests(channel: SlackChannel, sinceIso: string
 
 // Draft a reply. With ctx, Claude answers from a forked copy of that session
 // (its knowledge and repo), never touching the live session.
-export async function draftChannelReply(r: ChannelRequest, channel: string, ctx: { resumeId: string; cwd: string; configDir: string | null } | null, orgId: string = DEFAULT_ORG_ID): Promise<string> {
+export async function draftChannelReply(r: ChannelRequest, channel: string, ctx: { resumeId: string; cwd: string; configDir: string | null } | null, orgId: string = DEFAULT_ORG_ID, extra: { knowledge?: string; instructions?: string } = {}): Promise<string> {
   const prompt =
     `Someone asked in Slack #${channel} (${r.permalink}). ${r.author} wrote:\n"""\n${r.text}\n"""\n` +
     'Read the thread with the Slack connector if you need more context. Draft a short, accurate reply I could post in the thread. ' +
+    (extra.knowledge?.trim() ? `Knowledge sources to check first (web links, files/folders on this Mac, Slack channels, notes):\n${extra.knowledge.trim()}\n` : '') +
+    (extra.instructions?.trim() ? `How to answer (follow this):\n${extra.instructions.trim()}\n` : '') +
     'Use what you know from this conversation and the code here. If you are not sure, say what you would check instead of guessing. ' +
     'Respond with ONLY the reply text.'
   const { result } = ctx

@@ -19,6 +19,7 @@ import { AutomationsPage } from './components/AutomationsPage'
 import { HomePage } from './components/HomePage'
 import { WatcherDialog } from './components/WatcherDialog'
 import { useSlackWatchers } from '@/hooks/useSlackWatchers'
+import type { SlackWatcher } from '@/lib/slackWatchers'
 import { setActiveOrg } from '@/lib/activeOrg'
 import { CONNECT_SLACK_EVENT, CLAUDE_LOGIN_EVENT } from './components/SlackProblemBanner'
 import type { SlackMention } from '@/lib/slackBridge'
@@ -48,6 +49,7 @@ export default function Home() {
   const { sendToLive, ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
   const { watchers, watcherError, watcherCmd } = useSlackWatchers(ws, (title, body) => notifyNeedsInput(`👂 ${title}`, body))
   const [showWatcherDialog, setShowWatcherDialog] = useState(false)
+  const [editWatcher, setEditWatcher] = useState<SlackWatcher | null>(null)
   const { pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr, actPipeline, dismissPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
   // prEntries still feeds the notification-suppression logic; the PRs tab
   // itself now renders the GitHub workload inbox
@@ -455,6 +457,7 @@ export default function Home() {
             showMacLoops={activeOrgId === 'all' || activeOrgId === 'default'}
             watcherCmd={watcherCmd}
             onNewWatcher={() => setShowWatcherDialog(true)}
+            onEditWatcher={w => setEditWatcher(w)}
             sessions={liveSessions.filter(s => s.claudeSessionId && (activeOrgId === 'all' || (s.orgId ?? 'default') === activeOrgId)).map(s => ({ id: s.id, label: (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session').slice(0, 70) }))}
             nameOf={id => { const s = liveSessions.find(x => x.id === id); return (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session' }}
             onOpen={id => setAutomateFor(id)}
@@ -549,6 +552,15 @@ export default function Home() {
 
       <CommandPalette items={paletteItems} />
 
+      {editWatcher && (
+        <WatcherDialog
+          initial={editWatcher}
+          sessions={liveSessions.filter(s => s.claudeSessionId && (s.orgId ?? 'default') === (editWatcher.orgId ?? 'default')).map(s => ({ id: s.id, label: (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session').slice(0, 70) }))}
+          error={watcherError}
+          onCreate={({ liveId, mode, intervalMin, knowledge, instructions }) => watcherCmd('watcher-update', { id: editWatcher.id, patch: { liveId, mode, intervalMin, knowledge, instructions } })}
+          onClose={() => setEditWatcher(null)}
+        />
+      )}
       {showWatcherDialog && (
         <WatcherDialog
           sessions={liveSessions.filter(s => s.claudeSessionId && (activeOrgId === 'all' || (s.orgId ?? 'default') === activeOrgId)).map(s => ({ id: s.id, label: (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session').slice(0, 70) }))}

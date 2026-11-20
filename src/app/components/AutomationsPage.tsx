@@ -1,7 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Pipeline } from '@/lib/pipelines'
-import type { SlackWatcher, WatchItem } from '@/lib/slackWatchers'
+import type { SlackWatcher, WatchItem, WatchLog } from '@/lib/slackWatchers'
 import { isRunning, pipelineSummary } from '@/lib/pipelineView'
 import { PrCard } from './AutomateDialog'
 import { Combobox, type ComboOption } from './Combobox'
@@ -10,6 +10,8 @@ import { ExistingAutomations } from './ExistingAutomations'
 function WatchCard({ it, onSend, onDismiss, onRedraft }: { it: WatchItem; onSend: (text: string) => void; onDismiss: () => void; onRedraft: () => void }) {
   const [text, setText] = useState(it.draft ?? '')
   const [editing, setEditing] = useState(false)
+  const [clicked, setClicked] = useState(false) // one click = one post
+  useEffect(() => { setClicked(false) }, [it.state])
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-950/50 p-3">
       <div className="flex items-center gap-2 text-xs">
@@ -20,6 +22,7 @@ function WatchCard({ it, onSend, onDismiss, onRedraft }: { it: WatchItem; onSend
       {it.state === 'drafting' && <p className="text-xs text-gray-500 mt-2 animate-pulse">Drafting a reply…</p>}
       {it.state === 'failed' && <p className="text-xs text-red-400 mt-2">Draft failed: {it.error} <button onClick={onRedraft} className="underline">Try again</button></p>}
       {it.state === 'sent' && <p className="text-xs text-emerald-400 mt-2">✓ Answered: <span className="text-gray-400">{it.draft}</span></p>}
+      {it.state === 'sending' && <p className="text-xs text-blue-300 mt-2 animate-pulse">Posting in Slack…</p>}
       {it.state === 'pending' && (
         <div className="mt-2 rounded-md bg-blue-950/40 border border-blue-900/50 p-2">
           <p className="text-[10px] font-semibold text-blue-300/80 uppercase tracking-wide mb-1">💡 Draft reply</p>
@@ -27,7 +30,7 @@ function WatchCard({ it, onSend, onDismiss, onRedraft }: { it: WatchItem; onSend
             ? <textarea dir="auto" value={text} onChange={e => setText(e.target.value)} rows={4} className="w-full bg-gray-950 border border-gray-800 rounded px-2 py-1.5 text-xs text-gray-100 outline-none" />
             : <p dir="auto" className="text-xs text-blue-100/90 whitespace-pre-wrap">{it.draft}</p>}
           <div className="flex gap-2 mt-2">
-            <button onClick={() => onSend(editing ? text : it.draft ?? '')} className="text-xs px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white">Send in thread</button>
+            <button onClick={() => { setClicked(true); onSend(editing ? text : it.draft ?? '') }} disabled={clicked} className="text-xs px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">{clicked ? 'Posting…' : 'Send in thread'}</button>
             {!editing && <button onClick={() => { setText(it.draft ?? ''); setEditing(true) }} className="text-xs px-2 py-1 rounded-md border border-gray-700 hover:bg-gray-800">Edit</button>}
             <button onClick={onRedraft} className="text-xs px-2 py-1 rounded-md text-gray-400 hover:text-white">Redraft</button>
             <button onClick={onDismiss} className="ml-auto text-xs px-2 py-1 rounded-md text-gray-500 hover:text-white">Dismiss</button>
@@ -39,7 +42,35 @@ function WatchCard({ it, onSend, onDismiss, onRedraft }: { it: WatchItem; onSend
 }
 
 // Every automation in one place, plus a gallery to create new ones.
-export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen, onStop, onNewWatcher, watcherCmd, showMacLoops }: {
+// Collapsible audit trail, newest first; each entry expands to the text it handled
+function WatchAudit({ log }: { log: WatchLog[] }) {
+  if (!log.length) return null
+  const time = (t: number) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return (
+    <details className="mt-3 group">
+      <summary className="text-xs text-gray-400 hover:text-gray-200 cursor-pointer select-none list-none">
+        <span className="inline-block transition-transform group-open:rotate-90">▸</span> Activity log ({log.length})
+      </summary>
+      <ol className="mt-2 border-l border-gray-800 ml-1.5 pl-3 space-y-1.5">
+        {[...log].reverse().map((e, i) => (
+          <li key={e.t + ':' + i} className="text-xs">
+            <span className="text-gray-500 tabular-nums mr-2">{time(e.t)}</span>
+            <span className="text-gray-300">{e.text}</span>
+            {e.link && <a href={e.link} target="_blank" rel="noreferrer" className="ml-2 text-blue-400 hover:underline">Slack ↗</a>}
+            {e.detail && (
+              <details className="mt-1">
+                <summary className="text-[11px] text-gray-500 hover:text-gray-300 cursor-pointer">show text</summary>
+                <p dir="auto" className="mt-1 whitespace-pre-wrap text-gray-400 bg-gray-950/60 border border-gray-800 rounded px-2 py-1.5 [overflow-wrap:anywhere]">{e.detail}</p>
+              </details>
+            )}
+          </li>
+        ))}
+      </ol>
+    </details>
+  )
+}
+
+export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen, onStop, onNewWatcher, onEditWatcher, watcherCmd, showMacLoops }: {
   showMacLoops: boolean // the Mac's launchd loops run with ~/.claude (Default)
   pipelines: Pipeline[]
   watchers: SlackWatcher[]
@@ -48,6 +79,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
   onOpen: (liveId: string) => void
   onStop: (id: string) => void
   onNewWatcher: () => void
+  onEditWatcher: (w: SlackWatcher) => void
   watcherCmd: (type: string, body?: object) => void
 }) {
   const [shipFor, setShipFor] = useState('')
@@ -92,19 +124,39 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
         {showMacLoops && <ExistingAutomations />}
 
         {liveWatchers.map(w => {
-          const open = w.items.filter(i => i.state === 'pending' || i.state === 'drafting' || i.state === 'failed')
+          const open = w.items.filter(i => i.state === 'pending' || i.state === 'drafting' || i.state === 'sending' || i.state === 'failed')
+          const chip = 'text-[11px] px-2 py-0.5 rounded-full border border-gray-700 text-gray-400 whitespace-nowrap'
+          const sources = (w.knowledge ?? '').split('\n').map(x => x.trim()).filter(Boolean)
           return (
             <section key={w.id} className="rounded-xl border border-gray-800 bg-gray-900/40 p-4">
-              <div className="flex items-center gap-3 mb-3 flex-wrap">
-                <span className={`w-2 h-2 rounded-full ${w.status === 'running' ? 'bg-blue-400 animate-pulse' : 'bg-gray-600'}`} />
-                <span className="text-sm font-medium">👂 #{w.channel.name}</span>
-                <span className="text-xs text-gray-500">{w.liveId ? `with ${nameOf(w.liveId)}` : 'general knowledge'} · {w.mode === 'auto' ? 'answers automatically' : 'you approve'} · every {w.intervalMin} min</span>
-                {w.checking && <span className="text-xs text-blue-300 animate-pulse">checking…</span>}
-                <span className="ml-auto flex gap-2">
+              <div className="flex items-start gap-3 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${w.status === 'running' ? 'bg-emerald-400' : 'bg-gray-600'}`} title={w.status === 'running' ? 'Running' : 'Stopped'} />
+                    <span className="text-sm font-semibold">Slack watcher · #{w.channel.name}</span>
+                    {w.checking && <span className="text-[11px] text-blue-300 animate-pulse">checking…</span>}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                    <select value={w.liveId ?? ''} onChange={e => watcherCmd('watcher-set-session', { id: w.id, liveId: e.target.value || null })}
+                      title="Session whose knowledge drafts use (a copy; the session is never touched)"
+                      className="text-[11px] bg-gray-900 border border-gray-700 rounded-full px-2 py-0.5 text-gray-300 max-w-[240px]">
+                      <option value="">🧠 General knowledge</option>
+                      {w.liveId && !sessions.some(o => o.id === w.liveId) && <option value={w.liveId}>🧠 {nameOf(w.liveId)}</option>}
+                      {sessions.map(o => <option key={o.id} value={o.id}>🧠 {o.label}</option>)}
+                    </select>
+                    <span className={`${chip} ${w.mode === 'auto' ? 'border-amber-700/60 text-amber-300' : ''}`}>{w.mode === 'auto' ? 'Answers automatically' : 'You approve each reply'}</span>
+                    <span className={chip}>Every {w.intervalMin} min</span>
+                    <span className={chip} title={sources.join('\n') || 'No extra sources. Edit to add links, folders, channels or notes.'}>📚 {sources.length} source{sources.length === 1 ? '' : 's'}</span>
+                    {w.instructions && <span className={chip} title={w.instructions}>📝 Rules</span>}
+                  </div>
+                </div>
+                <span className="flex gap-2 flex-shrink-0">
                   {w.status === 'running' && <button onClick={() => watcherCmd('watcher-run', { id: w.id })} disabled={w.checking} className="text-xs px-2.5 py-1 rounded-md border border-gray-700 hover:bg-gray-800 disabled:opacity-40">Check now</button>}
+                  <button onClick={() => onEditWatcher(w)} className="text-xs px-2.5 py-1 rounded-md border border-gray-700 hover:bg-gray-800">Edit</button>
                   {w.status === 'running' && <button onClick={() => watcherCmd('watcher-stop', { id: w.id })} className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-red-400 hover:bg-red-950/40">Stop</button>}
                 </span>
               </div>
+              <div className="mt-3">
               {open.length
                 ? <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))' }}>
                     {open.map(it => <WatchCard key={it.permalink} it={it}
@@ -112,7 +164,9 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
                       onDismiss={() => watcherCmd('watcher-dismiss', { id: w.id, permalink: it.permalink })}
                       onRedraft={() => watcherCmd('watcher-redraft', { id: w.id, permalink: it.permalink })} />)}
                   </div>
-                : <p className="text-xs text-gray-500">{w.log.at(-1)?.text ?? 'No new questions yet.'}</p>}
+                : <p className="text-xs text-gray-500">Nothing waiting on you. Last: {w.log.at(-1)?.text ?? 'no checks yet'}</p>}
+              </div>
+              <WatchAudit log={w.log} />
             </section>
           )
         })}

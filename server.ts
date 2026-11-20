@@ -14,6 +14,7 @@ import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
 import { pipelineEngine } from './src/lib/pipelines'
+import { keepAwake } from './src/lib/keepAwake'
 import { slackWatchers } from './src/lib/slackWatchers'
 import { meetingStore, type ContextKind } from './src/lib/meetingStore'
 import { sessionNameStore } from './src/lib/sessionNameStore'
@@ -111,6 +112,7 @@ app.prepare().then(async () => {
   // like a terminal session; any open tab shows its state.
   pipelineEngine.start()
   slackWatchers.start()
+  keepAwake.start()
   slackWatchers.on((ev) => {
     const msg = JSON.stringify(ev)
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg) })
@@ -366,11 +368,17 @@ app.prepare().then(async () => {
           channel: { id: String(c.id ?? '').replace(/[^A-Z0-9]/gi, ''), name: String(c.name ?? '').replace(/^#/, '').slice(0, 80) },
           liveId: (msg.liveId as string) || null, mode: msg.mode === 'auto' ? 'auto' : 'approve', intervalMin: Number(msg.intervalMin) || 5,
           orgId: typeof msg.orgId === 'string' && orgRegistry.get(msg.orgId) ? msg.orgId : DEFAULT_ORG_ID,
+          knowledge: typeof msg.knowledge === 'string' ? msg.knowledge : '', instructions: typeof msg.instructions === 'string' ? msg.instructions : '',
         })
         if ('error' in result) send({ type: 'watcher-error', message: result.error })
         else slackWatchers.run(result.id)
       } else if (msg.type === 'watcher-stop') {
         slackWatchers.stop(msg.id as string)
+      } else if (msg.type === 'watcher-update') {
+        const err = slackWatchers.update(msg.id as string, (msg.patch ?? {}) as Parameters<typeof slackWatchers.update>[1])
+        if (err) send({ type: 'watcher-error', message: err.error })
+      } else if (msg.type === 'watcher-set-session') {
+        slackWatchers.setSession(msg.id as string, (msg.liveId as string | null) || null)
       } else if (msg.type === 'watcher-run') {
         slackWatchers.run(msg.id as string)
       } else if (msg.type === 'watcher-send') {

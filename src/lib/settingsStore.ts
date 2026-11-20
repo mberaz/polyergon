@@ -11,12 +11,14 @@ export interface Settings {
   notifications: { enabled: boolean }
   // Off by default: agents ask before running commands or editing files.
   sessions: { skipPermissions: boolean }
+  // Keep the Mac from idle-sleeping so sessions/automations keep running (screen may still lock)
+  power: { keepAwake: boolean }
 }
 
 // Claude Code's CLAUDE_CODE_AUTO_COMPACT_WINDOW accepts 100k–1M.
 export const AUTO_COMPACT_MIN = 100_000
 export const AUTO_COMPACT_MAX = 1_000_000
-export const DEFAULT_SETTINGS: Settings = { autoCompact: { enabled: true, windowTokens: 300_000 }, notifications: { enabled: true }, sessions: { skipPermissions: false } }
+export const DEFAULT_SETTINGS: Settings = { autoCompact: { enabled: true, windowTokens: 300_000 }, notifications: { enabled: true }, sessions: { skipPermissions: false }, power: { keepAwake: false } }
 
 const FILE = join(DATA_DIR, 'settings.json')
 
@@ -31,6 +33,7 @@ export function getSettings(file = FILE): Settings {
       autoCompact: { enabled: !!ac.enabled, windowTokens: clamp(Number(ac.windowTokens) || DEFAULT_SETTINGS.autoCompact.windowTokens) },
       notifications: { enabled: !!nt.enabled },
       sessions: { skipPermissions: raw.sessions?.skipPermissions === true },
+      power: { keepAwake: raw.power?.keepAwake === true },
     }
   } catch {
     return structuredClone(DEFAULT_SETTINGS)
@@ -43,6 +46,7 @@ export function updateSettings(patch: Partial<Settings>, file = FILE): Settings 
     autoCompact: { ...cur.autoCompact, ...patch.autoCompact },
     notifications: { enabled: !!{ ...cur.notifications, ...patch.notifications }.enabled },
     sessions: { skipPermissions: ({ ...cur.sessions, ...patch.sessions }).skipPermissions === true },
+    power: { keepAwake: ({ ...cur.power, ...patch.power }).keepAwake === true },
   }
   next.autoCompact.windowTokens = clamp(Number(next.autoCompact.windowTokens) || cur.autoCompact.windowTokens)
   next.autoCompact.enabled = !!next.autoCompact.enabled
