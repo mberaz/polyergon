@@ -24,6 +24,11 @@ function loadDefault(): { backend?: string; model?: string } {
   try { return JSON.parse(localStorage.getItem(DEFAULT_KEY) ?? '{}') } catch { return {} }
 }
 
+// Hover help: native tooltip, no library
+const Hint = ({ text }: { text: string }) => (
+  <span title={text} aria-label={text} className="ml-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-gray-600 text-[9px] text-gray-400 cursor-help align-middle">?</span>
+)
+
 export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onConfirm, onResumeById, onCancel }: Props) {
   const [custom, setCustom] = useState('')
   const [showCustom, setShowCustom] = useState(false)
@@ -57,7 +62,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
     // project. "Just chat" below is the friendly entry point for those.
     const isInternal = (p: string) =>
       /\/General(\/[^/]+)?$/.test(p) ||               // ~/General and its per-chat scratch dirs
-      /\/\.claude-session-manager\/meetings\//.test(p) || // meeting recording dirs
+      /\/\.(claude-session-manager|polyergon[^/]*)(\/|$)/.test(p) || // app data + meeting recording dirs
       /^\/private\/(tmp|var\/folders)\//.test(p) ||   // macOS temp dirs
       p === '/tmp'
     const unique = Array.from(new Set(knownCwds.filter(Boolean))).filter(p => !isInternal(p))
@@ -153,7 +158,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onCancel}>
       <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-[480px] shadow-xl" onClick={e => e.stopPropagation()}>
         <h2 className="text-white font-semibold mb-1">New Session</h2>
-        <p className="text-xs text-gray-500 mb-4">Start a quick chat, or open one of your projects</p>
+        <p className="text-xs text-gray-500 mb-4">Pick how to start. <b className="text-gray-400">Just chat</b> works for most things; pick a folder only when Claude should work on that code.</p>
 
         {/* Name field */}
         <input
@@ -161,13 +166,14 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
           value={name}
           onChange={e => setName(e.target.value)}
           placeholder="Session name (optional)"
+          title="Shown on the session card, in History and in Remote Control. Leave empty and Claude names it from your first message."
           className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-600 mb-4"
           autoFocus
         />
 
         {/* Org select */}
         <div className="mb-3">
-          <label className="text-xs text-gray-500 mb-1 block">Org</label>
+          <label className="text-xs text-gray-500 mb-1 block">Org<Hint text="Which Claude account runs this session. Each org has its own login, billing, skills, Slack and integrations." /></label>
           <select
             value={orgId}
             onChange={e => setOrgId(e.target.value)}
@@ -201,7 +207,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
                 className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none font-mono border border-gray-700 focus:border-blue-500 placeholder-gray-600"
               />
               <p className="text-xs text-gray-500">
-                First run <code className="text-gray-400">CLAUDE_CONFIG_DIR={newOrgConfigDir || '<path>'} claude</code> and complete <code className="text-gray-400">/login</code> yourself — this app doesn&apos;t automate login.
+                A folder where this org&apos;s Claude settings and login live (it&apos;s created if missing). After adding, sign in from Settings → Claude sign-in.
               </p>
               {addOrgError && <p className="text-xs text-red-400">{addOrgError}</p>}
               <div className="flex items-center gap-3">
@@ -218,7 +224,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
               onClick={() => setShowAddOrg(true)}
               className="w-full text-left px-3 py-2 mt-2 text-sm text-gray-500 hover:text-gray-300 border border-dashed border-gray-700 rounded hover:border-gray-500 transition-colors"
             >
-              + Register new org…
+              <span title="Add another Claude account (e.g. a second company) with its own config folder.">+ Register new org…</span>
             </button>
           )}
         </div>
@@ -226,7 +232,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
         {/* Backend + Model */}
         <div className="mb-3 grid grid-cols-2 gap-2">
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Agent</label>
+            <label className="text-xs text-gray-500 mb-1 block">Agent<Hint text="The CLI that runs the session: Claude Code, or GitHub Copilot CLI when installed." /></label>
             <select
               value={backend}
               onChange={e => setBackend(e.target.value)}
@@ -239,7 +245,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
             </select>
           </div>
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Model</label>
+            <label className="text-xs text-gray-500 mb-1 block">Model<Hint text="The model the session starts with. You can switch later inside the session with /model." /></label>
             <select
               value={model}
               onChange={e => setModel(e.target.value)}
@@ -258,6 +264,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
         <div className="flex items-center gap-2 mb-3 -mt-1">
           <button
             onClick={setAsDefault}
+            title="Pre-select this agent and model every time you open New Session"
             disabled={!model || isCurrentDefault}
             className="text-xs text-gray-500 hover:text-blue-400 disabled:hover:text-gray-500 disabled:opacity-50 transition-colors"
           >
@@ -274,6 +281,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
             {/* Just chat — the friendly, no-project entry point */}
             <button
               onClick={() => start('general')}
+              title="Starts in a private scratch folder. Good for questions, research, Slack, docs and one-off tasks."
               className="w-full text-left px-3 py-2.5 mb-3 flex items-center gap-3 rounded border border-gray-700 hover:bg-gray-800 hover:border-gray-600 transition-colors"
             >
               <span className="text-lg leading-none">💬</span>
@@ -286,7 +294,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
             {/* Project folders */}
             {folders.length > 0 && (
               <>
-                <p className="text-[11px] uppercase tracking-wide text-gray-600 mb-1">Open a project</p>
+                <p className="text-[11px] uppercase tracking-wide text-gray-600 mb-1">Or work in a folder<Hint text="Claude starts inside this folder: it reads and edits its files, runs commands there, and loads the folder's CLAUDE.md. Listed: folders you used before." /></p>
                 <div className="max-h-56 overflow-y-auto rounded border border-gray-700 mb-3">
                   {folders.map(cwd => {
                     const basename = cwd.split('/').at(-1) || cwd
@@ -294,6 +302,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
                       <button
                         key={cwd}
                         onClick={() => start(cwd)}
+                        title={`Start Claude inside ${cwd}`}
                         className="w-full text-left px-3 py-2.5 flex flex-col border-b border-gray-800 last:border-0 hover:bg-gray-800 transition-colors"
                       >
                         <span className="text-sm text-gray-200 font-medium">{basename}</span>
@@ -337,6 +346,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
         ) : (
           <button
             onClick={() => setShowCustom(true)}
+            title="Type the full path of any folder on this Mac, e.g. a repo you haven't used here yet"
             className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:text-gray-300 border border-dashed border-gray-700 rounded hover:border-gray-500 transition-colors mb-3"
           >
             + Open a different folder…
@@ -375,6 +385,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
           ) : (
             <button
               onClick={() => setShowResumeById(true)}
+              title="Continue an existing Claude conversation (from the terminal or another app) by pasting its session ID"
               className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:text-gray-300 border border-dashed border-gray-700 rounded hover:border-gray-500 transition-colors"
             >
               ↩ Resume by session ID…

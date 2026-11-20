@@ -30,8 +30,13 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 function opts(model = 'claude-haiku-5-5', orgId: string = DEFAULT_ORG_ID) {
   const org = orgRegistry.get(orgId) ?? orgRegistry.get(DEFAULT_ORG_ID)
   mkdirSync(DATA_DIR, { recursive: true })
-  return { cwd: DATA_DIR, configDir: org?.configDir ?? null, model }
+  return { cwd: DATA_DIR, configDir: org?.configDir ?? null, model, extraEnv: slackEnv(org?.configDir ?? null) }
 }
+
+// In -p, Claude dedups the Slack plugin against the "claude.ai Slack" connector; when that
+// connector isn't signed in, BOTH get dropped. Orgs with their own config use the plugin, so
+// turn the claude.ai connectors off there. Default keeps its signed-in claude.ai Slack.
+const slackEnv = (configDir: string | null) => configDir ? { ENABLE_CLAUDEAI_MCP_SERVERS: 'false' } : undefined
 
 // Pulls the first JSON array out of a reply (tolerates fences / prose).
 export function parseChannels(raw: string): SlackChannel[] {
@@ -254,7 +259,7 @@ export async function draftChannelReply(r: ChannelRequest, channel: string, ctx:
     'Use what you know from this conversation and the code here. If you are not sure, say what you would check instead of guessing. ' +
     'Respond with ONLY the reply text.'
   const { result } = ctx
-    ? await runClaude(prompt, { cwd: ctx.cwd, configDir: ctx.configDir, model: null, resumeId: ctx.resumeId, forkSession: true, timeoutMs: 300_000 })
+    ? await runClaude(prompt, { cwd: ctx.cwd, configDir: ctx.configDir, model: null, extraEnv: slackEnv(ctx.configDir), resumeId: ctx.resumeId, forkSession: true, timeoutMs: 300_000 })
     : await runClaude(prompt, { ...opts('claude-sonnet-5-5', orgId), timeoutMs: 240_000 })
   return result.trim()
 }

@@ -20,7 +20,7 @@ import { HomePage } from './components/HomePage'
 import { WatcherDialog } from './components/WatcherDialog'
 import { useSlackWatchers } from '@/hooks/useSlackWatchers'
 import { setActiveOrg } from '@/lib/activeOrg'
-import { CONNECT_SLACK_EVENT } from './components/SlackProblemBanner'
+import { CONNECT_SLACK_EVENT, CLAUDE_LOGIN_EVENT } from './components/SlackProblemBanner'
 import type { SlackMention } from '@/lib/slackBridge'
 import { useNotes } from '@/hooks/useNotes'
 import { usePipelines } from '@/hooks/usePipelines'
@@ -282,8 +282,14 @@ export default function Home() {
       pendingNameRef.current = 'Connect Slack'
       createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, 'Connect Slack', undefined, undefined, '/mcp')
     }
+    // Not logged in: Claude shows its own sign-in screen at startup. Logged in: /login switches account.
+    const login = () => {
+      pendingNameRef.current = 'Claude sign-in'
+      createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, 'Claude sign-in', undefined, undefined, '/login')
+    }
     window.addEventListener(CONNECT_SLACK_EVENT, open)
-    return () => window.removeEventListener(CONNECT_SLACK_EVENT, open)
+    window.addEventListener(CLAUDE_LOGIN_EVENT, login)
+    return () => { window.removeEventListener(CONNECT_SLACK_EVENT, open); window.removeEventListener(CLAUDE_LOGIN_EVENT, login) }
   }, [activeOrgId, createSession])
 
   function handleReviewWithClaude(url: string) {

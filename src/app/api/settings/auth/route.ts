@@ -1,9 +1,10 @@
 export const dynamic = 'force-dynamic' // never prerender: reads live local state
 import { NextRequest, NextResponse } from 'next/server'
-import { getClaudeAuthStatus, saveClaudeAuth, type ClaudeAuthInput } from '@/lib/claudeAuth'
+import { getClaudeAuthStatus, saveClaudeAuth, claudeLoginStatus, type ClaudeAuthInput } from '@/lib/claudeAuth'
+import { orgConfigDir } from '@/lib/orgParam'
 
-export async function GET() {
-  return NextResponse.json(getClaudeAuthStatus())
+export async function GET(req: NextRequest) {
+  return NextResponse.json({ ...getClaudeAuthStatus(), login: await claudeLoginStatus(orgConfigDir(req)) })
 }
 
 export async function PUT(req: NextRequest) {

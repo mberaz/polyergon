@@ -1,3 +1,4 @@
+import { execFile } from 'child_process'
 import { CONFIG_FILE, readConfig, writeConfig } from './configFile'
 
 // How Claude sessions authenticate: the CLI's own login (subscription / SSO),
@@ -39,4 +40,19 @@ export function claudeAuthEnv(file = CONFIG_FILE): Record<string, string> {
   return cfg.claudeAuth === 'apiKey' && typeof cfg.anthropicApiKey === 'string' && cfg.anthropicApiKey
     ? { ANTHROPIC_API_KEY: cfg.anthropicApiKey }
     : {}
+}
+
+export interface ClaudeLogin { loggedIn: boolean; email: string | null; orgName: string | null; plan: string | null }
+
+// `claude auth status` for a config folder (null = ~/.claude). Unknown → null.
+export function claudeLoginStatus(configDir: string | null): Promise<ClaudeLogin | null> {
+  const env = { ...process.env, ...(configDir ? { CLAUDE_CONFIG_DIR: configDir } : {}) }
+  return new Promise(resolve => {
+    execFile('claude', ['auth', 'status'], { env, timeout: 20_000 }, (_err, stdout) => {
+      try {
+        const j = JSON.parse(stdout)
+        resolve({ loggedIn: !!j.loggedIn, email: j.email ?? null, orgName: j.orgName ?? null, plan: j.subscriptionType ?? null })
+      } catch { resolve(null) }
+    })
+  })
 }

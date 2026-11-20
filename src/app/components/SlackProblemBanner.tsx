@@ -4,6 +4,9 @@ import type { SlackProblem } from '@/lib/slackBridge'
 // Event the page listens for: opens a new session in the org running /mcp
 export const CONNECT_SLACK_EVENT = 'polyergon:connect-slack'
 export const connectSlack = () => window.dispatchEvent(new Event(CONNECT_SLACK_EVENT))
+// Same idea for Claude sign-in: a new session in the org running /login
+export const CLAUDE_LOGIN_EVENT = 'polyergon:claude-login'
+export const claudeLogin = () => window.dispatchEvent(new Event(CLAUDE_LOGIN_EVENT))
 
 const COPY: Record<SlackProblem, { title: (org: string) => string; why: string; fix: string }> = {
   auth: {

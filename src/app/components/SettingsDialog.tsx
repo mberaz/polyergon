@@ -2,7 +2,9 @@
 import { useEffect, useState } from 'react'
 import type { Settings } from '@/lib/settingsStore'
 import type { TranscriptionStatus } from '@/lib/meetingConfig'
-import type { ClaudeAuthStatus } from '@/lib/claudeAuth'
+import type { ClaudeAuthStatus, ClaudeLogin } from '@/lib/claudeAuth'
+import { withOrg } from '@/lib/activeOrg'
+import { claudeLogin } from './SlackProblemBanner'
 import { setNotificationsEnabled } from '@/hooks/useDesktopNotifications'
 
 const MIN_K = 100
@@ -23,7 +25,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [tDeployment, setTDeployment] = useState('')
   const [tKey, setTKey] = useState('')
   const [tDirty, setTDirty] = useState(false)
-  const [auth, setAuth] = useState<ClaudeAuthStatus | null>(null)
+  const [auth, setAuth] = useState<(ClaudeAuthStatus & { login: ClaudeLogin | null }) | null>(null)
   const [authMode, setAuthMode] = useState<'login' | 'apiKey'>('login')
   const [authKey, setAuthKey] = useState('')
   const [authDirty, setAuthDirty] = useState(false)
@@ -48,7 +50,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   }, [])
 
   useEffect(() => {
-    fetch('/api/settings/auth').then(r => r.json()).then((a: ClaudeAuthStatus) => { setAuth(a); setAuthMode(a.mode) }).catch(() => {})
+    fetch(withOrg('/api/settings/auth')).then(r => r.json()).then((a: ClaudeAuthStatus & { login: ClaudeLogin | null }) => { setAuth(a); setAuthMode(a.mode) }).catch(() => {})
   }, [])
 
   const editT = <T,>(set: (v: T) => void) => (v: T) => { set(v); setTDirty(true); setState('idle') }
@@ -107,6 +109,19 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'login'} onChange={() => { setAuthMode('login'); setAuthDirty(true); setState('idle') }} />Claude login</label>
             <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'apiKey'} onChange={() => { setAuthMode('apiKey'); setAuthDirty(true); setState('idle') }} />API key</label>
           </div>
+          {authMode === 'login' && (
+            <div className="flex items-center gap-2 text-xs rounded border border-gray-800 bg-gray-900/60 px-2.5 py-2">
+              {!auth ? <span className="text-gray-500">Checking sign-in…</span>
+                : auth.login?.loggedIn ? <span className="text-emerald-300 flex-1">✓ Signed in{auth.login.email ? ` as ${auth.login.email}` : ''}{auth.login.orgName ? ` · ${auth.login.orgName}` : ''}{auth.login.plan ? ` · ${auth.login.plan}` : ''}</span>
+                : auth.login ? <span className="text-amber-300 flex-1">Not signed in. Sessions in this org will ask you to log in.</span>
+                : <span className="text-gray-500 flex-1">Couldn't check sign-in (is the claude CLI installed?)</span>}
+              {auth && (
+                <button type="button" onClick={() => { claudeLogin(); onClose() }}
+                  title="Opens a new session in this org running /login. Follow the browser sign-in, then come back."
+                  className="px-2 py-1 rounded border border-gray-700 text-gray-200 hover:bg-gray-800">{auth.login?.loggedIn ? 'Switch account' : 'Sign in'}</button>
+              )}
+            </div>
+          )}
           {authMode === 'apiKey' && (
             <label className="block text-xs text-gray-400">Anthropic API key
               <input type="password" autoComplete="off" value={authKey} onChange={e => { setAuthKey(e.target.value); setAuthDirty(true); setState('idle') }}
@@ -115,7 +130,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           )}
           <p className="text-xs text-gray-500 leading-relaxed">
             {authMode === 'login'
-              ? 'Sessions use the account you logged in with in Claude Code (subscription or SSO).'
+              ? 'Sessions use the account you logged in with in Claude Code (subscription or SSO). Each org has its own login.'
               : 'Sessions bill this API key at API rates. Claude Code may ask once, in the session, to confirm using the key. Applies to sessions started, resumed or restarted after you save.'}
           </p>
         </section>

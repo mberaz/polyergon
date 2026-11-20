@@ -23,6 +23,7 @@ export function runClaude(prompt: string, opts: AssistantSpawnOpts & { resumeId?
       ),
       ...claudeAuthEnv(),
       ...(opts.configDir ? { CLAUDE_CONFIG_DIR: opts.configDir } : {}),
+      ...opts.extraEnv,
     } as NodeJS.ProcessEnv
     const proc = spawn('claude', args, { cwd: opts.cwd, env })
     let stdout = ''
@@ -53,6 +54,7 @@ export interface AssistantSpawnOpts {
   cwd: string
   configDir: string | null
   model: string | null
+  extraEnv?: Record<string, string>
 }
 
 export interface NotesTickResult {
