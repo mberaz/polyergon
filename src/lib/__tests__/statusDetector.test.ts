@@ -32,6 +32,8 @@ describe('detectStatus', () => {
     // Turn finished: the summary line keeps the glyph but is not busy
     expect(detectStatus('● Hi. What do you need?\n\n✻ Brewed for 1s · done 14:49\n\n❯ ')).toBe('waiting')
     expect(detectStatus('✻ Cooked for 2m 3s\n\n❯ ')).toBe('waiting')
+    // Busy with a tool call: the spinner scrolled away but the footer still says so
+    expect(detectStatus('✻ Brewed for 1s · done 14:49\n  ⎿  Running…\n❯ \n  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt')).toBe('thinking')
   })
 
   it('returns waiting when the idle footer wraps and "·" lands at column 0', () => {

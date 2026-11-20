@@ -82,6 +82,7 @@ const FILE = join(DATA_DIR, 'pipelines.json')
 const POLL_MS = 2 * 60_000
 const SETTLE_MS = 20_000 // a session must be quiet this long after we sent it work
 const SLACK_CHECK_MS = 10 * 60_000
+const QUIET_MS = 15_000 // session must stay 'waiting' this long before we type into it
 import { ACTIVE_PHASES } from './pipelineView'
 const OPEN_TRACK: PrTrackState[] = ['in-review', 'working', 'ready']
 
@@ -119,12 +120,18 @@ class PipelineEngine {
   private listeners = new Set<(ev: PipelineEvent) => void>()
   private busy = new Set<string>()
   private started = false
+  private quietSince = new Map<string, number>() // liveId → when it last became 'waiting'
 
   start() {
     if (this.started) return
     this.started = true
     try { this.items = JSON.parse(readFileSync(FILE, 'utf-8')).filter((p: Pipeline) => Array.isArray(p.prs)) } catch { this.items = [] }
-    onAnyStatusChange(id => this.forSession(id, p => this.step(p.id)))
+    onAnyStatusChange((id, status) => {
+      if (status === 'waiting') { if (!this.quietSince.has(id)) this.quietSince.set(id, Date.now()) } else this.quietSince.delete(id)
+      this.forSession(id, p => this.step(p.id))
+      // re-check once the quiet period has passed
+      if (status === 'waiting') setTimeout(() => this.forSession(id, p => this.step(p.id)), QUIET_MS + 1000)
+    })
     onAnyPrUrlChange(id => this.forSession(id, p => this.step(p.id)))
     setInterval(() => this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => this.step(p.id, true)), POLL_MS)
     this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => this.step(p.id, true))
@@ -212,7 +219,8 @@ class PipelineEngine {
     if (!p || !ACTIVE_PHASES.includes(p.phase)) return
     const s = liveSessionStore.get(p.liveId)
     if (!s) { this.update(p, { phase: 'needs-you' }, 'Session is gone'); return }
-    const quiet = s.status === 'waiting' && Date.now() - p.actedAt > SETTLE_MS
+    const since = this.quietSince.get(p.liveId) ?? (s.status === 'waiting' ? 0 : Infinity)
+    const quiet = s.status === 'waiting' && Date.now() - since >= QUIET_MS && Date.now() - p.actedAt > SETTLE_MS
     const send = (text: string, logText: string, patch: Partial<Pipeline> = {}) => {
       writeToSession(p.liveId, text + '\r')
       this.update(p, { ...patch, actedAt: Date.now() }, logText)

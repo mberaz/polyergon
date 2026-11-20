@@ -6,7 +6,7 @@ const CALL_TIMEOUT_MS = 180_000
 
 // One headless `claude -p` call (optionally resuming a conversation). Runs with
 // permission prompts off so it can use web/file tools and MCP connectors.
-export function runClaude(prompt: string, opts: AssistantSpawnOpts & { resumeId?: string | null }): Promise<{ result: string; sessionId: string | null }> {
+export function runClaude(prompt: string, opts: AssistantSpawnOpts & { resumeId?: string | null; timeoutMs?: number }): Promise<{ result: string; sessionId: string | null }> {
   return new Promise((resolve, reject) => {
     const args = [
       '-p', '--output-format', 'json',
@@ -28,12 +28,12 @@ export function runClaude(prompt: string, opts: AssistantSpawnOpts & { resumeId?
     let stderr = ''
     proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
     proc.stderr.on('data', (d: Buffer) => { stderr = (stderr + d.toString()).slice(-1000) })
-    const killer = setTimeout(() => proc.kill('SIGKILL'), CALL_TIMEOUT_MS)
+    const killer = setTimeout(() => proc.kill('SIGKILL'), opts.timeoutMs ?? CALL_TIMEOUT_MS)
     proc.on('error', (e) => { clearTimeout(killer); reject(e) })
     proc.on('exit', (code) => {
       clearTimeout(killer)
       if (code !== 0) {
-        reject(new Error(`claude -p exited ${code}: ${stderr.trim().slice(-300)}`))
+        reject(new Error(code === null ? 'Claude took too long and was stopped' : `claude -p exited ${code}: ${stderr.trim().slice(-300)}`))
         return
       }
       try {

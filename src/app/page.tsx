@@ -13,6 +13,8 @@ import { AutomateDialog } from './components/AutomateDialog'
 import { SkillsPage } from './components/SkillsPage'
 import { NotesPage } from './components/NotesPage'
 import { CommandPalette, type PaletteItem } from './components/CommandPalette'
+import { SlackInbox } from './components/SlackInbox'
+import type { SlackMention } from '@/lib/slackBridge'
 import { useNotes } from '@/hooks/useNotes'
 import { usePipelines } from '@/hooks/usePipelines'
 import { PrDashboard } from './components/PrDashboard'
@@ -31,7 +33,7 @@ const MIN_SIDEBAR = 160
 const MAX_SIDEBAR = 600
 const DEFAULT_SIDEBAR = 288 // w-72
 
-type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null }
+type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null } | { mode: 'slack' }
 
 export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
@@ -262,6 +264,17 @@ export default function Home() {
 
   // "Review" on a dashboard PR: spawn a fresh session that runs the /cr
   // review skill on the PR (gh works from any cwd, so General is fine)
+  // Slack inbox → a new session that works the request and drafts a reply
+  function handleSlackAgent(m: SlackMention) {
+    pendingPromptRef.current =
+      `Someone needs me on Slack. ${m.isDm ? `Direct message from ${m.author}` : `${m.author} in #${m.channel}`}: ${m.permalink} . ` +
+      'Read the message and its whole thread with the Slack connector, figure out what they need, and look into it (code, docs, data) as far as you can. ' +
+      'Then show me a draft reply. Do not post anything to Slack until I approve it.'
+    const name = `Slack: ${m.author}${m.isDm ? '' : ` #${m.channel}`}`.slice(0, 60)
+    pendingNameRef.current = name
+    createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, name)
+  }
+
   function handleReviewWithClaude(url: string) {
     pendingPromptRef.current = `cr ${url}`
     const crName = `CR ${url.match(/([\w.-]+)\/pull\/(\d+)/)?.[0] ?? ''}`.trim()
@@ -293,6 +306,7 @@ export default function Home() {
       { id: 'skills', group: 'Actions', label: 'Open skills', run: () => setView({ mode: 'skills', name: null }) },
       { id: 'usage', group: 'Actions', label: 'Open usage', run: () => setView({ mode: 'usagedash' }) },
       { id: 'prs', group: 'Actions', label: 'Open PR dashboard', run: () => setView({ mode: 'prdash' }) },
+      { id: 'slack', group: 'Actions', label: 'Open Slack inbox', run: () => setView({ mode: 'slack' }) },
       ...liveSessions.map(s => ({ id: s.id, group: 'Live sessions', label: nameOf(s.id, s.claudeSessionId, s.cwd).slice(0, 90), hint: s.status, run: () => handleAttachLive(s.id) })),
       ...sessions.filter(h => !h.headless && !liveIds.has(h.sessionId)).map(h => ({
         id: h.sessionId, group: 'History', label: (sessionNameOverrides[h.sessionId] || h.firstUserMessage || h.cwd?.split('/').at(-1) || 'Session').slice(0, 90),
@@ -346,6 +360,7 @@ export default function Home() {
           setNotes={setNotes}
           onOpenNotes={id => setView({ mode: 'notes', id })}
           onOpenSkills={name => setView({ mode: 'skills', name })}
+          onOpenSlack={() => setView({ mode: 'slack' })}
           selectedNoteId={view.mode === 'notes' ? view.id : null}
           selectedSkill={view.mode === 'skills' ? view.name : null}
           skillsVersion={skillsVersion}
@@ -400,6 +415,8 @@ export default function Home() {
             onReviewWithClaude={handleReviewWithClaude}
           />
         )}
+
+        {view.mode === 'slack' && <SlackInbox onSendAgent={handleSlackAgent} />}
 
         {view.mode === 'skills' && (
           <SkillsPage selected={view.name} onSelect={name => setView({ mode: 'skills', name })} onChanged={() => setSkillsVersion(v => v + 1)} />

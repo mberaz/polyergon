@@ -80,6 +80,7 @@ interface Props {
   setNotes: (updater: (prev: Note[]) => Note[]) => void
   onOpenNotes: (id: string | null) => void
   onOpenSkills: (name: string | null) => void
+  onOpenSlack: () => void
   selectedNoteId: string | null
   selectedSkill: string | null
   skillsVersion: number
@@ -579,7 +580,7 @@ function FolderIcon({ open }: { open: boolean }) {
   )
 }
 
-export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
+export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   // Search text is remembered per org, so switching orgs and back restores
   // whatever you'd typed in each
@@ -616,7 +617,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null)
   const [dragOverLiveId, setDragOverLiveId] = useState<string | null>(null)
-  const [tab, setTab] = useState<'live' | 'history' | 'prs' | 'notes' | 'meetings' | 'usage' | 'skills'>('live')
+  const [tab, setTab] = useState<'live' | 'history' | 'prs' | 'notes' | 'meetings' | 'usage' | 'skills' | 'slack'>('live')
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [skillsLoaded, setSkillsLoaded] = useState(false)
   const [showOrgs, setShowOrgs] = useState(false)
@@ -946,10 +947,18 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
         >
           Skills
         </button>
+        <button
+          onClick={() => { setTab('slack'); onOpenSlack() }}
+          className={`py-2.5 text-xs font-semibold tracking-wide flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
+            tab === 'slack' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          Slack
+        </button>
       </div>
 
       {/* Search — shared across live/history/PRs/skills tabs */}
-      {tab !== 'notes' && tab !== 'meetings' && tab !== 'usage' && (
+      {tab !== 'notes' && tab !== 'meetings' && tab !== 'usage' && tab !== 'slack' && (
         <div className="px-3 py-2 border-b border-gray-800/40">
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

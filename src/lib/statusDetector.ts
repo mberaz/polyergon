@@ -30,6 +30,8 @@ export function detectStatus(chunk: string, backend?: string): SessionStatus {
   // regardless of state, so it can't distinguish thinking from waiting on its
   // own — the spinner is the actual "busy" signal and must be checked first.
   if (stripped.split('\n').some(l => SPINNER_RE.test(l) && !DONE_LINE_RE.test(l))) return 'thinking'
+  // The footer shows "esc to interrupt" for as long as a turn is running
+  if (/esc to interrupt/i.test(stripped)) return 'thinking'
   // Claude shows ❯ (U+276F) when waiting for input at the prompt.
   // It appears mid-chunk (above the status bar), so we search anywhere.
   if (stripped.includes('❯')) return 'waiting'

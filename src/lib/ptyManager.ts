@@ -254,7 +254,8 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
       // screen bottom for it; Claude's lives in the lines around the cursor.
       const status = backend.id === 'copilot'
         ? detectStatus(bottomRows(headlessTerm, 3), 'copilot')
-        : detectStatus(bufferTail(headlessTerm))
+        // Claude's footer (below the prompt) says "esc to interrupt" while busy
+        : detectStatus(bufferTail(headlessTerm) + '\n' + bottomRows(headlessTerm, 3))
       const session = liveSessionStore.get(id)
       if (!session) return
 
