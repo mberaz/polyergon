@@ -39,7 +39,8 @@ function WatchCard({ it, onSend, onDismiss, onRedraft }: { it: WatchItem; onSend
 }
 
 // Every automation in one place, plus a gallery to create new ones.
-export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen, onStop, onNewWatcher, watcherCmd }: {
+export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen, onStop, onNewWatcher, watcherCmd, showMacLoops }: {
+  showMacLoops: boolean // the Mac's launchd loops run with ~/.claude (Default)
   pipelines: Pipeline[]
   watchers: SlackWatcher[]
   sessions: ComboOption[] // live sessions with a Claude conversation
@@ -88,7 +89,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
           </div>
         </section>
 
-        <ExistingAutomations />
+        {showMacLoops && <ExistingAutomations />}
 
         {liveWatchers.map(w => {
           const open = w.items.filter(i => i.state === 'pending' || i.state === 'drafting' || i.state === 'failed')

@@ -16,6 +16,7 @@ import { NotesPage } from './components/NotesPage'
 import { CommandPalette, type PaletteItem } from './components/CommandPalette'
 import { SlackInbox } from './components/SlackInbox'
 import { AutomationsPage } from './components/AutomationsPage'
+import { HomePage } from './components/HomePage'
 import { WatcherDialog } from './components/WatcherDialog'
 import { useSlackWatchers } from '@/hooks/useSlackWatchers'
 import { setActiveOrg } from '@/lib/activeOrg'
@@ -308,6 +309,7 @@ export default function Home() {
     const liveIds = new Set(liveSessions.map(s => s.claudeSessionId))
     const day = (t: number | string) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     return [
+      { id: 'home', group: 'Actions', label: 'Home', run: () => setView({ mode: 'empty' }) },
       { id: 'new-session', group: 'Actions', label: 'New session', run: () => setShowDialog(true) },
       { id: 'record', group: 'Actions', label: 'Record a meeting', run: () => setShowRecordDialog(true) },
       { id: 'recordings', group: 'Actions', label: 'Open recordings', run: () => setView({ mode: 'meetinglib' }) },
@@ -372,6 +374,7 @@ export default function Home() {
           onOpenSkills={name => setView({ mode: 'skills', name })}
           onOpenSlack={() => setView({ mode: 'slack' })}
           onOpenAutomations={() => setView({ mode: 'automations' })}
+          onHome={() => setView({ mode: 'empty' })}
           selectedNoteId={view.mode === 'notes' ? view.id : null}
           selectedSkill={view.mode === 'skills' ? view.name : null}
           skillsVersion={skillsVersion}
@@ -431,11 +434,13 @@ export default function Home() {
 
         {view.mode === 'automations' && (
           <AutomationsPage
-            pipelines={pipelines}
-            watchers={watchers}
+            // Per org: a pipeline belongs to its session's org; a watcher to the org it was made in
+            pipelines={pipelines.filter(p => activeOrgId === 'all' || (liveSessions.find(s => s.id === p.liveId)?.orgId ?? 'default') === activeOrgId)}
+            watchers={watchers.filter(w => activeOrgId === 'all' || (w.orgId ?? 'default') === activeOrgId)}
+            showMacLoops={activeOrgId === 'all' || activeOrgId === 'default'}
             watcherCmd={watcherCmd}
             onNewWatcher={() => setShowWatcherDialog(true)}
-            sessions={liveSessions.filter(s => s.claudeSessionId).map(s => ({ id: s.id, label: (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session').slice(0, 70) }))}
+            sessions={liveSessions.filter(s => s.claudeSessionId && (activeOrgId === 'all' || (s.orgId ?? 'default') === activeOrgId)).map(s => ({ id: s.id, label: (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session').slice(0, 70) }))}
             nameOf={id => { const s = liveSessions.find(x => x.id === id); return (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session' }}
             onOpen={id => setAutomateFor(id)}
             onStop={stopPipeline}
@@ -481,11 +486,32 @@ export default function Home() {
           />
         )}
 
-        {view.mode === 'empty' && (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm bg-gray-950">
-            Select a session or start a new one
-          </div>
-        )}
+        {view.mode === 'empty' && (() => {
+          const inOrg = (orgId?: string | null) => activeOrgId === 'all' || (orgId ?? 'default') === activeOrgId
+          const nameOf = (id: string) => { const s = liveSessions.find(x => x.id === id); return (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session' }
+          const orgUsage = usage ? (activeOrgId === 'all' ? Object.values(usage.orgs) : [usage.orgs[activeOrgId]].filter(Boolean)) : []
+          const dayStart = new Date().setHours(0, 0, 0, 0)
+          return (
+            <HomePage
+              orgName={activeOrgId === 'all' ? 'All orgs' : orgs.find(o => o.id === activeOrgId)?.name ?? 'Default'}
+              live={liveSessions.filter(s => inOrg(s.orgId))}
+              nameOf={nameOf}
+              meetings={meetings.filter(m => inOrg(m.orgId))}
+              notes={notes.filter(n => inOrg(n.orgId))}
+              pipelines={pipelines.filter(p => inOrg(liveSessions.find(s => s.id === p.liveId)?.orgId))}
+              watchers={watchers.filter(w => inOrg(w.orgId))}
+              inbox={inbox}
+              usageOrg={orgUsage.length ? {
+                today: orgUsage.reduce((n, o) => n + (o.daily.find(d => d.dayStart === dayStart)?.costUSD ?? 0), 0),
+                week: orgUsage.reduce((n, o) => n + o.last7d.costUSD, 0),
+              } : null}
+              onAttach={handleAttachLive}
+              onOpen={v => setView(typeof v === 'object' ? { mode: 'meeting', meetingId: v.meetingId } : v === 'notes' ? { mode: 'notes', id: null } : { mode: v })}
+              onNewSession={() => setShowDialog(true)}
+              onRecord={() => setShowRecordDialog(true)}
+            />
+          )
+        })()}
 
         {sessionError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-900/90 border border-red-700 text-red-200 text-sm px-4 py-2 rounded shadow-lg flex items-center gap-3 z-10">
@@ -510,7 +536,7 @@ export default function Home() {
 
       {showWatcherDialog && (
         <WatcherDialog
-          sessions={liveSessions.filter(s => s.claudeSessionId).map(s => ({ id: s.id, label: (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session').slice(0, 70) }))}
+          sessions={liveSessions.filter(s => s.claudeSessionId && (activeOrgId === 'all' || (s.orgId ?? 'default') === activeOrgId)).map(s => ({ id: s.id, label: (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session').slice(0, 70) }))}
           error={watcherError}
           onCreate={input => watcherCmd('watcher-create', { ...input, orgId: activeOrgId === 'all' ? 'default' : activeOrgId })}
           onClose={() => setShowWatcherDialog(false)}

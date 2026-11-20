@@ -6,3 +6,4 @@ test('classifies Slack connector failures', () => {
   expect(classifySlackFailure('The Slack connector refused the connection, so it isn\'t signed in. You\'ll need to authorize "claude.ai Slack"')).toBe('auth')
   expect(classifySlackFailure('Slack API returned 500')).toBe('other')
 })
+

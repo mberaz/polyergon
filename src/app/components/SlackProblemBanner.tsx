@@ -8,8 +8,8 @@ export const connectSlack = () => window.dispatchEvent(new Event(CONNECT_SLACK_E
 const COPY: Record<SlackProblem, { title: (org: string) => string; why: string; fix: string }> = {
   auth: {
     title: org => `Slack isn't signed in for ${org}`,
-    why: "This org's Claude setup has a Slack connector, but its sign-in expired or was never completed.",
-    fix: 'Click Connect Slack: a new session opens in this org with /mcp. Pick Slack there and sign in, then come back and Retry.',
+    why: "Polyergon's background checks use this org's \"claude.ai Slack\" connector, and it isn't signed in. (A Slack plugin working in your sessions doesn't cover background runs.)",
+    fix: 'Click Connect Slack: a new session opens in this org with /mcp. Choose "claude.ai Slack" and sign in, then come back and Retry.',
   },
   missing: {
     title: org => `Slack isn't set up for ${org}`,
