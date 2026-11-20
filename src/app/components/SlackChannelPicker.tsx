@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react'
 import { Combobox } from './Combobox'
 import { withOrg } from '@/lib/activeOrg'
+import { SlackProblemBanner } from './SlackProblemBanner'
+import type { SlackProblem } from '@/lib/slackBridge'
 import type { SlackChannel } from '@/lib/slackBridge'
 
 // Text box with your Slack channels as suggestions (native <datalist>), loaded
@@ -15,11 +17,12 @@ export function SlackChannelPicker({ value, onChange, onEnter, className }: {
   const [channels, setChannels] = useState<SlackChannel[]>([])
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [error, setError] = useState('')
+  const [problem, setProblem] = useState<SlackProblem>('other')
 
   function load(refresh = false) {
     setState('loading')
     fetch(withOrg(`/api/slack/channels${refresh ? '?refresh=1' : ''}`))
-      .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setChannels(d.channels); setState('ready') })
+      .then(async r => { const d = await r.json(); if (!r.ok) { setProblem(d.problem ?? 'other'); throw new Error(d.error) } setChannels(d.channels); setState('ready') })
       .catch(e => { setError(e.message || 'Could not load channels'); setState('error') })
   }
   useEffect(() => { load() }, [])
@@ -43,7 +46,7 @@ export function SlackChannelPicker({ value, onChange, onEnter, className }: {
       </div>
       {state === 'loading' && <p className="text-[11px] text-gray-500 mt-1">Asking Slack for your channels. The first time can take up to 2 minutes…</p>}
       {state === 'ready' && <p className="text-[11px] text-gray-600 mt-1">{channels.length} channels</p>}
-      {state === 'error' && <p className="text-[11px] text-amber-400 mt-1">{error}</p>}
+      {state === 'error' && <SlackProblemBanner compact problem={problem} detail={error} org="this org" onRetry={() => load(true)} />}
     </div>
   )
 }

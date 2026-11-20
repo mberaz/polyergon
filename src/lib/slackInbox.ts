@@ -1,12 +1,12 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { DATA_DIR } from './dataDir'
-import { fetchMentions, isAnswered, slackMe, draftReply, orgFile, type SlackMention } from './slackBridge'
+import { fetchMentions, isAnswered, slackMe, draftReply, orgFile, SlackError, classifySlackFailure, type SlackMention, type SlackProblem } from './slackBridge'
 import { DEFAULT_ORG_ID } from './orgRegistry'
 
 // Cached inbox + the items you marked done (hidden even if Slack still lists them).
 type Stage = 'idle' | 'searching' | 'checking' | 'suggesting'
-interface Progress { stage: Stage; startedAt: number; error: string | null }
+interface Progress { stage: Stage; startedAt: number; error: string | null; problem?: SlackProblem | null }
 interface InboxFile { items: SlackMention[]; fetchedAt: number; done: string[]; progress?: Progress }
 
 // One inbox file per org (each org has its own Slack workspace)
@@ -41,7 +41,7 @@ export function getInbox(orgId: string = DEFAULT_ORG_ID) {
 // Two steps so cards appear fast: find mentions (~15s), then drop the answered ones.
 export async function refreshInbox(orgId: string = DEFAULT_ORG_ID): Promise<void> {
   if (progressOf(read(orgId)).stage !== 'idle') return
-  setProgress(orgId, { stage: 'searching', startedAt: Date.now(), error: null })
+  setProgress(orgId, { stage: 'searching', startedAt: Date.now(), error: null, problem: null })
   try {
     const found = await fetchMentions(7, orgId)
     // Keep what we already know is open; new ones start unchecked
@@ -75,7 +75,8 @@ export async function refreshInbox(orgId: string = DEFAULT_ORG_ID): Promise<void
     }
     await Promise.all([worker(), worker(), worker(), worker()])
   } catch (e) {
-    setProgress(orgId, { error: (e as Error).message })
+    const msg = (e as Error).message
+    setProgress(orgId, { error: msg, problem: e instanceof SlackError ? e.problem : classifySlackFailure(msg) })
   } finally {
     setProgress(orgId, { stage: 'idle' })
   }

@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react'
 import type { SlackMention } from '@/lib/slackBridge'
 import { withOrg } from '@/lib/activeOrg'
+import { SlackProblemBanner } from './SlackProblemBanner'
+import type { SlackProblem } from '@/lib/slackBridge'
 
 function ago(iso: string): string {
   const t = Date.parse(iso)
@@ -94,7 +96,7 @@ function Card({ m, onGone, onAgent, suggesting }: { m: SlackMention; onGone: () 
 
 // Slack messages that tag you and are still open, as cards.
 export function SlackInbox({ onSendAgent, orgName }: { onSendAgent: (m: SlackMention) => void; orgName: string }) {
-  const [data, setData] = useState<{ items: SlackMention[]; fetchedAt: number; refreshing: boolean; stage: 'idle' | 'searching' | 'checking' | 'suggesting'; startedAt: number; error: string | null } | null>(null)
+  const [data, setData] = useState<{ items: SlackMention[]; fetchedAt: number; refreshing: boolean; stage: 'idle' | 'searching' | 'checking' | 'suggesting'; startedAt: number; error: string | null; problem?: SlackProblem | null } | null>(null)
   const [now, setNow] = useState(Date.now())
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState<'all' | 'dm' | 'channels'>('all')
@@ -142,14 +144,13 @@ export function SlackInbox({ onSendAgent, orgName }: { onSendAgent: (m: SlackMen
         </div>
       )}
       {data?.error && !data.refreshing && (
-        <div className="mx-6 mb-4 rounded-lg border border-red-900/60 bg-red-950/30 px-4 py-2.5 flex items-center gap-3 text-xs text-red-300 flex-shrink-0">
-          <span className="flex-1">Couldn&apos;t read Slack: {data.error}</span>
-          <button onClick={() => load(true)} className="px-2.5 py-1 rounded-md border border-red-800 hover:bg-red-900/40">Retry</button>
+        <div className="mx-6 mb-4 flex-shrink-0">
+          <SlackProblemBanner problem={data.problem ?? 'other'} detail={data.error} org={orgName} onRetry={() => load(true)} />
         </div>
       )}
       <div className="flex-1 overflow-y-auto px-6 pb-6">
         {data && !data.refreshing && items.length === 0 && (
-          <p className="text-sm text-gray-500 text-center mt-20">{data.fetchedAt ? 'Nothing waiting on you. 🎉' : 'Click Refresh to check Slack.'}</p>
+          data.error ? null : <p className="text-sm text-gray-500 text-center mt-20">{data.fetchedAt ? 'Nothing waiting on you. 🎉' : 'Click Refresh to check Slack.'}</p>
         )}
         <div className="grid gap-4 items-start" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
           {data?.refreshing && items.length === 0 && Array.from({ length: 6 }, (_, i) => (

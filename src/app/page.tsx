@@ -19,6 +19,7 @@ import { AutomationsPage } from './components/AutomationsPage'
 import { WatcherDialog } from './components/WatcherDialog'
 import { useSlackWatchers } from '@/hooks/useSlackWatchers'
 import { setActiveOrg } from '@/lib/activeOrg'
+import { CONNECT_SLACK_EVENT } from './components/SlackProblemBanner'
 import type { SlackMention } from '@/lib/slackBridge'
 import { useNotes } from '@/hooks/useNotes'
 import { usePipelines } from '@/hooks/usePipelines'
@@ -283,6 +284,17 @@ export default function Home() {
     pendingNameRef.current = name
     createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, name)
   }
+
+  // "Connect Slack" from a Slack error: a NEW session in this org running /mcp (your click)
+  useEffect(() => {
+    const open = () => {
+      pendingPromptRef.current = '/mcp'
+      pendingNameRef.current = 'Connect Slack'
+      createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, 'Connect Slack')
+    }
+    window.addEventListener(CONNECT_SLACK_EVENT, open)
+    return () => window.removeEventListener(CONNECT_SLACK_EVENT, open)
+  }, [activeOrgId, createSession])
 
   function handleReviewWithClaude(url: string) {
     pendingPromptRef.current = `cr ${url}`

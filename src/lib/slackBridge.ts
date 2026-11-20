@@ -9,6 +9,17 @@ import { orgRegistry, DEFAULT_ORG_ID } from './orgRegistry'
 
 export interface SlackChannel { id: string; name: string }
 
+// Why a Slack call failed, from Claude's reply, so the UI can say what to do.
+export type SlackProblem = 'auth' | 'missing' | 'other'
+export function classifySlackFailure(text: string): SlackProblem {
+  if (/sign(ed)? ?in|log(ged)? ?in|re-?auth|authenticat|authori[sz]|reconnect|refused the connection|expired|token/i.test(text)) return 'auth'
+  if (/no slack|not (available|configured|connected|installed)|don'?t have (access to )?(a |the )?slack|no .*slack (tool|connector)/i.test(text)) return 'missing'
+  return 'other'
+}
+export class SlackError extends Error {
+  constructor(message: string, public problem: SlackProblem) { super(message) }
+}
+
 // Per-org cache file; Default keeps the original name
 export const orgFile = (base: string, orgId: string = DEFAULT_ORG_ID) =>
   join(DATA_DIR, orgId === DEFAULT_ORG_ID ? `${base}.json` : `${base}.${orgId.replace(/[^\w-]/g, '')}.json`)
@@ -47,7 +58,7 @@ export async function listSlackChannels(refresh = false, orgId: string = DEFAULT
     opts(undefined, orgId),
   )
   const channels = parseChannels(result)
-  if (!channels.length) throw new Error(`Could not read Slack channels. Is the Slack connector set up in Claude? (${result.slice(0, 120)})`)
+  if (!channels.length) throw new SlackError(result.trim().slice(0, 300) || 'No channels came back', classifySlackFailure(result))
   const data = { channels, fetchedAt: Date.now() }
   writeFileSync(orgFile('slack-channels', orgId), JSON.stringify(data))
   return data
@@ -147,7 +158,9 @@ export async function fetchMentions(days = 7, orgId: string = DEFAULT_ORG_ID): P
     'Respond with ONLY a JSON array, no prose: [{"permalink": "https://…slack.com/archives/…", "channel": "channel name, or the person for a DM", "author": "display name", "text": "the message text", "isDm": false}]',
     { ...opts('claude-sonnet-5-5', orgId), timeoutMs: 240_000 },
   )
-  return parseMentions(result)
+  const found = parseMentions(result)
+  if (!found.length && !/^\s*\[\s*\]\s*$/.test(result.replace(/```(json)?/g, ''))) throw new SlackError(result.trim().slice(0, 300), classifySlackFailure(result))
+  return found
 }
 
 // Who "me" is in Slack, looked up once and cached (the checks below need it).
@@ -159,7 +172,7 @@ export async function slackMe(orgId: string = DEFAULT_ORG_ID): Promise<{ id: str
   )
   const m = result.match(/\{[\s\S]*\}/)
   const me = m ? JSON.parse(m[0]) : null
-  if (!me?.id) throw new Error('Could not find your Slack user')
+  if (!me?.id) throw new SlackError(result.trim().slice(0, 300) || 'Could not find your Slack user', classifySlackFailure(result))
   writeFileSync(orgFile('slack-me', orgId), JSON.stringify(me))
   return me
 }

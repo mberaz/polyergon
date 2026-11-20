@@ -9,7 +9,6 @@ import { repoInOrg } from '@/lib/orgFilter'
 import { useSessionNames } from '@/hooks/useSessionNames'
 import type { Note } from '@/lib/notesStore'
 import { findDueReminder } from '@/lib/reminders'
-import type { SkillInfo } from '@/lib/skillsReader'
 import { OrgsDialog } from './OrgsDialog'
 import { SETTINGS_CHANGED_EVENT } from '@/hooks/useDesktopNotifications'
 import type { Pipeline } from '@/lib/pipelines'
@@ -660,8 +659,6 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null)
   const [dragOverLiveId, setDragOverLiveId] = useState<string | null>(null)
   const [tab, setTab] = useState<'live' | 'history' | 'prs' | 'notes' | 'meetings' | 'usage' | 'skills' | 'slack' | 'automations'>('live')
-  const [skills, setSkills] = useState<SkillInfo[]>([])
-  const [skillsLoaded, setSkillsLoaded] = useState(false)
   const [showOrgs, setShowOrgs] = useState(false)
   const [compactAt, setCompactAt] = useState<number | null>(null)
   useEffect(() => {
@@ -671,15 +668,6 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
     window.addEventListener(SETTINGS_CHANGED_EVENT, load)
     return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, load)
   }, [])
-  useEffect(() => { setSkillsLoaded(false) }, [skillsVersion, activeOrgId])
-  // Lazy-load skills the first time the Skills tab is opened.
-  useEffect(() => {
-    if (tab !== 'skills' || skillsLoaded) return
-    fetch(withOrg('/api/skills')).then(r => r.json()).then((d: { skills?: SkillInfo[] }) => {
-      setSkills(d.skills ?? [])
-      setSkillsLoaded(true)
-    }).catch(() => setSkillsLoaded(true))
-  }, [tab, skillsLoaded])
 
   // Persists to the server under this key (both s.id and s.claudeSessionId are
   // saved by callers, so the name resolves whichever key a card looks it up by).
@@ -781,12 +769,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
     return () => clearInterval(t)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function removeNote(id: string) {
-    setNotes(prev => prev.filter(n => n.id !== id))
-  }
 
-  // Strict per-org: untagged notes (from before org scoping) belong to Default.
-  const orgNotes = notes.filter(n => inOrg(n.orgId))
 
   // Inbox sections: scoped to the active org (via GitHub-owner mapping),
   // dismissed items hidden (unless toggled), search filters by title/repo.
@@ -1009,7 +992,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
       </div>
 
       {/* Search — shared across live/history/PRs/skills tabs */}
-      {tab !== 'notes' && tab !== 'meetings' && tab !== 'usage' && tab !== 'slack' && tab !== 'automations' && (
+      {tab !== 'notes' && tab !== 'meetings' && tab !== 'usage' && tab !== 'slack' && tab !== 'automations' && tab !== 'skills' && (
         <div className="px-3 py-2 border-b border-gray-800/40">
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1017,7 +1000,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
             </svg>
             <input
               type="text"
-              placeholder={tab === 'live' ? 'Search live sessions…' : tab === 'prs' ? 'Search PRs…' : tab === 'skills' ? 'Search skills…' : 'Search sessions…'}
+              placeholder={tab === 'live' ? 'Search live sessions…' : tab === 'prs' ? 'Search PRs…' : 'Search sessions…'}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full bg-gray-900 text-white rounded-lg pl-8 pr-3 py-2 text-sm placeholder-gray-600 outline-none border border-gray-800 focus:border-gray-600 transition-colors"
@@ -1363,108 +1346,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
         </div>
       )}
 
-      {/* Meetings tab */}
-      {tab === 'meetings' && (
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          <button
-            onClick={onOpenMeetingLibrary}
-            className="w-full mb-2 flex items-center justify-center gap-1.5 text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1.5 transition-colors"
-          >
-            All recordings
-          </button>
-          {orgMeetings.length === 0
-            ? <p className="text-xs text-gray-600 text-center mt-8">No meetings yet — hit the red button above to record one</p>
-            : <div className="flex flex-col gap-1.5">
-                {orgMeetings.map(m => (
-                  <div
-                    key={m.id}
-                    onClick={() => onSelectMeeting(m.id)}
-                    className={`rounded-lg cursor-pointer px-3 py-2.5 transition-all ${
-                      selectedMeetingId === m.id ? 'bg-gray-800 shadow-sm' : 'bg-gray-900 hover:bg-gray-800/70'
-                    } ${m.status === 'recording' ? 'border-l-2 border-l-red-500' : ''}`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      {m.status === 'recording' && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />}
-                      <span className="text-sm text-gray-100 font-medium truncate flex-1">{m.title}</span>
-                      {activeOrgId === 'all' && m.orgId !== 'default' && (
-                        <span className="px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300 text-[10px] font-medium flex-shrink-0">
-                          {orgs.find(o => o.id === m.orgId)?.name ?? 'org'}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-600 mt-0.5">
-                      {m.status === 'recording'
-                        ? 'Recording…'
-                        : `${new Date(m.startedAt).toLocaleDateString()} ${new Date(m.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${m.endedAt ? ` · ${Math.max(1, Math.round((m.endedAt - m.startedAt) / 60000))}m` : ''}${m.status === 'interrupted' ? ' · interrupted' : ''}`}
-                    </p>
-                  </div>
-                ))}
-              </div>
-          }
-        </div>
-      )}
-
       {/* Notes tab */}
-      {tab === 'notes' && (
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          <button onClick={() => onOpenNotes(null)} className="w-full mb-2 text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1.5">Open notes</button>
-          {orgNotes.length === 0
-            ? <p className="text-xs text-gray-600 text-center mt-8">No notes yet</p>
-            : <div className="flex flex-col gap-1.5">
-                {orgNotes.map(n => (
-                  <button key={n.id} onClick={() => onOpenNotes(n.id)}
-                    className={`text-left rounded-lg px-3 py-2 ${selectedNoteId === n.id ? 'bg-gray-800' : 'bg-gray-900 hover:bg-gray-800/70'}`}>
-                    <p className="text-sm text-gray-100 truncate">{n.text.split('\n').find(l => l.trim())?.trim() || 'Untitled'}</p>
-                    <p className="text-[11px] text-gray-600 mt-0.5">{new Date(n.createdAt).toLocaleDateString()}{n.remindAt && !n.reminderDone ? ' · ⏰' : ''}</p>
-                  </button>
-                ))}
-              </div>
-          }
-        </div>
-      )}
-
-      {tab === 'skills' && (
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          {!skillsLoaded
-            ? <p className="text-xs text-gray-600 text-center mt-8">Loading skills…</p>
-            : (() => {
-                const q = search.toLowerCase()
-                const shown = q
-                  ? skills.filter(sk => sk.name.toLowerCase().includes(q) || sk.description.toLowerCase().includes(q))
-                  : skills
-                if (shown.length === 0) return (
-                  <div className="text-center mt-8 space-y-3">
-                    <p className="text-xs text-gray-600">{skills.length === 0 ? 'No skills installed' : 'No matching skills'}</p>
-                  </div>
-                )
-                return (
-                  <>
-                    <div className="flex flex-col gap-2 mb-2">
-                      <p className="text-[11px] text-gray-600">{shown.length} skill{shown.length === 1 ? '' : 's'}{q ? ` matching “${search}”` : ' installed'}</p>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      {shown.map(sk => (
-                        <div key={sk.path}
-                          onClick={() => onOpenSkills(sk.name)}
-                          className={`rounded-lg border px-3 py-2 cursor-pointer ${selectedSkill === sk.name ? 'bg-gray-800 border-gray-600' : 'bg-gray-900 border-gray-800 hover:border-gray-600'}`}>
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-sm text-gray-100 font-medium truncate flex-1" title={sk.name}>{sk.name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${sk.source === 'user' ? 'bg-blue-900/50 text-blue-300' : 'bg-gray-800 text-gray-400'}`} title={sk.source === 'plugin' ? `Plugin: ${sk.plugin}` : 'Your skill'}>
-                              {sk.source === 'plugin' ? (sk.plugin ?? 'plugin') : 'user'}
-                            </span>
-                          </div>
-                          {sk.description && (
-                            <p className="text-xs text-gray-500 mt-1 line-clamp-3">{sk.description}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )
-              })()
-          }
-        </div>
-      )}
       {dueNote && (
         <div className="fixed bottom-4 left-4 z-50 w-80 rounded-lg border border-amber-700/60 bg-gray-900 shadow-xl p-3">
           <p className="text-[11px] uppercase tracking-wide text-amber-400 mb-1">⏰ Reminder</p>
