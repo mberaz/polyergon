@@ -1,3 +1,7 @@
+// Which steps run on their own (true) vs wait for your click (false)
+export interface AutoSteps { openPr: boolean; review: boolean; ci: boolean; merge: boolean }
+export const DEFAULT_AUTO: AutoSteps = { openPr: true, review: true, ci: true, merge: false }
+
 // Browser-safe helpers for showing automations (no Node imports here).
 import type { Pipeline, PipelinePhase, PrTrackState, PrTrack } from './pipelines'
 

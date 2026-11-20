@@ -1,13 +1,15 @@
 'use client'
 import { useState, useMemo, useEffect } from 'react'
 import type { Org } from '@/lib/orgRegistry'
+import type { SlackChannel } from '@/lib/slackBridge'
+import { SlackChannelPicker } from './SlackChannelPicker'
 
 interface Props {
   knownCwds: string[]
   orgs: Org[]
   defaultOrgId?: string
   onAddOrg: (name: string, configDir: string, model?: string) => Promise<Org>
-  onConfirm: (cwd: string, name: string, orgId: string, backend: string, model: string) => void
+  onConfirm: (cwd: string, name: string, orgId: string, backend: string, model: string, prompt?: string) => void
   onResumeById: (sessionId: string, name: string, orgId: string, backend: string, model: string) => void
   onCancel: () => void
 }
@@ -135,6 +137,26 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
 
   const isCurrentDefault = savedDefault.backend === backend && savedDefault.model === model && !!model
 
+  // Start from Slack: the session first reads the channel / thread / DM for context
+  const [showSlack, setShowSlack] = useState(false)
+  const [slackText, setSlackText] = useState('')
+  const [slackChannel, setSlackChannel] = useState<SlackChannel | null>(null)
+  const [slackLink, setSlackLink] = useState('')
+  const [slackAsk, setSlackAsk] = useState('')
+  const linkOk = /^https:\/\/[\w.-]+\.slack\.com\/archives\//.test(slackLink.trim())
+  const chName = (slackChannel?.name ?? slackText).replace(/^#/, '').trim()
+  function startFromSlack() {
+    const source = linkOk
+      ? `the Slack message, thread or DM at ${slackLink.trim()} (read the whole thread)`
+      : `the Slack channel ${slackChannel?.id ? `${slackChannel.id} (#${chName})` : `#${chName}`} (the last 2 days, including thread replies)`
+    const prompt = `Use the Slack connector to read ${source}. ` +
+      'Give me a short summary: what it is about, the open questions, and what is asked of me. ' +
+      (slackAsk.trim() ? `Then: ${slackAsk.trim()}` : 'Then wait for my instructions.') +
+      ' Do not post anything to Slack unless I approve it.'
+    const label = name.trim() || (linkOk ? 'From Slack thread' : `Slack #${chName}`)
+    onConfirm(selectedCwd && selectedCwd !== 'general' ? selectedCwd : 'general', label, orgId, backend, model, prompt)
+  }
+
   function start(cwd: string) {
     localStorage.setItem('lastCwd', cwd)
     onConfirm(cwd, name.trim(), orgId, backend, model)
@@ -156,7 +178,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-[480px] shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-[480px] max-h-[92vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
         <h2 className="text-white font-semibold mb-1">New Session</h2>
         <p className="text-xs text-gray-500 mb-4">Pick how to start. <b className="text-gray-400">Just chat</b> works for most things; pick a folder only when Claude should work on that code.</p>
 
@@ -290,6 +312,37 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
                 <span className="text-xs text-gray-500">Ask a question or run a quick task — not tied to a project</span>
               </span>
             </button>
+
+            {/* Start from Slack */}
+            {showSlack ? (
+              <div className="mb-3 rounded border border-purple-800/60 bg-purple-950/20 p-3 space-y-2">
+                <p className="text-xs text-gray-300 font-medium">Start from Slack</p>
+                <SlackChannelPicker value={slackText} onChange={(v, c) => { setSlackText(v); setSlackChannel(c); setSlackLink('') }}
+                  className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-600" />
+                <input value={slackLink} onChange={e => { setSlackLink(e.target.value); if (e.target.value) { setSlackText(''); setSlackChannel(null) } }}
+                  placeholder="…or paste a link to a message, thread or DM"
+                  title="In Slack: hover a message → ⋮ → Copy link"
+                  className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-600" />
+                {slackLink && !linkOk && <p className="text-[11px] text-red-400">Paste a Slack link (https://…slack.com/archives/…)</p>}
+                <input value={slackAsk} onChange={e => setSlackAsk(e.target.value)} placeholder="What should Claude do with it? (optional)"
+                  className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-600" />
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setShowSlack(false)} className="text-xs text-gray-500 hover:text-gray-300">← Back</button>
+                  <button onClick={startFromSlack} disabled={!model || !(linkOk || chName)}
+                    className="ml-auto px-3 py-1 text-xs bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded font-medium">Start with this context</button>
+                </div>
+                <p className="text-[11px] text-gray-500">The session reads it first and summarizes. Nothing is posted to Slack.</p>
+              </div>
+            ) : (
+              <button onClick={() => setShowSlack(true)} title="The new session reads a Slack channel, thread or DM first, so it starts with the context"
+                className="w-full text-left px-3 py-2.5 mb-3 flex items-center gap-3 rounded border border-gray-700 hover:bg-gray-800 hover:border-gray-600 transition-colors">
+                <span className="text-lg leading-none">#</span>
+                <span className="flex flex-col">
+                  <span className="text-sm text-white font-medium">Start from Slack</span>
+                  <span className="text-xs text-gray-500">A channel, thread or DM becomes the session&apos;s context</span>
+                </span>
+              </button>
+            )}
 
             {/* Project folders */}
             {folders.length > 0 && (

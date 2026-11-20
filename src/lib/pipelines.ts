@@ -40,9 +40,13 @@ export type PipelinePhase =
 
 export type PrTrackState = 'in-review' | 'working' | 'ready' | 'done' | 'needs-you'
 
+import { DEFAULT_AUTO, type AutoSteps } from './pipelineView'
+export { DEFAULT_AUTO, type AutoSteps }
+
 export interface PipelineConfig {
   slackChannel: SlackChannel | null
   maxRounds: number // review rounds + CI fixes, each, per PR
+  auto?: AutoSteps // missing = DEFAULT_AUTO
 }
 
 // What the dialog shows about a PR (GitHub) and its review post (Slack)
@@ -65,7 +69,7 @@ export interface SlackView extends Partial<SlackThreadView> {
 }
 
 // A message the automation proposes; sent only when you click Send
-export interface Suggestion { kind: 'open-pr' | 'review' | 'ci'; text: string; at: number }
+export interface Suggestion { kind: 'open-pr' | 'review' | 'ci' | 'merge'; text: string; at: number }
 
 export interface PrTrack {
   url: string
@@ -76,9 +80,7 @@ export interface PrTrack {
   seenFeedback: number // review + comment count already handled; -1 = not read yet
   reviewRounds: number
   ciFixes: number
-  // On unless you turn it off: review/CI fix messages go to the session without your click
-  // (capped at config.maxRounds each). Merging always stays yours.
-  autoFix?: boolean
+  mergeAttempts?: number
 }
 
 export interface Pipeline {
@@ -106,10 +108,18 @@ const QUIET_MS = 15_000 // session must stay 'waiting' this long before we type 
 import { ACTIVE_PHASES } from './pipelineView'
 const OPEN_TRACK: PrTrackState[] = ['in-review', 'working', 'ready']
 
+const STEP_NAME: Record<keyof AutoSteps, string> = { openPr: 'open the PR', review: 'fix review comments', ci: 'fix CI', merge: 'merge' }
+export const autoOf = (p: { config: PipelineConfig }): AutoSteps => ({ ...DEFAULT_AUTO, ...p.config.auto })
+const cleanAuto = (a?: Partial<AutoSteps>): AutoSteps => {
+  const m = { ...DEFAULT_AUTO, ...a }
+  return { openPr: m.openPr === true, review: m.review === true, ci: m.ci === true, merge: m.merge === true }
+}
+
 const PROMPTS = {
   openPr: 'Your work looks finished. Commit it, push the branch, and open a pull request with a clear title and description. Print the PR URL when done.',
   review: (url: string) => `There is new review feedback on ${url}. Read it with gh (reviews and comments), address each point, push the fixes, and reply on the PR to say what changed.`,
   ci: (url: string) => `CI is failing on ${url}. Find the failing checks with gh, fix the cause, and push.`,
+  merge: (url: string) => `${url} is approved and CI is green. Merge it with gh pr merge, using the merge method this repo uses, and delete the branch. Print the result.`,
 }
 
 import { shortPr } from './pipelineView'
@@ -193,7 +203,7 @@ class PipelineEngine {
     if (this.items.some(p => p.liveId === liveId && ACTIVE_PHASES.includes(p.phase))) return { error: 'This session already has a running automation' }
     const p: Pipeline = {
       id: randomUUID(), liveId, template: 'ship-it',
-      config: { slackChannel: config.slackChannel, maxRounds: Math.min(10, Math.max(1, Math.round(config.maxRounds) || 3)) },
+      config: { slackChannel: config.slackChannel, maxRounds: Math.min(10, Math.max(1, Math.round(config.maxRounds) || 3)), auto: cleanAuto(config.auto) },
       phase: 'waiting-for-session', prs: [], workingOn: null, actedAt: 0,
       log: [{ t: Date.now(), text: 'Started' }],
       createdAt: Date.now(), updatedAt: Date.now(),
@@ -235,20 +245,23 @@ class PipelineEngine {
     if (t) {
       if (sug.kind === 'review') t.reviewRounds++
       if (sug.kind === 'ci') t.ciFixes++
+      if (sug.kind === 'merge') t.mergeAttempts = (t.mergeAttempts ?? 0) + 1
       this.patchTrack(p, t, { suggestion: null, state: 'working' })
-      this.update(p, { workingOn: t.url, actedAt: Date.now() }, `You sent the session: ${sug.kind === 'review' ? 'address review feedback' : 'fix CI'} on ${shortPr(t.url)}`)
+      this.update(p, { workingOn: t.url, actedAt: Date.now() }, `Sent the session: ${sug.kind === 'review' ? 'address review feedback' : sug.kind === 'merge' ? 'merge' : 'fix CI'} on ${shortPr(t.url)}`)
     } else {
       this.update(p, { suggestion: null, phase: 'opening-pr', actedAt: Date.now() }, 'You sent the session: open a PR')
     }
     return null
   }
 
-  setAutoFix(id: string, prUrl: string, on: boolean) {
+  // Change which steps are automatic while it runs
+  setAuto(id: string, auto: Partial<AutoSteps>) {
     const p = this.items.find(x => x.id === id)
-    const t = p?.prs.find(x => x.url === prUrl)
-    if (!p || !t) return
-    this.patchTrack(p, t, { autoFix: on }, `Auto-fix ${on ? 'on' : 'off'} for ${shortPr(t.url)}`)
-    if (on) this.step(p.id)
+    if (!p) return
+    const next = cleanAuto({ ...autoOf(p), ...auto })
+    const on = (Object.keys(next) as (keyof AutoSteps)[]).filter(k => next[k])
+    this.update(p, { config: { ...p.config, auto: next } }, `Automatic steps: ${on.length ? on.map(k => STEP_NAME[k]).join(', ') : 'none (everything asks you)'}`)
+    this.step(p.id)
   }
 
   dismiss(id: string, prUrl: string | null) {
@@ -262,6 +275,30 @@ class PipelineEngine {
   stop(id: string) {
     const p = this.items.find(x => x.id === id)
     if (p && ACTIVE_PHASES.includes(p.phase)) this.update(p, { phase: 'stopped', workingOn: null }, 'Stopped by you')
+  }
+
+  // Sends one pending suggestion whose step is automatic, when the session is idle and free.
+  // Review/CI fixes stop at maxRounds per PR and then wait for you.
+  private autoSend(p: Pipeline, quiet: boolean) {
+    if (!quiet || p.workingOn || !ACTIVE_PHASES.includes(p.phase)) return
+    const auto = autoOf(p)
+    if (p.suggestion?.kind === 'open-pr') {
+      if (auto.openPr) { this.update(p, {}, 'Automatic: asking the session to open a PR'); this.act(p.id, null) }
+      return
+    }
+    for (const t of p.prs) {
+      const k = t.suggestion?.kind
+      if (!k || k === 'open-pr' || !auto[k]) continue
+      if (k === 'merge' && (t.mergeAttempts ?? 0) >= 1) continue // auto-merge tries once; then it's yours
+      const used = k === 'review' ? t.reviewRounds : k === 'ci' ? t.ciFixes : 0
+      if (used >= p.config.maxRounds) {
+        if (!p.log.at(-1)?.text.startsWith('Fix limit')) this.update(p, {}, `Fix limit reached (${p.config.maxRounds} rounds) on ${shortPr(t.url)}: click Send to continue`, { title: 'Automation needs you', body: `${shortPr(t.url)} hit ${p.config.maxRounds} fix rounds` })
+        continue
+      }
+      this.update(p, {}, `Automatic: ${STEP_NAME[k]} on ${shortPr(t.url)}`)
+      this.act(p.id, t.url)
+      return
+    }
   }
 
   // Advances one pipeline. Serialized per pipeline; safe to call often.
@@ -292,7 +329,7 @@ class PipelineEngine {
 
     if (p.phase === 'waiting-for-session') {
       if (!quiet) return
-      if (p.suggestion) return // already proposed; waiting for you
+      if (p.suggestion) { this.autoSend(p, quiet); return } // proposed; sent if open-PR is automatic
       if (await hasWorkToShip(s.cwd)) suggest(null, 'open-pr', PROMPTS.openPr, 'Code is ready to ship; suggested opening a PR', 'Ready to open a PR?', 'Click Send in the automation to ask the session')
       else if (!p.log.at(-1)?.text.startsWith('Waiting: no code changes')) this.update(p, {}, 'Waiting: no code changes to ship yet in this folder')
       return
@@ -337,25 +374,13 @@ class PipelineEngine {
         continue
       }
       if (pr.reviewDecision === 'APPROVED' && pr.checks !== 'pending' && t.state !== 'ready') {
-        this.patchTrack(p, t, { state: 'ready' }, `${shortPr(t.url)} approved and CI is green. Ready for you to merge`, { title: 'Ready to merge', body: pr.title })
+        this.patchTrack(p, t, { state: 'ready', suggestion: { kind: 'merge', text: PROMPTS.merge(t.url), at: Date.now() } }, `${shortPr(t.url)} approved and CI is green. Ready to merge`, { title: 'Ready to merge', body: `${pr.title}: click Merge in the automation` })
       } else if (t.state === 'ready' && pr.reviewDecision !== 'APPROVED') {
         this.patchTrack(p, t, { state: 'in-review' }, `${shortPr(t.url)} is no longer approved`)
       }
     }
 
-    // Auto-fix: send one pending review/CI suggestion when the session is idle and nothing is in flight
-    if (quiet && !p.workingOn) {
-      const auto = p.prs.find(t => t.autoFix !== false && t.suggestion && (t.suggestion.kind === 'review' || t.suggestion.kind === 'ci'))
-      if (auto?.suggestion) {
-        const used = auto.suggestion.kind === 'review' ? auto.reviewRounds : auto.ciFixes
-        if (used < p.config.maxRounds) {
-          this.update(p, {}, `Auto-fix: sending ${auto.suggestion.kind === 'review' ? 'review feedback' : 'CI failure'} on ${shortPr(auto.url)} to the session`)
-          this.act(p.id, auto.url)
-        } else if (!p.log.at(-1)?.text.startsWith('Auto-fix limit')) {
-          this.update(p, {}, `Auto-fix limit reached (${p.config.maxRounds} rounds) on ${shortPr(auto.url)}: click Send to continue`, { title: 'Auto-fix needs you', body: `${shortPr(auto.url)} hit ${p.config.maxRounds} fix rounds` })
-        }
-      }
-    }
+    this.autoSend(p, quiet)
 
     if (p.prs.length && p.prs.every(t => t.state === 'done')) this.update(p, { phase: 'done' }, 'All PRs are merged or closed', { title: 'Automation finished', body: `${p.prs.length} PR(s) done` })
   }

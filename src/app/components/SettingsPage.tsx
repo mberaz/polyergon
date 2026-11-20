@@ -10,7 +10,26 @@ import { setNotificationsEnabled } from '@/hooks/useDesktopNotifications'
 const MIN_K = 100
 const MAX_K = 1000
 
-export function SettingsDialog({ onClose }: { onClose: () => void }) {
+const SECTIONS = [
+  ['account', 'Claude account'],
+  ['sessions', 'Sessions'],
+  ['power', 'Power'],
+  ['notifications', 'Notifications'],
+  ['meetings', 'Meetings'],
+] as const
+
+function Sec({ id, title, desc, children }: { id: string; title: string; desc: string; children: React.ReactNode }) {
+  return (
+    <section id={`settings-${id}`} className="scroll-mt-6 rounded-xl border border-gray-800 bg-gray-900/40 p-5">
+      <h2 className="text-sm font-semibold text-gray-100">{title}</h2>
+      <p className="text-xs text-gray-500 mt-0.5 mb-4">{desc}</p>
+      <div className="space-y-3">{children}</div>
+    </section>
+  )
+}
+
+// Full-page settings, one card per section with a jump list on the left
+export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [enabled, setEnabled] = useState(true)
   const [k, setK] = useState(300)
   const [loaded, setLoaded] = useState(false)
@@ -98,15 +117,19 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-gray-900 border border-gray-700 rounded-xl p-5 text-white" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold">Settings</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label="Close">✕</button>
-        </div>
-
-        <section className="space-y-2 mb-5 pb-4 border-b border-gray-800">
-          <p className="text-sm font-medium">Claude sign-in</p>
+    <div className="absolute inset-0 flex bg-gray-950 text-gray-100">
+      <nav className="hidden md:flex flex-col gap-0.5 w-48 flex-shrink-0 border-r border-gray-800 px-3 py-6">
+        <h1 className="text-lg font-semibold px-2 mb-3">Settings</h1>
+        {SECTIONS.map(([id, label]) => (
+          <button key={id} onClick={() => document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: 'smooth' })}
+            className="text-left text-sm px-2 py-1.5 rounded-md text-gray-400 hover:text-gray-100 hover:bg-gray-800/60">{label}</button>
+        ))}
+      </nav>
+      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="max-w-2xl space-y-5">
+        <h1 className="text-lg font-semibold md:hidden">Settings</h1>
+        <Sec id="account" title="Claude account" desc="How sessions sign in to Claude. Each org has its own login.">
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'login'} onChange={() => { setAuthMode('login'); setAuthDirty(true); setState('idle') }} />Claude login</label>
             <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'apiKey'} onChange={() => { setAuthMode('apiKey'); setAuthDirty(true); setState('idle') }} />API key</label>
@@ -135,9 +158,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               ? 'Sessions use the account you logged in with in Claude Code (subscription or SSO). Each org has its own login.'
               : 'Sessions bill this API key at API rates. Claude Code may ask once, in the session, to confirm using the key. Applies to sessions started, resumed or restarted after you save.'}
           </p>
-        </section>
+        </Sec>
 
-        <section className="space-y-3">
+        <Sec id="sessions" title="Sessions" desc="How new Claude and Copilot sessions run.">
           <label className="flex items-center gap-2 text-sm font-medium">
             <input type="checkbox" checked={enabled} disabled={!loaded} onChange={e => { setEnabled(e.target.checked); setState('idle') }} />
             Auto-compact Claude sessions
@@ -160,9 +183,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             Claude compacts on its own between turns, a little before this limit. Recommended: 250k–300k.
             Applies to sessions started, resumed or restarted after you save. Copilot sessions are not affected.
           </p>
-        </section>
-
-        <section className="space-y-2 mt-5 pt-4 border-t border-gray-800">
+          <div className="border-t border-gray-800 pt-3" />
           <label className="flex items-center gap-2 text-sm font-medium">
             <input type="checkbox" checked={skipPerms} disabled={!loaded} onChange={e => { setSkipPerms(e.target.checked); setState('idle') }} />
             Skip permission prompts
@@ -172,9 +193,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             Applies to sessions started, resumed or restarted after you save.
           </p>
           {skipPerms && <p className="text-xs text-amber-400">Only use this with folders and tasks you trust.</p>}
-        </section>
+        </Sec>
 
-        <section className="space-y-2 mt-5 pt-4 border-t border-gray-800">
+        <Sec id="power" title="Power" desc="Keep sessions and automations running when you step away.">
           <label className="flex items-center gap-2 text-sm font-medium" title="Uses macOS caffeinate while Polyergon runs">
             <input type="checkbox" checked={keepAwake} disabled={!loaded} onChange={e => { setKeepAwake(e.target.checked); setState('idle') }} />
             Keep working while the Mac is locked or idle
@@ -184,9 +205,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             The screen can still lock and turn off. Closing the lid still puts the Mac to sleep. Uses more battery; turns off when Polyergon stops.
           </p>
           <p className="text-xs text-gray-500">Locking the screen alone never stops Polyergon; only sleep does.</p>
-        </section>
+        </Sec>
 
-        <section className="space-y-2 mt-5 pt-4 border-t border-gray-800">
+        <Sec id="notifications" title="Notifications" desc="Desktop alerts from this browser.">
           <label className="flex items-center gap-2 text-sm font-medium">
             <input type="checkbox" checked={notifyOn} disabled={!loaded} onChange={e => { setNotifyOn(e.target.checked); setState('idle') }} />
             Desktop notifications
@@ -204,10 +225,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           )}
           {notifyOn && permission === 'granted' && <p className="text-xs text-green-400">Chrome permission: allowed</p>}
           {permission === 'unsupported' && <p className="text-xs text-gray-500">This browser does not support notifications.</p>}
-        </section>
+        </Sec>
 
-        <section className="space-y-2 mt-5 pt-4 border-t border-gray-800">
-          <p className="text-sm font-medium">Meeting transcription</p>
+        <Sec id="meetings" title="Meetings" desc="Speech-to-text for recorded meetings.">
+          <p className="text-sm font-medium">Transcription service</p>
           <select value={tProvider} onChange={e => editT(setTProvider)(e.target.value as typeof tProvider)} className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white mt-1">
             <option value="none">Not configured</option>
             <option value="openai">OpenAI</option>
@@ -234,12 +255,13 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           )}
           {tStatus?.fromEnv && <p className="text-xs text-gray-500">Using OPENAI_API_KEY from the environment.</p>}
           <p className="text-xs text-gray-500 leading-relaxed">Stored only on this computer, readable by your user only. Never sent to the browser.</p>
-        </section>
+        </Sec>
+      </div>
+      </div>
 
-        <div className="flex items-center justify-end gap-2 mt-5">
+        <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-gray-800 bg-gray-950/95">
           {state === 'saved' && <span className="text-xs text-green-400 mr-auto">Saved</span>}
           {state === 'error' && <span className="text-xs text-red-400 mr-auto">{errorMsg || 'Could not save settings'}</span>}
-          <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-400 hover:text-white">Close</button>
           <button
             onClick={save} disabled={!loaded || !valid || state === 'saving'}
             className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-500 disabled:opacity-40"

@@ -32,9 +32,9 @@ const later = () => { now += 60_000 }
 const flush = () => new Promise(r => setImmediate(r))
 const U1 = 'https://github.com/o/r/pull/1', U2 = 'https://github.com/o/r/pull/2'
 
-test('with auto-fix off, never writes to the session on its own; suggestions are sent only by act()', async () => {
+test('with every step on "Ask me", never writes to the session on its own; suggestions are sent only by act()', async () => {
   prs[U1] = base(1); prs[U2] = base(2)
-  const p = pipelineEngine.create('L1', { slackChannel: { id: 'C1', name: 'reviews' }, maxRounds: 3 })
+  const p = pipelineEngine.create('L1', { slackChannel: { id: 'C1', name: 'reviews' }, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
   await flush(); later(); await pipelineEngine.step(p.id, true)
   expect(writes).toEqual([])
   expect(p.suggestion).toMatchObject({ kind: 'open-pr' })
@@ -49,7 +49,6 @@ test('with auto-fix off, never writes to the session on its own; suggestions are
   expect(posts.at(-1)).toContain(U1)
   expect(pipelineEngine.addPr(p.id, U2)).toBeNull(); await flush()
 
-  pipelineEngine.setAutoFix(p.id, U1, false); pipelineEngine.setAutoFix(p.id, U2, false); await flush()
   later(); await pipelineEngine.step(p.id, true) // baselines
   const before = writes.length
   prs[U1].latestReviews = [{ author: { login: 'bob' }, state: 'CHANGES_REQUESTED' }]
@@ -80,7 +79,7 @@ test('no open-PR suggestion without code to ship; one automation per session', a
   expect(pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3 })).toEqual({ error: 'This session already has a running automation' })
 })
 
-test('auto-fix (default on) sends review feedback to the idle session, up to maxRounds', async () => {
+test('default automatic steps send review feedback to the idle session, up to maxRounds', async () => {
   pipelineEngine.list().forEach((x: { id: string }) => pipelineEngine.stop(x.id))
   const U3 = 'https://github.com/o/r/pull/3'
   prs[U3] = base(3); session.prUrl = U3

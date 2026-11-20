@@ -16,7 +16,6 @@ import { pipelineSummary, isRunning, prSteps, preprSteps, shortPr } from '@/lib/
 import type { Org } from '@/lib/orgRegistry'
 import type { Meeting } from '@/lib/meetingStore'
 import type { UsageReport, OrgUsage } from '@/lib/usageStore'
-import { SettingsDialog } from './SettingsDialog'
 import { notificationsEnabled } from '@/hooks/useDesktopNotifications'
 
 const STATUS_BORDER: Record<SessionStatus, string> = {
@@ -80,6 +79,7 @@ interface Props {
   setNotes: (updater: (prev: Note[]) => Note[]) => void
   onOpenNotes: (id: string | null) => void
   onOpenSkills: (name: string | null) => void
+  onOpenSettings: () => void
   onOpenSlack?: () => void // undefined = Slack not set up for this org: tab hidden
   onOpenAutomations: () => void
   onHome: () => void
@@ -622,8 +622,7 @@ function FolderIcon({ open }: { open: boolean }) {
   )
 }
 
-export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenAutomations, onHome, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
-  const [showSettings, setShowSettings] = useState(false)
+export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenSettings, onOpenAutomations, onHome, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
   // Search text is remembered per org, so switching orgs and back restores
   // whatever you'd typed in each
   const [searchByOrg, setSearchByOrg] = useState<Record<string, string>>({})
@@ -834,9 +833,8 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
       <div className="px-3 pt-4 pb-3 border-b border-gray-800/60">
         <div className="flex items-center justify-between">
           <span onClick={onHome} title="Home" className="cursor-pointer text-sm font-bold text-white tracking-tight px-1 hover:text-blue-300">Polyergon{process.env.NEXT_PUBLIC_POLYERGON_ENV === 'dev' && <span className="ml-2 text-[10px] font-semibold bg-amber-500 text-black rounded px-1.5 py-0.5">DEV</span>}</span>
-          <button onClick={() => setShowSettings(true)} title="Settings" className="flex items-center gap-1.5 text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1 transition-colors"><span className="text-sm leading-none">⚙</span>Settings</button>
+          <button onClick={onOpenSettings} title="Settings" className="flex items-center gap-1.5 text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1 transition-colors"><span className="text-sm leading-none">⚙</span>Settings</button>
         </div>
-        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
 
         {showOrgs && <OrgsDialog orgs={orgs} onClose={() => setShowOrgs(false)} onChanged={onOrgsChanged} />}
 

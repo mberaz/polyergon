@@ -10,7 +10,6 @@ import { NewSessionDialog } from './components/NewSessionDialog'
 import { RecordMeetingDialog } from './components/RecordMeetingDialog'
 import { MeetingView } from './components/MeetingView'
 import { MeetingsLibrary } from './components/MeetingsLibrary'
-import { AutomateDialog } from './components/AutomateDialog'
 import { SkillsPage } from './components/SkillsPage'
 import { NotesPage } from './components/NotesPage'
 import { CommandPalette, type PaletteItem } from './components/CommandPalette'
@@ -18,6 +17,8 @@ import { SlackInbox } from './components/SlackInbox'
 import { AutomationsPage } from './components/AutomationsPage'
 import { HomePage } from './components/HomePage'
 import { WatcherDialog } from './components/WatcherDialog'
+import { SettingsPage } from './components/SettingsPage'
+import { PipelinePage } from './components/PipelinePage'
 import { useSlackWatchers } from '@/hooks/useSlackWatchers'
 import type { SlackWatcher } from '@/lib/slackWatchers'
 import { setActiveOrg } from '@/lib/activeOrg'
@@ -41,7 +42,7 @@ const MIN_SIDEBAR = 160
 const MAX_SIDEBAR = 600
 const DEFAULT_SIDEBAR = 288 // w-72
 
-type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null } | { mode: 'slack' } | { mode: 'automations' }
+type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null } | { mode: 'slack' } | { mode: 'automations' } | { mode: 'settings' } | { mode: 'pipeline'; liveId: string }
 
 export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
@@ -50,7 +51,7 @@ export default function Home() {
   const { watchers, watcherError, watcherCmd } = useSlackWatchers(ws, (title, body) => notifyNeedsInput(`👂 ${title}`, body))
   const [showWatcherDialog, setShowWatcherDialog] = useState(false)
   const [editWatcher, setEditWatcher] = useState<SlackWatcher | null>(null)
-  const { setPipelineAutoFix, pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr, actPipeline, dismissPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
+  const { setPipelineAuto, pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr, actPipeline, dismissPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
   // prEntries still feeds the notification-suppression logic; the PRs tab
   // itself now renders the GitHub workload inbox
   const { entries: prEntries } = usePrSessions(ws)
@@ -97,7 +98,7 @@ export default function Home() {
   // the Sidebar loads persisted names from localStorage itself. Do NOT seed
   // this from localStorage — feeding the whole saved map back through here
   // races the Sidebar's own load and clobbers live renames.
-  const [automateFor, setAutomateFor] = useState<string | null>(null)
+  const setAutomateFor = (liveId: string | null) => liveId && setView({ mode: 'pipeline', liveId })
   const [hideNotifyBanner, setHideNotifyBanner] = useState(false)
   const [sessionNameOverrides, setSessionNameOverrides] = useState<Record<string, string>>({})
   // Per-session alert bookkeeping (not just the currently-viewed session) —
@@ -215,16 +216,16 @@ export default function Home() {
 
   }, [activeSessionId])
 
-  function handleNewSession(cwd: string, name: string, orgId: string, backend: string, model: string) {
+  function handleNewSession(cwd: string, name: string, orgId: string, backend: string, model: string, prompt?: string) {
     setShowDialog(false)
     pendingNameRef.current = name
     // Persist custom path so it appears in the dialog next time
-    if (!sessions.some(s => s.cwd === cwd)) {
+    if (cwd !== 'general' && !sessions.some(s => s.cwd === cwd)) {
       const updated = Array.from(new Set([cwd, ...customPaths])).slice(0, 20)
       setCustomPaths(updated)
       try { localStorage.setItem('customPaths', JSON.stringify(updated)) } catch {}
     }
-    createSession(cwd, orgId, name, backend, model)
+    createSession(cwd, orgId, name, backend, model, prompt)
   }
 
   function handleHistoryClick(sessionId: string, cwd: string | null, orgId?: string) {
@@ -328,6 +329,7 @@ export default function Home() {
       { id: 'record', group: 'Actions', label: 'Record a meeting', run: () => setShowRecordDialog(true) },
       { id: 'recordings', group: 'Actions', label: 'Open recordings', run: () => setView({ mode: 'meetinglib' }) },
       { id: 'notes', group: 'Actions', label: 'Open notes', run: () => setView({ mode: 'notes', id: null }) },
+      { id: 'settings', group: 'Actions', label: 'Open settings', run: () => setView({ mode: 'settings' }) },
       { id: 'skills', group: 'Actions', label: 'Open skills', run: () => setView({ mode: 'skills', name: null }) },
       { id: 'usage', group: 'Actions', label: 'Open usage', run: () => setView({ mode: 'usagedash' }) },
       { id: 'prs', group: 'Actions', label: 'Open PR dashboard', run: () => setView({ mode: 'prdash' }) },
@@ -386,6 +388,7 @@ export default function Home() {
           setNotes={setNotes}
           onOpenNotes={id => setView({ mode: 'notes', id })}
           onOpenSkills={name => setView({ mode: 'skills', name })}
+          onOpenSettings={() => setView({ mode: 'settings' })}
           onOpenSlack={slackOn ? () => setView({ mode: 'slack' }) : undefined}
           onOpenAutomations={() => setView({ mode: 'automations' })}
           onHome={() => setView({ mode: 'empty' })}
@@ -465,6 +468,27 @@ export default function Home() {
           />
         )}
 
+        {view.mode === 'pipeline' && (() => {
+          const lid = view.liveId
+          const s = liveSessions.find(x => x.id === lid)
+          const name = (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session'
+          return (
+            <PipelinePage
+              key={lid}
+              sessionName={name}
+              pipeline={[...pipelines].reverse().find(p => p.liveId === lid) ?? null}
+              error={pipelineError?.liveId === lid ? pipelineError.message : null}
+              onOpenSession={() => handleAttachLive(lid)}
+              onStart={config => startPipeline(lid, config)}
+              onStop={stopPipeline}
+              onAddPr={(id, url) => addPipelinePr(id, lid, url)}
+              onAct={(id, prUrl) => actPipeline(id, lid, prUrl)}
+              onDismiss={dismissPipeline}
+              onSetAuto={setPipelineAuto}
+            />
+          )
+        })()}
+        {view.mode === 'settings' && <SettingsPage key={activeOrgId} onClose={() => setView({ mode: 'empty' })} />}
         {view.mode === 'skills' && (
           <SkillsPage key={activeOrgId} selected={view.name} onSelect={name => setView({ mode: 'skills', name })} onChanged={() => setSkillsVersion(v => v + 1)} />
         )}
@@ -570,24 +594,6 @@ export default function Home() {
         />
       )}
 
-      {automateFor && (() => {
-        const s = liveSessions.find(x => x.id === automateFor)
-        const name = (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session'
-        return (
-          <AutomateDialog
-            sessionName={name}
-            pipeline={[...pipelines].reverse().find(p => p.liveId === automateFor) ?? null}
-            error={pipelineError?.liveId === automateFor ? pipelineError.message : null}
-            onStart={config => startPipeline(automateFor, config)}
-            onStop={stopPipeline}
-            onAddPr={(id, url) => addPipelinePr(id, automateFor, url)}
-            onAct={(id, prUrl) => actPipeline(id, automateFor, prUrl)}
-            onDismiss={dismissPipeline}
-            onAutoFix={setPipelineAutoFix}
-            onClose={() => setAutomateFor(null)}
-          />
-        )
-      })()}
 
       {showRecordDialog && (
         <RecordMeetingDialog

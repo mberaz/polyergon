@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import type { Pipeline, PipelineConfig, PrTrack, Suggestion } from '@/lib/pipelines'
+import { DEFAULT_AUTO, type AutoSteps } from '@/lib/pipelineView'
 import type { SlackChannel } from '@/lib/slackBridge'
 import { isRunning, pipelineSummary, shortPr, prSteps, preprSteps } from '@/lib/pipelineView'
 import { SlackChannelPicker } from './SlackChannelPicker'
@@ -14,24 +15,24 @@ const STEPS = [
 ]
 
 // A proposed message for the session. Only your click sends it.
-function SuggestionBox({ s, onSend, onDismiss }: { s: Suggestion; onSend: () => void; onDismiss: () => void }) {
-  const title = s.kind === 'open-pr' ? 'Ready to open a PR?' : s.kind === 'review' ? 'New review feedback' : 'CI is failing'
+export function SuggestionBox({ s, onSend, onDismiss }: { s: Suggestion; onSend: () => void; onDismiss: () => void }) {
+  const title = s.kind === 'open-pr' ? 'Ready to open a PR?' : s.kind === 'review' ? 'New review feedback' : s.kind === 'merge' ? 'Approved and green: ready to merge' : 'CI is failing'
   return (
     <div className="mt-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-2.5">
       <p className="text-xs font-medium text-amber-200">{title}</p>
       <p className="text-[11px] text-gray-400 mt-1">Suggested message for the session:</p>
       <p className="text-xs text-gray-200 mt-0.5 italic">&ldquo;{s.text}&rdquo;</p>
       <div className="flex gap-2 mt-2">
-        <button onClick={onSend} className="text-xs px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white">Send to session</button>
+        <button onClick={onSend} className="text-xs px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white">{s.kind === 'merge' ? 'Merge' : 'Send to session'}</button>
         <button onClick={onDismiss} className="text-xs px-2 py-1 rounded-md text-gray-400 hover:text-white">Dismiss</button>
       </div>
     </div>
   )
 }
 
-const REVIEW_ICON: Record<string, string> = { APPROVED: '✓', CHANGES_REQUESTED: '✗', COMMENTED: '💬', DISMISSED: '–', PENDING: '…' }
-const REVIEW_COLOR: Record<string, string> = { APPROVED: 'text-emerald-300', CHANGES_REQUESTED: 'text-red-300', COMMENTED: 'text-gray-300' }
-const TRACK_BADGE: Record<PrTrack['state'], [string, string]> = {
+export const REVIEW_ICON: Record<string, string> = { APPROVED: '✓', CHANGES_REQUESTED: '✗', COMMENTED: '💬', DISMISSED: '–', PENDING: '…' }
+export const REVIEW_COLOR: Record<string, string> = { APPROVED: 'text-emerald-300', CHANGES_REQUESTED: 'text-red-300', COMMENTED: 'text-gray-300' }
+export const TRACK_BADGE: Record<PrTrack['state'], [string, string]> = {
   'in-review': ['in review', 'bg-blue-500/15 text-blue-300'],
   working: ['session is fixing', 'bg-blue-500/15 text-blue-300'],
   ready: ['ready to merge', 'bg-emerald-500/15 text-emerald-300'],
@@ -54,7 +55,7 @@ function Stepper({ steps }: { steps: { label: string; done: boolean; current: bo
   )
 }
 
-export function PrCard({ t, slackSet, max, onSend, onDismiss, onAutoFix }: { t: PrTrack; slackSet: boolean; max: number; onSend?: () => void; onDismiss?: () => void; onAutoFix?: (on: boolean) => void }) {
+export function PrCard({ t, slackSet, max, onSend, onDismiss, auto }: { t: PrTrack; slackSet: boolean; max: number; onSend?: () => void; onDismiss?: () => void; auto?: AutoSteps }) {
   const v = t.view
   const [label, cls] = TRACK_BADGE[t.state]
   return (
@@ -65,17 +66,10 @@ export function PrCard({ t, slackSet, max, onSend, onDismiss, onAutoFix }: { t: 
       </div>
       <div className="flex items-center gap-2 mt-0.5">
         <p className="text-[11px] text-gray-500">{shortPr(t.url)}{v?.isDraft ? ' · draft' : ''} · review fixes {t.reviewRounds}/{max} · CI fixes {t.ciFixes}/{max}</p>
-        {onAutoFix && (
-          <label className="ml-auto flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer whitespace-nowrap"
-            title={`When reviewers comment or CI fails, the session is asked to fix it, push, and reply on the PR — without your click. Up to ${max} rounds each; then it asks you. Never merges.`}>
-            <input type="checkbox" checked={t.autoFix !== false} onChange={e => onAutoFix(e.target.checked)} />
-            Auto-fix comments &amp; CI
-          </label>
-        )}
       </div>
       {t.suggestion && onSend && onDismiss && <SuggestionBox s={t.suggestion} onSend={onSend} onDismiss={onDismiss} />}
-      {t.suggestion && t.autoFix !== false && t.suggestion.kind !== 'open-pr' && (t.suggestion.kind === 'review' ? t.reviewRounds : t.ciFixes) < max &&
-        <p className="text-[11px] text-amber-300/80 mt-1">Auto-fix will send this as soon as the session is idle.</p>}
+      {t.suggestion && auto && t.suggestion.kind !== 'open-pr' && auto[t.suggestion.kind] && (t.suggestion.kind === 'merge' ? (t.mergeAttempts ?? 0) < 1 : (t.suggestion.kind === 'review' ? t.reviewRounds : t.ciFixes) < max) &&
+        <p className="text-[11px] text-amber-300/80 mt-1">Automatic: this goes to the session as soon as it&apos;s idle.</p>}
       <Stepper steps={prSteps(t, slackSet)} />
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div>
@@ -108,8 +102,15 @@ export function PrCard({ t, slackSet, max, onSend, onDismiss, onAutoFix }: { t: 
   )
 }
 
+export const AUTO_ROWS: [keyof AutoSteps, string, string][] = [
+  ['openPr', 'Open the PR', 'When the session has code to ship, ask it to commit, push and open a PR'],
+  ['review', 'Fix review comments', 'When reviewers comment, ask the session to address them, push and reply'],
+  ['ci', 'Fix failing CI', 'When CI fails, ask the session to fix it and push'],
+  ['merge', 'Merge when approved', 'When approved and CI is green, ask the session to merge (tried once automatically)'],
+]
+
 // Start a "Ship it" automation on a session, or watch / stop the running one.
-export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, onAddPr, onAct, onDismiss, onAutoFix, onClose }: {
+export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, onAddPr, onAct, onDismiss, onSetAuto, onClose }: {
   sessionName: string
   pipeline: Pipeline | null
   error: string | null
@@ -118,19 +119,22 @@ export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, 
   onAddPr: (id: string, url: string) => void
   onAct: (id: string, prUrl: string | null) => void
   onDismiss: (id: string, prUrl: string | null) => void
-  onAutoFix: (id: string, prUrl: string, on: boolean) => void
+  onSetAuto: (id: string, auto: Partial<AutoSteps>) => void
   onClose: () => void
 }) {
   const [channelText, setChannelText] = useState('')
   const [channel, setChannel] = useState<SlackChannel | null>(null)
   const [maxRounds, setMaxRounds] = useState(3)
+  const [autoDraft, setAutoDraft] = useState<AutoSteps>(DEFAULT_AUTO)
+  const auto: AutoSteps = pipeline ? { ...DEFAULT_AUTO, ...pipeline.config.auto } : autoDraft
+  const setAuto = (k: keyof AutoSteps, on: boolean) => pipeline && isRunning(pipeline) ? onSetAuto(pipeline.id, { [k]: on }) : setAutoDraft(a => ({ ...a, [k]: on }))
   const [prUrl, setPrUrl] = useState('')
   const running = isRunning(pipeline)
   const input = 'w-full bg-gray-800 border border-gray-700 focus:border-gray-500 rounded-md px-2.5 py-1.5 text-sm text-white outline-none placeholder-gray-500'
 
   function start() {
     const name = (channel?.name ?? channelText).replace(/^#/, '').trim()
-    onStart({ slackChannel: name ? { id: channel?.id ?? '', name } : null, maxRounds })
+    onStart({ slackChannel: name ? { id: channel?.id ?? '', name } : null, maxRounds, auto: autoDraft })
   }
 
   return (
@@ -149,9 +153,25 @@ export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, 
         {pipeline && pipeline.prs.length > 0 && (
           <div className="space-y-3 mb-4">
             {pipeline.prs.map(t => <PrCard key={t.url} t={t} slackSet={!!pipeline.config.slackChannel} max={pipeline.config.maxRounds}
-              onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onAutoFix={on => onAutoFix(pipeline.id, t.url, on)} />)}
+              onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} auto={auto} />)}
           </div>
         )}
+
+        <div className="rounded-lg border border-gray-800 p-3 mb-4">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Steps · automatic or ask me</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            {AUTO_ROWS.map(([k, label, hint]) => (
+              <label key={k} className="flex items-center justify-between gap-2 text-xs" title={hint}>
+                <span className="text-gray-300">{label}</span>
+                <span className="flex rounded-md border border-gray-700 overflow-hidden flex-shrink-0">
+                  <button type="button" onClick={() => setAuto(k, true)} className={`px-2 py-0.5 ${auto[k] ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Automatic</button>
+                  <button type="button" onClick={() => setAuto(k, false)} className={`px-2 py-0.5 ${!auto[k] ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Ask me</button>
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-500 mt-2">Review and CI fixes stop after {pipeline?.config.maxRounds ?? maxRounds} rounds per PR, then ask you. Approving is always up to your reviewers.</p>
+        </div>
 
         {running && pipeline && (
           <div className="flex gap-2 mb-4">
@@ -178,7 +198,7 @@ export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, 
             </ol>
             <label className="block text-xs text-gray-400 mb-1">Slack channel for &quot;ready for review&quot; (optional)</label>
             <SlackChannelPicker value={channelText} onChange={(v, c) => { setChannelText(v); setChannel(c) }} className={input} />
-            <p className="text-[11px] text-gray-500 mt-3">It never types into the session: it notifies you and suggests a message, and only your click sends it. It posts to Slack on its own if you set a channel. It never merges.</p>
+            <p className="text-[11px] text-gray-500 mt-3">Automatic steps send their message to the session when it&apos;s idle. &quot;Ask me&quot; steps notify you and wait for your click. It posts to Slack on its own if you set a channel.</p>
           </>
         )}
 

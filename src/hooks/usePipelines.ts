@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type { Pipeline, PipelineConfig } from '@/lib/pipelines'
+import type { AutoSteps } from '@/lib/pipelineView'
 
 // Session automations over the shared WebSocket. onNotify fires for steps that
 // need the user (ready to merge, needs you, done).
@@ -44,12 +45,12 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
   const dismissPipeline = useCallback((id: string, prUrl: string | null) => {
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-dismiss', id, prUrl }))
   }, [])
-  const setPipelineAutoFix = useCallback((id: string, prUrl: string, on: boolean) => {
-    wsRef.current?.send(JSON.stringify({ type: 'pipeline-autofix', id, prUrl, on }))
+  const setPipelineAuto = useCallback((id: string, auto: Partial<AutoSteps>) => {
+    wsRef.current?.send(JSON.stringify({ type: 'pipeline-auto', id, auto }))
   }, [])
   const stopPipeline = useCallback((id: string) => {
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-stop', id }))
   }, [])
 
-  return { setPipelineAutoFix, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, actPipeline, dismissPipeline }
+  return { setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, actPipeline, dismissPipeline }
 }
