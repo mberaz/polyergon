@@ -125,11 +125,12 @@ function PrPanel({ t, p, auto, onSend, onDismiss }: { t: PrTrack; p: Pipeline; a
   )
 }
 
-export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onStart, onStop, onAddPr, onAct, onDismiss, onSetAuto }: {
+export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onAct, onDismiss, onSetAuto }: {
   sessionName: string
   pipeline: Pipeline | null
   error: string | null
   onOpenSession: () => void
+  onReview?: () => void
   onStart: (config: PipelineConfig) => void
   onStop: (id: string) => void
   onAddPr: (id: string, url: string) => void
@@ -165,6 +166,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onSt
           </div>
           <span className={`px-3 py-1 rounded-full text-xs font-medium ring-1 ring-inset ${phaseCls}`}>{phaseLabel}</span>
           <div className="flex gap-2">
+            {onReview && <button onClick={onReview} className="text-sm px-3.5 py-1.5 rounded-lg border border-gray-700 bg-gray-900/60 hover:bg-gray-800">Review changes</button>}
             <button onClick={onOpenSession} className="text-sm px-3.5 py-1.5 rounded-lg border border-gray-700 bg-gray-900/60 hover:bg-gray-800">Open session</button>
             {running
               ? <button onClick={() => onStop(pipeline!.id)} className="text-sm px-3.5 py-1.5 rounded-lg border border-red-900/70 text-red-300 hover:bg-red-950/50">Stop</button>

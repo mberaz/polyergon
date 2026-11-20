@@ -55,6 +55,7 @@ interface Props {
   onAttachLive: (id: string) => void
   onKillLive: (id: string) => void
   onRemoveWorktree: (id: string) => void
+  onReview: (id: string) => void
   onDeleteLive: (id: string, claudeSessionId: string | null) => void
   onResumeLive: (id: string) => void
   onResumeAll: () => void
@@ -290,7 +291,7 @@ function getLiveSessionTitle(s: LiveSessionInfo, sessionNames: Record<string, st
     ?? s.cwd
 }
 
-function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, contextTokens, compactAt, pipeline, onAutomate, onRenameLive, onAttachLive, onKillLive, onRemoveWorktree, onDeleteLive, onResume, onCompact, onSetRemote, onRename }: {
+function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, contextTokens, compactAt, pipeline, onAutomate, onRenameLive, onAttachLive, onKillLive, onRemoveWorktree, onReview, onDeleteLive, onResume, onCompact, onSetRemote, onRename }: {
   pipeline: Pipeline | null
   onAutomate: (id: string) => void
   onRenameLive: (id: string, name: string) => void
@@ -304,6 +305,7 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
   onAttachLive: (id: string) => void
   onKillLive: (id: string) => void
   onRemoveWorktree: (id: string) => void
+  onReview: (id: string) => void
   onDeleteLive: (id: string, claudeSessionId: string | null) => void
   onResume: (id: string) => void
   onCompact: (id: string) => void
@@ -396,6 +398,13 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
               className="opacity-0 group-hover/live:opacity-100 text-gray-600 hover:text-gray-300 text-xs flex-shrink-0"
               title="Rename"
             >✎</button>
+          )}
+          {s.gitRoot && (
+            <button
+              onClick={e => { e.stopPropagation(); onReview(s.id) }}
+              className="opacity-0 group-hover/live:opacity-100 text-gray-500 hover:text-emerald-300 text-xs flex-shrink-0 font-mono"
+              title="Review changes: see what this session changed, comment on lines, send feedback or approve"
+            >±</button>
           )}
           {(
             <button
@@ -633,7 +642,7 @@ function FolderIcon({ open }: { open: boolean }) {
   )
 }
 
-export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onRemoveWorktree, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenSettings, onOpenAutomations, onHome, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
+export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onRemoveWorktree, onReview, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenSettings, onOpenAutomations, onHome, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
   // Search text is remembered per org, so switching orgs and back restores
   // whatever you'd typed in each
   const [searchByOrg, setSearchByOrg] = useState<Record<string, string>>({})
@@ -1091,6 +1100,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
                       onAttachLive={onAttachLive}
                       onKillLive={onKillLive}
                       onRemoveWorktree={onRemoveWorktree}
+                      onReview={onReview}
                       onDeleteLive={onDeleteLive}
                       onResume={onResumeLive}
                       onRename={renameSession}

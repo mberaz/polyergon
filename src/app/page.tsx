@@ -19,6 +19,7 @@ import { HomePage } from './components/HomePage'
 import { WatcherDialog } from './components/WatcherDialog'
 import { SettingsPage } from './components/SettingsPage'
 import { PipelinePage } from './components/PipelinePage'
+import { DiffPage } from './components/DiffPage'
 import { useSlackWatchers } from '@/hooks/useSlackWatchers'
 import type { SlackWatcher } from '@/lib/slackWatchers'
 import { setActiveOrg } from '@/lib/activeOrg'
@@ -42,7 +43,7 @@ const MIN_SIDEBAR = 160
 const MAX_SIDEBAR = 600
 const DEFAULT_SIDEBAR = 288 // w-72
 
-type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null } | { mode: 'slack' } | { mode: 'automations' } | { mode: 'settings' } | { mode: 'pipeline'; liveId: string }
+type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null } | { mode: 'slack' } | { mode: 'automations' } | { mode: 'settings' } | { mode: 'pipeline'; liveId: string } | { mode: 'diff'; liveId: string }
 
 export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
@@ -364,6 +365,7 @@ export default function Home() {
           onAttachLive={handleAttachLive}
           onKillLive={killLiveSession}
           onRemoveWorktree={removeWorktree}
+          onReview={id => setView({ mode: 'diff', liveId: id })}
           onDeleteLive={handleDeleteLive}
           onResumeLive={handleResumeLive}
           onResumeAll={resumeAllSessions}
@@ -469,6 +471,12 @@ export default function Home() {
           />
         )}
 
+        {view.mode === 'diff' && (() => {
+          const lid = view.liveId
+          const s = liveSessions.find(x => x.id === lid)
+          const name = (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session'
+          return <DiffPage key={lid} liveId={lid} sessionName={name} onSend={text => sendToLive(lid, text)} onOpenSession={() => handleAttachLive(lid)} />
+        })()}
         {view.mode === 'pipeline' && (() => {
           const lid = view.liveId
           const s = liveSessions.find(x => x.id === lid)
@@ -480,6 +488,7 @@ export default function Home() {
               pipeline={[...pipelines].reverse().find(p => p.liveId === lid) ?? null}
               error={pipelineError?.liveId === lid ? pipelineError.message : null}
               onOpenSession={() => handleAttachLive(lid)}
+              onReview={() => setView({ mode: 'diff', liveId: lid })}
               onStart={config => startPipeline(lid, config)}
               onStop={stopPipeline}
               onAddPr={(id, url) => addPipelinePr(id, lid, url)}
