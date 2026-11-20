@@ -46,6 +46,7 @@ export function prSteps(t: PrTrack, slack: boolean): { label: string; done: bool
     : v.checks === 'pending' ? 'CI running'
     : v.unresolved ? `${v.unresolved} open thread${v.unresolved > 1 ? 's' : ''}`
     : v.isDraft ? 'Still a draft'
+    : v.blockers?.length ? v.blockers[0][0].toUpperCase() + v.blockers[0].slice(1)
     : 'Ready to merge'
   return [
     { label: 'PR opened', done: true, current: false },

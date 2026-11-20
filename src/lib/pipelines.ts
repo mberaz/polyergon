@@ -59,6 +59,7 @@ export interface PrView {
   checks: PrCheckStatus
   requested: string[] // asked to review, not yet reviewed
   unresolved?: number // open review threads (comments nobody resolved)
+  blockers?: string[] // reviewers not yet satisfied (see reviewBlockersOf)
   reviews: { login: string; state: string; at: string | null }[] // latest per reviewer
   fetchedAt: number
 }
@@ -127,19 +128,41 @@ const PROMPTS = {
 
 import { shortPr } from './pipelineView'
 
-interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrCheckStatus; feedback: number; title: string; view: PrView; unresolved: number; isDraft: boolean }
+interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrCheckStatus; feedback: number; title: string; view: PrView; unresolved: number; isDraft: boolean; reviewBlockers: string[] }
 
-// Open review threads on a PR (GraphQL; `gh pr view` doesn't expose them). -1 = unknown.
-async function unresolvedThreads(url: string, env: NodeJS.ProcessEnv): Promise<number> {
+const isBot = (login: string) => /\[bot\]$|^copilot/i.test(login)
+
+// Every reviewer must be satisfied, not just "one approval":
+// people's latest review must be APPROVED; bots (Copilot) can't approve, so their
+// latest review must be on the newest commit. Pending requests block too.
+export function reviewBlockersOf(reviews: { login: string; state: string; commit: string | null }[], headOid: string, requested: string[]): string[] {
+  const out: string[] = []
+  for (const r of reviews) {
+    if (r.state === 'DISMISSED' || r.state === 'PENDING') continue
+    if (isBot(r.login)) { if (r.commit && headOid && r.commit !== headOid) out.push(`${r.login.replace(/-pull-request-reviewer|\[bot\]/g, '')} hasn't reviewed the latest commit`) }
+    else if (r.state !== 'APPROVED') out.push(`${r.login} ${r.state === 'CHANGES_REQUESTED' ? 'requested changes' : "hasn't approved"}`)
+  }
+  for (const who of requested) out.push(`waiting for ${who}`)
+  return out
+}
+
+// Open review threads + each reviewer's latest review and its commit (GraphQL; `gh pr view` lacks both).
+// unresolved -1 / null head = unknown (treated as not ready).
+async function reviewGate(url: string, env: NodeJS.ProcessEnv): Promise<{ unresolved: number; headOid: string; reviews: { login: string; state: string; commit: string | null }[] }> {
   const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/)
-  if (!m) return -1
+  if (!m) return { unresolved: -1, headOid: '', reviews: [] }
   try {
     const { stdout } = await execFileAsync('gh', ['api', 'graphql',
-      '-f', 'query=query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved}}}}}',
+      '-f', 'query=query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){headRefOid reviewThreads(first:100){nodes{isResolved}} latestReviews(first:50){nodes{author{login} state commit{oid}}}}}}',
       '-F', `o=${m[1]}`, '-F', `r=${m[2]}`, '-F', `n=${m[3]}`], { timeout: 15000, env })
-    const nodes = JSON.parse(stdout).data.repository.pullRequest.reviewThreads.nodes as { isResolved: boolean }[]
-    return nodes.filter(n => !n.isResolved).length
-  } catch { return -1 }
+    const pr = JSON.parse(stdout).data.repository.pullRequest
+    return {
+      unresolved: (pr.reviewThreads.nodes as { isResolved: boolean }[]).filter(n => !n.isResolved).length,
+      headOid: pr.headRefOid ?? '',
+      reviews: ((pr.latestReviews?.nodes ?? []) as { author?: { login?: string }; state: string; commit?: { oid?: string } }[])
+        .filter(r => r.author?.login).map(r => ({ login: r.author!.login!, state: r.state, commit: r.commit?.oid ?? null })),
+    }
+  } catch { return { unresolved: -1, headOid: '', reviews: [] } }
 }
 
 async function prSnapshot(url: string): Promise<PrSnapshot | null> {
@@ -156,9 +179,13 @@ async function prSnapshot(url: string): Promise<PrSnapshot | null> {
       .map((r: { author: { login: string }; state: string; submittedAt?: string }) => ({ login: r.author.login, state: r.state, at: r.submittedAt ?? null }))
     const reviewed = new Set(reviews.map((r: { login: string }) => r.login))
     const requested = (j.reviewRequests ?? []).map((r: { login?: string; name?: string; slug?: string }) => r.login ?? r.name ?? r.slug ?? '').filter((x: string) => x && !reviewed.has(x))
-    const unresolved = await unresolvedThreads(url, env)
-    const view: PrView = { number: j.number, title: j.title ?? '', state: j.state, isDraft: !!j.isDraft, reviewDecision: j.reviewDecision ?? null, checks, requested, reviews, fetchedAt: Date.now(), unresolved: Math.max(0, unresolved) }
-    return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks, feedback: others(j.reviews) + others(j.comments), title: j.title ?? '', view, unresolved, isDraft: !!j.isDraft }
+    const gate = await reviewGate(url, env)
+    const unresolved = gate.unresolved
+    // Only named people block when requested; team requests (CODEOWNERS) often linger after approval
+    const requestedPeople = (j.reviewRequests ?? []).map((r: { login?: string }) => r.login ?? '').filter((x: string) => x && !reviewed.has(x))
+    const reviewBlockers = reviewBlockersOf(gate.reviews.filter(r => r.login !== author), gate.headOid, requestedPeople)
+    const view: PrView = { number: j.number, title: j.title ?? '', state: j.state, isDraft: !!j.isDraft, reviewDecision: j.reviewDecision ?? null, checks, requested, reviews, fetchedAt: Date.now(), unresolved: Math.max(0, unresolved), blockers: reviewBlockers }
+    return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks, feedback: others(j.reviews) + others(j.comments), title: j.title ?? '', view, unresolved, isDraft: !!j.isDraft, reviewBlockers }
   } catch { return null }
 }
 
@@ -396,7 +423,7 @@ class PipelineEngine {
         suggest(t, 'review', PROMPTS.unresolved(t.url, pr.unresolved), `${pr.unresolved} unresolved review thread${pr.unresolved > 1 ? 's' : ''} on ${shortPr(t.url)}`, 'Unresolved review comments', `${pr.title}: ${pr.unresolved} open thread(s)`)
       }
       // Mergeable only when approved, CI done, not a draft and no open threads (unknown thread count = not ready)
-      const blockers = [pr.isDraft && 'still a draft', pr.unresolved !== 0 && (pr.unresolved < 0 ? 'review threads unknown' : `${pr.unresolved} unresolved review thread${pr.unresolved > 1 ? 's' : ''}`), pr.reviewDecision !== 'APPROVED' && 'not approved', pr.checks === 'pending' && 'CI running'].filter(Boolean) as string[]
+      const blockers = [pr.isDraft && 'still a draft', pr.unresolved !== 0 && (pr.unresolved < 0 ? 'review threads unknown' : `${pr.unresolved} unresolved review thread${pr.unresolved > 1 ? 's' : ''}`), pr.reviewDecision !== 'APPROVED' && 'not approved', pr.checks === 'pending' && 'CI running', ...pr.reviewBlockers].filter(Boolean) as string[]
       if (!blockers.length && t.state !== 'ready') {
         this.patchTrack(p, t, { state: 'ready', suggestion: { kind: 'merge', text: PROMPTS.merge(t.url), at: Date.now() } }, `${shortPr(t.url)} approved, CI green, no open threads. Ready to merge`, { title: 'Ready to merge', body: `${pr.title}: click Merge in the automation` })
       } else if (blockers.length && t.state === 'ready') {

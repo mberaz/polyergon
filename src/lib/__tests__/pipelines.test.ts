@@ -9,6 +9,7 @@ const writes: string[] = []
 const posts: string[] = []
 let dirty = true
 let threads: { isResolved: boolean }[] = []
+let gqlReviews: { author: { login: string }; state: string; commit: { oid: string } }[] = []
 type Pr = { number: number; state: string; isDraft: boolean; reviewDecision: string | null; statusCheckRollup: object[]; author: { login: string }; reviews: object[]; latestReviews: object[]; reviewRequests: object[]; comments: object[]; title: string }
 const base = (n: number): Pr => ({ number: n, state: 'OPEN', isDraft: false, reviewDecision: null, statusCheckRollup: [], author: { login: 'me' }, reviews: [], latestReviews: [], reviewRequests: [{ login: 'alice' }], comments: [], title: `PR ${n}` })
 const prs: Record<string, Pr> = {}
@@ -18,7 +19,7 @@ jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writ
 jest.mock('../slackBridge', () => ({ postToSlack: async (_c: unknown, t: string) => { posts.push(t); return { permalink: null } }, readSlackThread: async () => null }))
 jest.mock('child_process', () => ({ execFile: (cmd: string, a: string[], _o: object, cb: (e: Error | null, r?: { stdout: string }) => void) => {
   if (cmd === 'git') return a.includes('--porcelain') ? cb(null, { stdout: dirty ? ' M file.ts' : '' }) : cb(new Error('no upstream'))
-  if (a[0] === 'api') return cb(null, { stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: threads } } } } }) })
+  if (a[0] === 'api') return cb(null, { stdout: JSON.stringify({ data: { repository: { pullRequest: { headRefOid: 'H2', reviewThreads: { nodes: threads }, latestReviews: { nodes: gqlReviews } } } } }) })
   const pr = prs[a[2]]
   pr ? cb(null, { stdout: JSON.stringify(pr) }) : cb(new Error('no pr'))
 } }))
@@ -117,11 +118,21 @@ test('ready to merge only when approved, green, not a draft and no unresolved th
   expect(p.prs[0].state).not.toBe('ready')                       // draft + 1 open thread
   expect(p.prs[0].suggestion).toMatchObject({ kind: 'review' })  // asks the session to handle the thread
   pipelineEngine.dismiss(p.id, U4)
-  prs[U4].isDraft = false; threads = [{ isResolved: true }]
+  prs[U4].isDraft = false; threads = [{ isResolved: true }]; prs[U4].reviewRequests = []
   later(); await pipelineEngine.step(p.id, true)
   expect(p.prs[0].state).toBe('ready')
   expect(p.prs[0].suggestion).toMatchObject({ kind: 'merge' })
   threads = [{ isResolved: false }]                              // a new comment arrives
   later(); await pipelineEngine.step(p.id, true)
   expect(p.prs[0].state).toBe('in-review')
+
+  // Copilot reviewed an older commit, a person only commented: not ready
+  threads = []
+  gqlReviews = [{ author: { login: 'copilot-pull-request-reviewer' }, state: 'COMMENTED', commit: { oid: 'H1' } }, { author: { login: 'bob' }, state: 'COMMENTED', commit: { oid: 'H2' } }]
+  later(); await pipelineEngine.step(p.id, true)
+  expect(p.prs[0].state).toBe('in-review')
+  expect(p.prs[0].view?.blockers).toEqual(["copilot hasn't reviewed the latest commit", "bob hasn't approved"])
+  gqlReviews = [{ author: { login: 'copilot-pull-request-reviewer' }, state: 'COMMENTED', commit: { oid: 'H2' } }, { author: { login: 'bob' }, state: 'APPROVED', commit: { oid: 'H2' } }]
+  later(); await pipelineEngine.step(p.id, true)
+  expect(p.prs[0].state).toBe('ready')
 })
