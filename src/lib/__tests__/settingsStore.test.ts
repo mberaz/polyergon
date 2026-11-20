@@ -21,6 +21,16 @@ describe('settingsStore', () => {
     const f = file()
     updateSettings({ autoCompact: { enabled: true, windowTokens: 250_000 } }, f)
     const s = updateSettings({ notifications: { enabled: false } }, f)
-    expect(s).toEqual({ autoCompact: { enabled: true, windowTokens: 250_000 }, notifications: { enabled: false } })
+    expect(s).toEqual({ autoCompact: { enabled: true, windowTokens: 250_000 }, notifications: { enabled: false }, sessions: { skipPermissions: false } })
+  })
+
+  test('permission prompts stay on unless explicitly skipped', () => {
+    const f = file()
+    expect(getSettings(f).sessions.skipPermissions).toBe(false)
+    updateSettings({ sessions: { skipPermissions: true } }, f)
+    expect(getSettings(f).sessions.skipPermissions).toBe(true)
+    updateSettings({ autoCompact: { enabled: false, windowTokens: 200_000 } }, f)
+    expect(getSettings(f).sessions.skipPermissions).toBe(true)
   })
 })
+

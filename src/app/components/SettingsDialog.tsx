@@ -12,6 +12,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [k, setK] = useState(300)
   const [loaded, setLoaded] = useState(false)
   const [notifyOn, setNotifyOn] = useState(true)
+  const [skipPerms, setSkipPerms] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('unsupported')
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
@@ -27,6 +28,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       setEnabled(s.autoCompact.enabled)
       setK(Math.round(s.autoCompact.windowTokens / 1000))
       setNotifyOn(s.notifications?.enabled !== false)
+      setSkipPerms(s.sessions?.skipPermissions === true)
       setLoaded(true)
     }).catch(() => setState('error'))
   }, [])
@@ -60,7 +62,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       const r = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ autoCompact: { enabled, windowTokens: k * 1000 }, notifications: { enabled: notifyOn } }),
+        body: JSON.stringify({ autoCompact: { enabled, windowTokens: k * 1000 }, notifications: { enabled: notifyOn }, sessions: { skipPermissions: skipPerms } }),
       })
       if (!r.ok) throw new Error('Could not save settings')
       if (tDirty) {
@@ -107,6 +109,18 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             Claude compacts on its own between turns, a little before this limit. Recommended: 250k–300k.
             Applies to sessions started, resumed or restarted after you save. Copilot sessions are not affected.
           </p>
+        </section>
+
+        <section className="space-y-2 mt-5 pt-4 border-t border-gray-800">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={skipPerms} disabled={!loaded} onChange={e => { setSkipPerms(e.target.checked); setState('idle') }} />
+            Skip permission prompts
+          </label>
+          <p className="text-xs text-gray-500 leading-relaxed">
+            Sessions run commands and edit files without asking (Claude <code>bypassPermissions</code>, Copilot <code>--allow-all</code>).
+            Applies to sessions started, resumed or restarted after you save.
+          </p>
+          {skipPerms && <p className="text-xs text-amber-400">Only use this with folders and tasks you trust.</p>}
         </section>
 
         <section className="space-y-2 mt-5 pt-4 border-t border-gray-800">

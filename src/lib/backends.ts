@@ -15,7 +15,8 @@ export interface BackendSpec {
   // Full argv (after the bin) for an interactive session on `model` in `cwd`.
   // resumeId and rcName are backend-agnostic extras the caller appends where
   // supported.
-  spawnArgs: (opts: { model: string; cwd: string; resumeId?: string; rcName?: string; rc?: boolean }) => string[]
+  // skipPermissions: run without permission prompts (Settings → Sessions).
+  spawnArgs: (opts: { model: string; cwd: string; resumeId?: string; rcName?: string; rc?: boolean; skipPermissions?: boolean }) => string[]
   // Extra env for this model (e.g. the fable-5-1 window-enforcement bypass).
   env: (model: string) => Record<string, string>
   // Find the CLI's own session id for a session started in `cwd` at/after
@@ -29,8 +30,8 @@ const CLAUDE: BackendSpec = {
   id: 'claude',
   label: 'Claude',
   bin: 'claude',
-  spawnArgs: ({ model, resumeId, rcName, rc }) => [
-    '--permission-mode', 'bypassPermissions',
+  spawnArgs: ({ model, resumeId, rcName, rc, skipPermissions }) => [
+    ...(skipPermissions ? ['--permission-mode', 'bypassPermissions'] : []),
     '--model', model,
     // Remote Control is opt-in per session (📱 on the card) so the phone list
     // only shows sessions you actually want there, labeled with their name.
@@ -78,9 +79,9 @@ const COPILOT: BackendSpec = {
   label: 'Copilot',
   bin: 'copilot',
   detectSessionId: findCopilotSessionIdSince,
-  spawnArgs: ({ model, cwd, resumeId }) => [
+  spawnArgs: ({ model, cwd, resumeId, skipPermissions }) => [
     '--model', model,
-    '--allow-all',
+    ...(skipPermissions ? ['--allow-all'] : []),
     // Trust the session's folder up front. --allow-all covers tools/paths/URLs
     // but NOT folder trust, so an interactive session in a new dir would pop a
     // "Confirm folder trust" prompt every time; --add-dir pre-trusts it.

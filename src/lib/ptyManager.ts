@@ -7,7 +7,7 @@ import { liveSessionStore } from './liveSessionStore'
 import { detectStatus } from './statusDetector'
 import { extractPrUrl } from './prDetector'
 import { getBackend, type BackendSpec } from './backends'
-import { autoCompactEnv } from './settingsStore'
+import { autoCompactEnv, getSettings } from './settingsStore'
 
 const UUID_JSONL = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/i
 
@@ -156,7 +156,7 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
   // ~/.claude/settings.json CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC flag — we
   // must NOT drop the user settings source to bypass it (it also carries all
   // skills/plugins; doing so blanked every skill).
-  const args = backend.spawnArgs({ model: effectiveModel, cwd, resumeId, rcName: cleanRcName || undefined, rc: !!rc })
+  const args = backend.spawnArgs({ model: effectiveModel, cwd, resumeId, rcName: cleanRcName || undefined, rc: !!rc, skipPermissions: getSettings().sessions.skipPermissions })
 
   const proc = pty.spawn(backend.bin, args, {
     name: 'xterm-color',

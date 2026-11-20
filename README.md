@@ -47,7 +47,8 @@ Auto-compact, notifications and the transcription key are set in the app under *
 ## Security
 
 - Polyergon listens on `127.0.0.1` only. Requests from other websites are rejected (Origin and Host checks).
-- **Sessions run with permission prompts turned off** (`--permission-mode bypassPermissions` for Claude, `--allow-all` for Copilot). The agents can run commands and edit files without asking. Only point sessions at folders you trust.
+- Sessions ask before running commands or editing files, as Claude Code and Copilot normally do. **Settings → Skip permission prompts** turns that off (`--permission-mode bypassPermissions` for Claude, `--allow-all` for Copilot). Only use it with folders you trust.
+- The meeting assistant runs headless with permission prompts off, so it can load links and connector content you add. Meeting audio becomes its input, so do not record meetings with people you do not trust.
 - Your transcription key is stored on your machine only, in a file readable by your user only, and is never sent to the browser.
 
 Report vulnerabilities to **security@polyergon.ai**. See [SECURITY.md](SECURITY.md).
