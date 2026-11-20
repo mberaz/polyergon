@@ -13,14 +13,19 @@ export interface Settings {
   sessions: { skipPermissions: boolean }
   // Keep the Mac from idle-sleeping so sessions/automations keep running (screen may still lock)
   power: { keepAwake: boolean }
+  // Opt-in "Get updates" email signup: asked once on first launch
+  updates: { asked: boolean; email?: string }
 }
 
 // Claude Code's CLAUDE_CODE_AUTO_COMPACT_WINDOW accepts 100k–1M.
 export const AUTO_COMPACT_MIN = 100_000
 export const AUTO_COMPACT_MAX = 1_000_000
-export const DEFAULT_SETTINGS: Settings = { autoCompact: { enabled: true, windowTokens: 300_000 }, notifications: { enabled: true }, sessions: { skipPermissions: false }, power: { keepAwake: false } }
+export const DEFAULT_SETTINGS: Settings = { autoCompact: { enabled: true, windowTokens: 300_000 }, notifications: { enabled: true }, sessions: { skipPermissions: false }, power: { keepAwake: false }, updates: { asked: false } }
 
 const FILE = join(DATA_DIR, 'settings.json')
+
+const updatesOf = (u?: Partial<Settings['updates']>): Settings['updates'] =>
+  typeof u?.email === 'string' && u.email ? { asked: u.asked === true, email: u.email.slice(0, 254) } : { asked: u?.asked === true }
 
 const clamp = (n: number) => Math.min(AUTO_COMPACT_MAX, Math.max(AUTO_COMPACT_MIN, Math.round(n)))
 
@@ -34,6 +39,7 @@ export function getSettings(file = FILE): Settings {
       notifications: { enabled: !!nt.enabled },
       sessions: { skipPermissions: raw.sessions?.skipPermissions === true },
       power: { keepAwake: raw.power?.keepAwake === true },
+      updates: updatesOf(raw.updates),
     }
   } catch {
     return structuredClone(DEFAULT_SETTINGS)
@@ -47,6 +53,7 @@ export function updateSettings(patch: Partial<Settings>, file = FILE): Settings 
     notifications: { enabled: !!{ ...cur.notifications, ...patch.notifications }.enabled },
     sessions: { skipPermissions: ({ ...cur.sessions, ...patch.sessions }).skipPermissions === true },
     power: { keepAwake: ({ ...cur.power, ...patch.power }).keepAwake === true },
+    updates: updatesOf({ ...cur.updates, ...patch.updates }),
   }
   next.autoCompact.windowTokens = clamp(Number(next.autoCompact.windowTokens) || cur.autoCompact.windowTokens)
   next.autoCompact.enabled = !!next.autoCompact.enabled

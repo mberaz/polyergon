@@ -21,7 +21,7 @@ describe('settingsStore', () => {
     const f = file()
     updateSettings({ autoCompact: { enabled: true, windowTokens: 250_000 } }, f)
     const s = updateSettings({ notifications: { enabled: false } }, f)
-    expect(s).toEqual({ autoCompact: { enabled: true, windowTokens: 250_000 }, notifications: { enabled: false }, sessions: { skipPermissions: false }, power: { keepAwake: false } })
+    expect(s).toEqual({ autoCompact: { enabled: true, windowTokens: 250_000 }, notifications: { enabled: false }, sessions: { skipPermissions: false }, power: { keepAwake: false }, updates: { asked: false } })
   })
 
   test('permission prompts stay on unless explicitly skipped', () => {
@@ -32,5 +32,12 @@ describe('settingsStore', () => {
     updateSettings({ autoCompact: { enabled: false, windowTokens: 200_000 } }, f)
     expect(getSettings(f).sessions.skipPermissions).toBe(true)
   })
-})
 
+  test('remembers the updates opt-in without touching other settings', () => {
+    const f = file()
+    expect(getSettings(f).updates).toEqual({ asked: false })
+    updateSettings({ updates: { asked: true, email: 'a@b.co' } }, f)
+    updateSettings({ power: { keepAwake: true } }, f)
+    expect(getSettings(f).updates).toEqual({ asked: true, email: 'a@b.co' })
+  })
+})

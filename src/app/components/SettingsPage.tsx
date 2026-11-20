@@ -6,6 +6,7 @@ import type { ClaudeAuthStatus, ClaudeLogin } from '@/lib/claudeAuth'
 import { withOrg } from '@/lib/activeOrg'
 import { claudeLogin } from './SlackProblemBanner'
 import { setNotificationsEnabled } from '@/hooks/useDesktopNotifications'
+import { UpdatesForm } from './UpdatesSignup'
 
 const MIN_K = 100
 const MAX_K = 1000
@@ -16,6 +17,7 @@ const SECTIONS = [
   ['power', 'Power'],
   ['notifications', 'Notifications'],
   ['meetings', 'Meetings'],
+  ['updates', 'Updates'],
 ] as const
 
 function Sec({ id, title, desc, children }: { id: string; title: string; desc: string; children: React.ReactNode }) {
@@ -36,6 +38,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [notifyOn, setNotifyOn] = useState(true)
   const [skipPerms, setSkipPerms] = useState(false)
   const [keepAwake, setKeepAwake] = useState(false)
+  const [updatesEmail, setUpdatesEmail] = useState<string | undefined>()
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('unsupported')
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
@@ -57,6 +60,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
       setNotifyOn(s.notifications?.enabled !== false)
       setSkipPerms(s.sessions?.skipPermissions === true)
       setKeepAwake(s.power?.keepAwake === true)
+      setUpdatesEmail(s.updates?.email)
       setLoaded(true)
     }).catch(() => setState('error'))
   }, [])
@@ -255,6 +259,13 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           )}
           {tStatus?.fromEnv && <p className="text-xs text-gray-500">Using OPENAI_API_KEY from the environment.</p>}
           <p className="text-xs text-gray-500 leading-relaxed">Stored only on this computer, readable by your user only. Never sent to the browser.</p>
+        </Sec>
+
+        <Sec id="updates" title="Updates" desc="Get Polyergon news by email. Optional.">
+          {updatesEmail
+            ? <p className="text-sm text-emerald-300">Subscribed as {updatesEmail}.</p>
+            : <UpdatesForm onDone={setUpdatesEmail} />}
+          <p className="text-xs text-gray-500 leading-relaxed">New releases and features, a few times a year. Your email goes only to polyergon.ai; Polyergon sends nothing else about you.</p>
         </Sec>
       </div>
       </div>

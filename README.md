@@ -95,6 +95,7 @@ Polyergon drives real shells, so it is built to be reachable only by you.
 - Sessions ask before running commands or editing files, as Claude Code and Copilot normally do. **Settings → Skip permission prompts** turns that off. Only use it with folders you trust.
 - **Automations type into your sessions** when a step is set to Auto (Ship it), and a channel watcher set to answer automatically **posts to Slack as you**. Set steps to Ask me if you want to approve each one.
 - Background helpers (meeting assistant, Slack drafts, watchers) run headless with permission prompts off, so they can read links and connector content you give them. Content you add (links, meeting audio, Slack messages) becomes their input, so only add sources you trust.
+- No telemetry or analytics. Polyergon talks only to the services you connect (such as Anthropic, GitHub, Slack, and OpenAI or Azure for meeting transcription), with your own credentials. The only network call it makes on its own behalf is the optional "Get updates" email signup: on first launch Home asks once (and Settings → Updates lets you subscribe later). Only if you enter an email and click Subscribe, your browser sends that email to `polyergon.ai`.
 
 Report vulnerabilities to **security@polyergon.ai**. See [SECURITY.md](SECURITY.md).
 
