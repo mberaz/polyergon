@@ -65,7 +65,7 @@ export function PrCard({ t, slackSet, max, onSend, onDismiss, auto }: { t: PrTra
         <span className={`ml-auto flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium ${cls}`}>{label}</span>
       </div>
       <div className="flex items-center gap-2 mt-0.5">
-        <p className="text-[11px] text-gray-500">{shortPr(t.url)}{v?.isDraft ? ' · draft' : ''} · review fixes {t.reviewRounds}/{max} · CI fixes {t.ciFixes}/{max}</p>
+        <p className="text-[11px] text-gray-500"><a href={t.url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">{shortPr(t.url)} ↗</a>{v?.isDraft ? ' · draft' : ''} · review fixes {t.reviewRounds}/{max} · CI fixes {t.ciFixes}/{max}</p>
       </div>
       {t.suggestion && onSend && onDismiss && <SuggestionBox s={t.suggestion} onSend={onSend} onDismiss={onDismiss} />}
       {t.suggestion && auto && t.suggestion.kind !== 'open-pr' && auto[t.suggestion.kind] && (t.suggestion.kind === 'merge' ? (t.mergeAttempts ?? 0) < 1 : (t.suggestion.kind === 'review' ? t.reviewRounds : t.ciFixes) < max) &&

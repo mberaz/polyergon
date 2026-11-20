@@ -78,13 +78,14 @@ function PrPanel({ t, p, auto, onSend, onDismiss }: { t: PrTrack; p: Pipeline; a
         <div className="min-w-0 flex-1">
           <a href={t.url} target="_blank" rel="noreferrer" className="text-base font-semibold text-gray-100 hover:text-blue-300 leading-snug">{v?.title || shortPr(t.url)}</a>
           <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-2">
-            <span className="font-mono">{shortPr(t.url)}</span>
+            <a href={t.url} target="_blank" rel="noreferrer" className="font-mono text-blue-400 hover:underline">{shortPr(t.url)}</a>
             {v?.isDraft && <span className="text-gray-400">· draft</span>}
             <span>· review fixes {t.reviewRounds}/{max}</span>
             <span>· CI fixes {t.ciFixes}/{max}</span>
           </p>
         </div>
         <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium ${cls}`}>{label}</span>
+        <a href={t.url} target="_blank" rel="noreferrer" className="flex-shrink-0 text-xs px-3 py-1 rounded-lg border border-gray-700 hover:bg-gray-800 text-gray-200">Open PR ↗</a>
       </header>
 
       <div className="mt-4"><Track steps={prSteps(t, !!p.config.slackChannel)} /></div>
