@@ -81,6 +81,7 @@ interface Props {
   onOpenNotes: (id: string | null) => void
   onOpenSkills: (name: string | null) => void
   onOpenSlack: () => void
+  onOpenAutomations: () => void
   selectedNoteId: string | null
   selectedSkill: string | null
   skillsVersion: number
@@ -580,7 +581,7 @@ function FolderIcon({ open }: { open: boolean }) {
   )
 }
 
-export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
+export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenAutomations, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   // Search text is remembered per org, so switching orgs and back restores
   // whatever you'd typed in each
@@ -617,7 +618,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null)
   const [dragOverLiveId, setDragOverLiveId] = useState<string | null>(null)
-  const [tab, setTab] = useState<'live' | 'history' | 'prs' | 'notes' | 'meetings' | 'usage' | 'skills' | 'slack'>('live')
+  const [tab, setTab] = useState<'live' | 'history' | 'prs' | 'notes' | 'meetings' | 'usage' | 'skills' | 'slack' | 'automations'>('live')
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [skillsLoaded, setSkillsLoaded] = useState(false)
   const [showOrgs, setShowOrgs] = useState(false)
@@ -654,7 +655,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
   const inOrg = (orgId: string | null | undefined) =>
     activeOrgId === 'all' || (orgId ?? 'default') === activeOrgId
   const orgLive = liveSessions.filter(s => inOrg(s.orgId))
-  const orgHistory = historySessions.filter(s => inOrg(s.orgId))
+  const orgHistory = historySessions.filter(s => inOrg(s.orgId) && !s.headless)
   const orgMeetings = meetings.filter(m => inOrg(m.orgId))
   const recordingCount = orgMeetings.filter(m => m.status === 'recording').length
 
@@ -955,10 +956,19 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
         >
           Slack
         </button>
+        <button
+          onClick={() => { setTab('automations'); onOpenAutomations() }}
+          className={`py-2.5 text-xs font-semibold tracking-wide flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
+            tab === 'automations' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          ⚡ Automations
+          {pipelines.filter(isRunning).length > 0 && <span className="rounded-full px-1.5 py-0.5 text-[10px] bg-blue-500/20 text-blue-300">{pipelines.filter(isRunning).length}</span>}
+        </button>
       </div>
 
       {/* Search — shared across live/history/PRs/skills tabs */}
-      {tab !== 'notes' && tab !== 'meetings' && tab !== 'usage' && tab !== 'slack' && (
+      {tab !== 'notes' && tab !== 'meetings' && tab !== 'usage' && tab !== 'slack' && tab !== 'automations' && (
         <div className="px-3 py-2 border-b border-gray-800/40">
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1101,7 +1111,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
               {!isCollapsed && (
                 <div className="ml-3 mt-0.5 border-l border-gray-800/60 pl-2">
                   {projectSessions.map(s => {
-                    const name = sessionNames[s.sessionId] ?? s.firstUserMessage ?? 'Empty session'
+                    const name = sessionNames[s.sessionId] ?? s.title ?? s.firstUserMessage ?? 'Empty session'
                     const isActive = selectedHistoryId === s.sessionId
                     const isEditing = editingSessionId === s.sessionId
 

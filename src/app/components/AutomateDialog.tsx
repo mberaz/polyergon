@@ -47,7 +47,7 @@ function Stepper({ t, slack }: { t: PrTrack; slack: boolean }) {
   )
 }
 
-function PrCard({ t, slackSet, max }: { t: PrTrack; slackSet: boolean; max: number }) {
+export function PrCard({ t, slackSet, max }: { t: PrTrack; slackSet: boolean; max: number }) {
   const v = t.view
   const [label, cls] = TRACK_BADGE[t.state]
   return (

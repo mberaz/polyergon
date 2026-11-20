@@ -21,6 +21,8 @@ export interface SessionMetadata {
   firstUserMessage: string | null
   // Started by `claude -p` (Polyergon's meeting assistant, Slack lookups…), not a person
   headless?: boolean
+  // Claude's own title: /rename (custom-title) or its auto title (ai-title)
+  title?: string | null
 }
 
 /**
@@ -122,6 +124,33 @@ export function firstUserMessageSync(filePath: string): string | null {
   } catch { return null }
 }
 
+// Claude appends title entries as the session goes, so the newest is near the
+// end: prefer the last /rename (custom-title), else the last auto title.
+export function titleFromLines(text: string): string | null {
+  let custom: string | null = null, ai: string | null = null
+  for (const line of text.split('\n')) {
+    if (!line.includes('-title"')) continue
+    try {
+      const e = JSON.parse(line)
+      if (e.type === 'custom-title' && e.customTitle) custom = String(e.customTitle)
+      else if (e.type === 'ai-title' && e.aiTitle) ai = String(e.aiTitle)
+    } catch { /* partial line */ }
+  }
+  return custom ?? ai
+}
+
+async function titleFromTail(filePath: string, size = 262144): Promise<string | null> {
+  try {
+    const fd = await fs.promises.open(filePath, 'r')
+    const { size: total } = await fd.stat()
+    const start = Math.max(0, total - size)
+    const buf = Buffer.alloc(Math.min(size, total))
+    const { bytesRead } = await fd.read(buf, 0, buf.length, start)
+    await fd.close()
+    return titleFromLines(buf.subarray(0, bytesRead).toString('utf-8'))
+  } catch { return null }
+}
+
 export async function listAllSessions(): Promise<SessionSummary[]> {
   // Collect all .jsonl files with their mtime first (cheap stat), across
   // every registered org's projects root.
@@ -161,6 +190,7 @@ export async function listAllSessions(): Promise<SessionSummary[]> {
       // Trim last (possibly incomplete) line
       const content = head.slice(0, head.lastIndexOf('\n') + 1)
       const metadata = extractSessionMetadata(content, sessionId, mtime)
+      metadata.title = await titleFromTail(filePath)
       const gitRoot = metadata.cwd ? getGitRoot(metadata.cwd) : null
       summaries.push({ ...metadata, projectPath: decodeProjectPath(projectDir), projectEncoded: projectDir, filePath, gitRoot, orgId })
     } catch { /* skip unreadable */ }

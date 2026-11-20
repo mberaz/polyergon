@@ -114,6 +114,7 @@ export interface SlackMention {
   time: string // ISO, from the permalink's timestamp
   isDm: boolean
   checked?: boolean // false until we know you haven't answered it
+  suggestion?: string // Claude's suggested reply
 }
 
 // Slack permalinks carry the message time: …/p1795174145426439 → 1795174145.426439 s

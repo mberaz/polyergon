@@ -11,7 +11,9 @@ export function useSessions() {
   const refresh = useCallback(() => {
     return fetch('/api/sessions')
       .then(r => r.json())
-      .then(data => { setSessions(data); setLoading(false) })
+      // Everywhere the UI labels a session it reads firstUserMessage, so put
+      // Claude's own title there when it has one.
+      .then((data: SessionSummary[]) => { setSessions(data.map(h => (h.title ? { ...h, firstUserMessage: h.title } : h))); setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
 

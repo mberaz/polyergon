@@ -14,6 +14,7 @@ import { SkillsPage } from './components/SkillsPage'
 import { NotesPage } from './components/NotesPage'
 import { CommandPalette, type PaletteItem } from './components/CommandPalette'
 import { SlackInbox } from './components/SlackInbox'
+import { AutomationsPage } from './components/AutomationsPage'
 import type { SlackMention } from '@/lib/slackBridge'
 import { useNotes } from '@/hooks/useNotes'
 import { usePipelines } from '@/hooks/usePipelines'
@@ -33,7 +34,7 @@ const MIN_SIDEBAR = 160
 const MAX_SIDEBAR = 600
 const DEFAULT_SIDEBAR = 288 // w-72
 
-type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null } | { mode: 'slack' }
+type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId: string } | { mode: 'prdash' } | { mode: 'usagedash' } | { mode: 'meetinglib' } | { mode: 'skills'; name: string | null } | { mode: 'notes'; id: string | null } | { mode: 'slack' } | { mode: 'automations' }
 
 export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
@@ -307,6 +308,7 @@ export default function Home() {
       { id: 'usage', group: 'Actions', label: 'Open usage', run: () => setView({ mode: 'usagedash' }) },
       { id: 'prs', group: 'Actions', label: 'Open PR dashboard', run: () => setView({ mode: 'prdash' }) },
       { id: 'slack', group: 'Actions', label: 'Open Slack inbox', run: () => setView({ mode: 'slack' }) },
+      { id: 'automations', group: 'Actions', label: 'Open automations', run: () => setView({ mode: 'automations' }) },
       ...liveSessions.map(s => ({ id: s.id, group: 'Live sessions', label: nameOf(s.id, s.claudeSessionId, s.cwd).slice(0, 90), hint: s.status, run: () => handleAttachLive(s.id) })),
       ...sessions.filter(h => !h.headless && !liveIds.has(h.sessionId)).map(h => ({
         id: h.sessionId, group: 'History', label: (sessionNameOverrides[h.sessionId] || h.firstUserMessage || h.cwd?.split('/').at(-1) || 'Session').slice(0, 90),
@@ -361,6 +363,7 @@ export default function Home() {
           onOpenNotes={id => setView({ mode: 'notes', id })}
           onOpenSkills={name => setView({ mode: 'skills', name })}
           onOpenSlack={() => setView({ mode: 'slack' })}
+          onOpenAutomations={() => setView({ mode: 'automations' })}
           selectedNoteId={view.mode === 'notes' ? view.id : null}
           selectedSkill={view.mode === 'skills' ? view.name : null}
           skillsVersion={skillsVersion}
@@ -417,6 +420,15 @@ export default function Home() {
         )}
 
         {view.mode === 'slack' && <SlackInbox onSendAgent={handleSlackAgent} />}
+
+        {view.mode === 'automations' && (
+          <AutomationsPage
+            pipelines={pipelines}
+            nameOf={id => { const s = liveSessions.find(x => x.id === id); return (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session' }}
+            onOpen={id => setAutomateFor(id)}
+            onStop={stopPipeline}
+          />
+        )}
 
         {view.mode === 'skills' && (
           <SkillsPage selected={view.name} onSelect={name => setView({ mode: 'skills', name })} onChanged={() => setSkillsVersion(v => v + 1)} />

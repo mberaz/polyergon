@@ -128,6 +128,11 @@ class PipelineEngine {
     try { this.items = JSON.parse(readFileSync(FILE, 'utf-8')).filter((p: Pipeline) => Array.isArray(p.prs)) } catch { this.items = [] }
     onAnyStatusChange((id, status) => {
       if (status === 'waiting') { if (!this.quietSince.has(id)) this.quietSince.set(id, Date.now()) } else this.quietSince.delete(id)
+      // You picked the session back up after it stopped on "needs you": resume watching
+      if (status === 'thinking') {
+        this.items.filter(p => p.liveId === id && p.phase === 'needs-you').forEach(p =>
+          this.update(p, { phase: p.prs.length ? 'tracking' : 'waiting-for-session', actedAt: Date.now() }, 'Session is working again; waiting for it to finish'))
+      }
       this.forSession(id, p => this.step(p.id))
       // re-check once the quiet period has passed
       if (status === 'waiting') setTimeout(() => this.forSession(id, p => this.step(p.id)), QUIET_MS + 1000)

@@ -14,7 +14,7 @@ const REACTIONS: [string, string][] = [['thumbsup', '👍'], ['eyes', '👀'], [
 const COLORS = ['bg-rose-600', 'bg-amber-600', 'bg-emerald-600', 'bg-sky-600', 'bg-violet-600', 'bg-pink-600', 'bg-teal-600']
 const colorFor = (name: string) => COLORS[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length]
 
-function Card({ m, onGone, onAgent }: { m: SlackMention; onGone: () => void; onAgent: (m: SlackMention) => void }) {
+function Card({ m, onGone, onAgent, suggesting }: { m: SlackMention; onGone: () => void; onAgent: (m: SlackMention) => void; suggesting: boolean }) {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState<'draft' | 'send' | 'done' | null>(null)
@@ -44,6 +44,15 @@ function Card({ m, onGone, onAgent }: { m: SlackMention; onGone: () => void; onA
         {m.checked !== false && <a href={m.permalink} target="_blank" rel="noreferrer" className="text-[11px] text-blue-400 hover:underline flex-shrink-0">Open in Slack</a>}
       </div>
       <p dir="auto" onClick={() => setExpanded(e => !e)} className={`text-sm text-gray-300 mt-3 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed cursor-pointer ${expanded ? '' : 'line-clamp-5'}`}>{m.text}</p>
+
+      {!open && m.suggestion && (
+        <div className="mt-3 rounded-lg bg-blue-950/40 border border-blue-900/50 px-3 py-2">
+          <p className="text-[10px] font-semibold text-blue-300/80 uppercase tracking-wide mb-1">💡 Suggested reply</p>
+          <p dir="auto" className="text-xs text-blue-100/90 whitespace-pre-wrap leading-relaxed line-clamp-4">{m.suggestion}</p>
+          <button onClick={() => { setText(m.suggestion!); setOpen(true) }} className="mt-1.5 text-[11px] text-blue-300 hover:text-blue-200">Use it (you can edit before sending) →</button>
+        </div>
+      )}
+      {!open && m.checked && !m.suggestion && suggesting && <p className="mt-3 text-[11px] text-gray-500 animate-pulse">💡 Writing a suggested reply…</p>}
 
       {open && (
         <div className="mt-3 space-y-2">
@@ -84,7 +93,7 @@ function Card({ m, onGone, onAgent }: { m: SlackMention; onGone: () => void; onA
 
 // Slack messages that tag you and are still open, as cards.
 export function SlackInbox({ onSendAgent }: { onSendAgent: (m: SlackMention) => void }) {
-  const [data, setData] = useState<{ items: SlackMention[]; fetchedAt: number; refreshing: boolean; stage: 'idle' | 'searching' | 'checking'; startedAt: number; error: string | null } | null>(null)
+  const [data, setData] = useState<{ items: SlackMention[]; fetchedAt: number; refreshing: boolean; stage: 'idle' | 'searching' | 'checking' | 'suggesting'; startedAt: number; error: string | null } | null>(null)
   const [now, setNow] = useState(Date.now())
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState<'all' | 'dm' | 'channels'>('all')
@@ -125,7 +134,8 @@ export function SlackInbox({ onSendAgent }: { onSendAgent: (m: SlackMention) => 
         <div className="mx-6 mb-4 rounded-lg border border-blue-900/60 bg-blue-950/30 px-4 py-2.5 flex items-center gap-4 text-xs flex-shrink-0">
           <span className="w-3.5 h-3.5 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
           <span className={data.stage === 'searching' ? 'text-blue-200 font-medium' : 'text-gray-500'}>{data.stage === 'searching' ? '1. Finding your mentions and DMs…' : '✓ Found your mentions and DMs'}</span>
-          <span className={data.stage === 'checking' ? 'text-blue-200 font-medium' : 'text-gray-600'}>2. Checking which you already answered{data.stage === 'checking' ? '…' : ''}</span>
+          <span className={data.stage === 'checking' ? 'text-blue-200 font-medium' : data.stage === 'suggesting' ? 'text-gray-500' : 'text-gray-600'}>{data.stage === 'suggesting' ? '✓ Checked which you answered' : `2. Checking which you already answered${data.stage === 'checking' ? '…' : ''}`}</span>
+          <span className={data.stage === 'suggesting' ? 'text-blue-200 font-medium' : 'text-gray-600'}>3. Suggesting replies{data.stage === 'suggesting' ? '…' : ''}</span>
           <span className="ml-auto text-gray-500 tabular-nums">{secs}s</span>
         </div>
       )}
@@ -146,7 +156,7 @@ export function SlackInbox({ onSendAgent }: { onSendAgent: (m: SlackMention) => 
               <div className="mt-4 space-y-2"><div className="h-2.5 rounded bg-gray-800" /><div className="h-2.5 rounded bg-gray-800 w-5/6" /><div className="h-2.5 rounded bg-gray-800 w-2/3" /></div>
             </div>
           ))}
-          {items.map(m => <Card key={m.permalink} m={m} onGone={() => setHidden(h => new Set(h).add(m.permalink))} onAgent={onSendAgent} />)}
+          {items.map(m => <Card key={m.permalink} m={m} suggesting={data?.stage === 'suggesting'} onGone={() => setHidden(h => new Set(h).add(m.permalink))} onAgent={onSendAgent} />)}
         </div>
       </div>
     </div>
