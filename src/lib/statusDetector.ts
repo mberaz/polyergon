@@ -26,6 +26,9 @@ const COPILOT_WORKING_RE = /\bWorking\b[^\n]*esc edit prompt|◎ Working/
 export function detectStatus(chunk: string, backend?: string): SessionStatus {
   const stripped = chunk.replace(ANSI_RE, '').replace(CURSOR_FWD_RE, '')
   if (backend === 'copilot') return COPILOT_WORKING_RE.test(stripped) ? 'thinking' : 'waiting'
+  // OpenCode ("esc interrupt"), Codex ("esc to interrupt"), Gemini ("esc to cancel"):
+  // the footer shows this only while a turn runs. Callers pass the screen bottom.
+  if (backend && backend !== 'claude') return /\besc (?:to )?(?:interrupt|cancel)\b/i.test(stripped) ? 'thinking' : 'waiting'
   // The ❯ prompt is rendered as permanent UI chrome below the status line
   // regardless of state, so it can't distinguish thinking from waiting on its
   // own — the spinner is the actual "busy" signal and must be checked first.

@@ -40,7 +40,8 @@ function Avatar({ login }: { login: string }) {
 }
 
 // Big horizontal pipeline: numbered nodes, green when done, pulsing when current
-function Track({ steps }: { steps: Step[] }) {
+// working: the session is busy on this PR, so the current step spins
+function Track({ steps, working = false }: { steps: Step[]; working?: boolean }) {
   return (
     <div className="flex items-start py-2">
       {steps.map((s, i) => (
@@ -49,8 +50,10 @@ function Track({ steps }: { steps: Step[] }) {
           <span className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ring-4 ring-gray-950 ${
             s.done ? 'bg-emerald-500 text-gray-950' : s.current ? 'bg-blue-500 text-white shadow-[0_0_0_6px_rgba(59,130,246,0.18)]' : 'bg-gray-800 text-gray-500'}`}>
             {s.done ? '✓' : i + 1}
+            {s.current && working && <span className="absolute -inset-1.5 rounded-full border-2 border-blue-300 border-t-transparent border-l-transparent animate-spin motion-reduce:animate-none" aria-hidden />}
           </span>
           <span className={`text-xs mt-2 px-1 leading-tight ${s.done ? 'text-gray-200' : s.current ? 'text-blue-300 font-medium' : 'text-gray-600'}`}>{s.label}</span>
+          {s.current && working && <span className="text-[10px] text-blue-300/80 animate-pulse motion-reduce:animate-none">Session is working</span>}
         </div>
       ))}
     </div>
@@ -79,7 +82,8 @@ function PrPanel({ t, p, auto, onSend, onDismiss }: { t: PrTrack; p: Pipeline; a
           <a href={t.url} target="_blank" rel="noreferrer" className="text-base font-semibold text-gray-100 hover:text-blue-300 leading-snug">{v?.title || shortPr(t.url)}</a>
           <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-2">
             <a href={t.url} target="_blank" rel="noreferrer" className="font-mono text-blue-400 hover:underline">{shortPr(t.url)}</a>
-            {v?.isDraft && <span className="text-gray-400">· draft</span>}
+            {v?.isDraft && <span className="text-amber-300">· draft</span>}
+            {!!v?.unresolved && <span className="text-amber-300">· {v.unresolved} unresolved thread{v.unresolved > 1 ? 's' : ''}</span>}
             <span>· review fixes {t.reviewRounds}/{max}</span>
             <span>· CI fixes {t.ciFixes}/{max}</span>
           </p>
@@ -88,7 +92,7 @@ function PrPanel({ t, p, auto, onSend, onDismiss }: { t: PrTrack; p: Pipeline; a
         <a href={t.url} target="_blank" rel="noreferrer" className="flex-shrink-0 text-xs px-3 py-1 rounded-lg border border-gray-700 hover:bg-gray-800 text-gray-200">Open PR ↗</a>
       </header>
 
-      <div className="mt-4"><Track steps={prSteps(t, !!p.config.slackChannel)} /></div>
+      <div className="mt-4"><Track steps={prSteps(t, !!p.config.slackChannel)} working={t.state === 'working'} /></div>
 
       {t.suggestion && <div className="mt-2"><SuggestionBox s={t.suggestion} onSend={onSend} onDismiss={onDismiss} /></div>}
       {autoNext && <p className="text-[11px] text-amber-300/80 mt-1.5">Automatic: goes to the session as soon as it&apos;s idle.</p>}
@@ -173,7 +177,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
               : <button onClick={start} className="text-sm px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 font-medium">{pipeline ? 'Start again' : 'Start pipeline'}</button>}
           </div>
         </div>
-        {pipeline && !pipeline.prs.length && running && <div className="mt-5 max-w-3xl"><Track steps={preprSteps(pipeline)} /></div>}
+        {pipeline && !pipeline.prs.length && running && <div className="mt-5 max-w-3xl"><Track steps={preprSteps(pipeline)} working={pipeline.phase === 'opening-pr'} /></div>}
         {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
       </div>
 

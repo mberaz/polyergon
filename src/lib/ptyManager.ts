@@ -48,8 +48,11 @@ export function findSessionIdSince(cwd: string, sinceTime: number, configDir?: s
 }
 
 async function detectAndStoreSessionId(id: string, cwd: string, spawnTime: number, configDir: string | null | undefined, backend: BackendSpec) {
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 500))
+  // Claude writes its transcript at once; other CLIs (OpenCode) only create the session on the
+  // first message, which may come minutes later
+  const [tries, every] = backend.id === 'claude' ? [60, 500] : [300, 2000]
+  for (let i = 0; i < tries; i++) {
+    await new Promise(r => setTimeout(r, every))
     if (!ptyProcesses.has(id)) return
     // Claude's finder needs the configDir (which project dir to scan); other
     // backends provide their own detectSessionId (e.g. Copilot's session store).
@@ -252,8 +255,8 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
       if (!headlessTerms.has(id)) return
       // Copilot's status lives in the footer below the cursor, so read the
       // screen bottom for it; Claude's lives in the lines around the cursor.
-      const status = backend.id === 'copilot'
-        ? detectStatus(bottomRows(headlessTerm, 3), 'copilot')
+      const status = backend.id !== 'claude'
+        ? detectStatus(bottomRows(headlessTerm, 3), backend.id)
         // Claude's footer (below the prompt) says "esc to interrupt" while busy
         : detectStatus(bufferTail(headlessTerm) + '\n' + bottomRows(headlessTerm, 3))
       const session = liveSessionStore.get(id)
@@ -319,9 +322,13 @@ export function onScreenDialog(id: string): boolean {
 // prompt; while a startup dialog is showing it waits for you to answer it.
 export function sendWhenReady(id: string, text: string, timeoutMs = 10 * 60_000) {
   const started = Date.now()
+  let readySince = 0 // prompt must stay ready ~2s: TUIs report "waiting" before they finish drawing
   const tick = () => {
     if (!ptyProcesses.has(id) || Date.now() - started > timeoutMs) return
-    if (liveSessionStore.get(id)?.status === 'waiting' && !onScreenDialog(id)) { submitLine(id, text); return }
+    if (liveSessionStore.get(id)?.status === 'waiting' && !onScreenDialog(id)) {
+      readySince ||= Date.now()
+      if (Date.now() - readySince >= 2000) { submitLine(id, text); return }
+    } else readySince = 0
     setTimeout(tick, 1000)
   }
   setTimeout(tick, 1500)

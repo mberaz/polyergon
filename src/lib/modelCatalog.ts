@@ -64,6 +64,13 @@ async function fetchCopilotModels(): Promise<ModelInfo[]> {
     .map(m => ({ id: m.id, displayName: m.name ?? m.id }))
 }
 
+// `opencode models` prints provider/model ids, one per line
+async function fetchOpencodeModels(): Promise<ModelInfo[]> {
+  const { stdout } = await execFileAsync('opencode', ['models'], { timeout: 20_000 })
+  const ids = stdout.split('\n').map(l => l.trim()).filter(l => /^[\w.-]+\/\S+$/.test(l))
+  return [{ id: 'default', displayName: 'Default (from its config)' }, ...ids.map(id => ({ id, displayName: id }))]
+}
+
 async function fetchClaudeModels(configDir: string | null): Promise<ModelInfo[]> {
   const token = await readToken(configDir)
   if (!token) throw new Error('No login found for this org')
@@ -92,9 +99,10 @@ export async function getModels(backend: BackendId, orgId: string, force = false
 
   try {
     const org = orgRegistry.get(orgId)
-    const models = backend === 'copilot'
-      ? await fetchCopilotModels()
-      : await fetchClaudeModels(org?.configDir ?? null)
+    const models = backend === 'copilot' ? await fetchCopilotModels()
+      : backend === 'opencode' ? await fetchOpencodeModels()
+      : backend === 'claude' ? await fetchClaudeModels(org?.configDir ?? null)
+      : [{ id: 'default', displayName: 'Default (from its config)' }] // codex, gemini: their own default
     cache.set(key, { at: Date.now(), models })
     return models
   } catch (e) {

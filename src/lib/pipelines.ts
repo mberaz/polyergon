@@ -58,6 +58,7 @@ export interface PrView {
   reviewDecision: string | null
   checks: PrCheckStatus
   requested: string[] // asked to review, not yet reviewed
+  unresolved?: number // open review threads (comments nobody resolved)
   reviews: { login: string; state: string; at: string | null }[] // latest per reviewer
   fetchedAt: number
 }
@@ -78,6 +79,7 @@ export interface PrTrack {
   view?: PrView
   slack?: SlackView
   seenFeedback: number // review + comment count already handled; -1 = not read yet
+  seenUnresolved?: number // unresolved-thread count we already asked the session about
   reviewRounds: number
   ciFixes: number
   mergeAttempts?: number
@@ -119,12 +121,26 @@ const PROMPTS = {
   openPr: 'Your work looks finished. Commit it, push the branch, and open a pull request with a clear title and description. Print the PR URL when done.',
   review: (url: string) => `There is new review feedback on ${url}. Read it with gh (reviews and comments), address each point, push the fixes, and reply on the PR to say what changed.`,
   ci: (url: string) => `CI is failing on ${url}. Find the failing checks with gh, fix the cause, and push.`,
+  unresolved: (url: string, n: number) => `${url} has ${n} unresolved review thread${n > 1 ? 's' : ''}. Read them with gh (review comments), fix what's needed, push, reply in each thread, and resolve the ones you addressed.`,
   merge: (url: string) => `${url} is approved and CI is green. Merge it with gh pr merge, using the merge method this repo uses, and delete the branch. Print the result.`,
 }
 
 import { shortPr } from './pipelineView'
 
-interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrCheckStatus; feedback: number; title: string; view: PrView }
+interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrCheckStatus; feedback: number; title: string; view: PrView; unresolved: number; isDraft: boolean }
+
+// Open review threads on a PR (GraphQL; `gh pr view` doesn't expose them). -1 = unknown.
+async function unresolvedThreads(url: string, env: NodeJS.ProcessEnv): Promise<number> {
+  const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/)
+  if (!m) return -1
+  try {
+    const { stdout } = await execFileAsync('gh', ['api', 'graphql',
+      '-f', 'query=query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved}}}}}',
+      '-F', `o=${m[1]}`, '-F', `r=${m[2]}`, '-F', `n=${m[3]}`], { timeout: 15000, env })
+    const nodes = JSON.parse(stdout).data.repository.pullRequest.reviewThreads.nodes as { isResolved: boolean }[]
+    return nodes.filter(n => !n.isResolved).length
+  } catch { return -1 }
+}
 
 async function prSnapshot(url: string): Promise<PrSnapshot | null> {
   try {
@@ -140,8 +156,9 @@ async function prSnapshot(url: string): Promise<PrSnapshot | null> {
       .map((r: { author: { login: string }; state: string; submittedAt?: string }) => ({ login: r.author.login, state: r.state, at: r.submittedAt ?? null }))
     const reviewed = new Set(reviews.map((r: { login: string }) => r.login))
     const requested = (j.reviewRequests ?? []).map((r: { login?: string; name?: string; slug?: string }) => r.login ?? r.name ?? r.slug ?? '').filter((x: string) => x && !reviewed.has(x))
-    const view: PrView = { number: j.number, title: j.title ?? '', state: j.state, isDraft: !!j.isDraft, reviewDecision: j.reviewDecision ?? null, checks, requested, reviews, fetchedAt: Date.now() }
-    return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks, feedback: others(j.reviews) + others(j.comments), title: j.title ?? '', view }
+    const unresolved = await unresolvedThreads(url, env)
+    const view: PrView = { number: j.number, title: j.title ?? '', state: j.state, isDraft: !!j.isDraft, reviewDecision: j.reviewDecision ?? null, checks, requested, reviews, fetchedAt: Date.now(), unresolved: Math.max(0, unresolved) }
+    return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks, feedback: others(j.reviews) + others(j.comments), title: j.title ?? '', view, unresolved, isDraft: !!j.isDraft }
   } catch { return null }
 }
 
@@ -199,7 +216,7 @@ class PipelineEngine {
   create(liveId: string, config: PipelineConfig): Pipeline | { error: string } {
     const s = liveSessionStore.get(liveId)
     if (!s) return { error: 'Session not found' }
-    if (s.backend === 'copilot') return { error: 'Automations support Claude sessions only for now' }
+    if ((s.backend ?? 'claude') !== 'claude') return { error: 'Automations support Claude sessions only for now' }
     if (this.items.some(p => p.liveId === liveId && ACTIVE_PHASES.includes(p.phase))) return { error: 'This session already has a running automation' }
     const p: Pipeline = {
       id: randomUUID(), liveId, template: 'ship-it',
@@ -373,10 +390,17 @@ class PipelineEngine {
         if (!wasFailing && !t.suggestion) suggest(t, 'ci', PROMPTS.ci(t.url), `CI failing on ${shortPr(t.url)}`, 'CI failing', `${pr.title}: click Send to ask the session to fix it`)
         continue
       }
-      if (pr.reviewDecision === 'APPROVED' && pr.checks !== 'pending' && t.state !== 'ready') {
-        this.patchTrack(p, t, { state: 'ready', suggestion: { kind: 'merge', text: PROMPTS.merge(t.url), at: Date.now() } }, `${shortPr(t.url)} approved and CI is green. Ready to merge`, { title: 'Ready to merge', body: `${pr.title}: click Merge in the automation` })
-      } else if (t.state === 'ready' && pr.reviewDecision !== 'APPROVED') {
-        this.patchTrack(p, t, { state: 'in-review' }, `${shortPr(t.url)} is no longer approved`)
+      // Open review threads: ask the session to handle them (once per new count), never call it mergeable
+      if (pr.unresolved > 0 && pr.unresolved > (t.seenUnresolved ?? 0) && !t.suggestion && t.state !== 'working') {
+        this.patchTrack(p, t, { seenUnresolved: pr.unresolved })
+        suggest(t, 'review', PROMPTS.unresolved(t.url, pr.unresolved), `${pr.unresolved} unresolved review thread${pr.unresolved > 1 ? 's' : ''} on ${shortPr(t.url)}`, 'Unresolved review comments', `${pr.title}: ${pr.unresolved} open thread(s)`)
+      }
+      // Mergeable only when approved, CI done, not a draft and no open threads (unknown thread count = not ready)
+      const blockers = [pr.isDraft && 'still a draft', pr.unresolved !== 0 && (pr.unresolved < 0 ? 'review threads unknown' : `${pr.unresolved} unresolved review thread${pr.unresolved > 1 ? 's' : ''}`), pr.reviewDecision !== 'APPROVED' && 'not approved', pr.checks === 'pending' && 'CI running'].filter(Boolean) as string[]
+      if (!blockers.length && t.state !== 'ready') {
+        this.patchTrack(p, t, { state: 'ready', suggestion: { kind: 'merge', text: PROMPTS.merge(t.url), at: Date.now() } }, `${shortPr(t.url)} approved, CI green, no open threads. Ready to merge`, { title: 'Ready to merge', body: `${pr.title}: click Merge in the automation` })
+      } else if (blockers.length && t.state === 'ready') {
+        this.patchTrack(p, t, { state: 'in-review', ...(t.suggestion?.kind === 'merge' ? { suggestion: null } : {}) }, `${shortPr(t.url)} is not ready to merge: ${blockers.join(', ')}`)
       }
     }
 

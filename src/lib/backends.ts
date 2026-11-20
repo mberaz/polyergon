@@ -1,12 +1,17 @@
 import { execSync, execFileSync } from 'child_process'
 import { join } from 'path'
+import { readdirSync, statSync, openSync, readSync, closeSync } from 'fs'
 
 // A "backend" is the agent CLI a session runs on. The app spawns Claude Code
 // today; Copilot is a peer backend selectable per session. Each backend knows
 // its binary, how to pass a model + the extra args every session needs, and any
 // env it must set for a given model.
 
-export type BackendId = 'claude' | 'copilot'
+export type BackendId = 'claude' | 'copilot' | 'opencode' | 'codex' | 'gemini'
+
+// 'default' = let the CLI use its own configured model (no --model flag)
+export const DEFAULT_MODEL_ID = 'default'
+const modelArgs = (flag: string, model: string) => (model && model !== DEFAULT_MODEL_ID ? [flag, model] : [])
 
 export interface BackendSpec {
   id: BackendId
@@ -97,9 +102,88 @@ const COPILOT: BackendSpec = {
   env: () => ({}),
 }
 
+const realpath = (p: string) => { try { return execFileSync('/usr/bin/readlink', ['-f', p], { timeout: 2000 }).toString().trim() || p } catch { return p } }
+
+// OpenCode (sst/opencode). TUI; sessions live in ~/.local/share/opencode/opencode.db.
+// Footer shows "esc interrupt" while working. --auto = approve permissions.
+const OPENCODE: BackendSpec = {
+  id: 'opencode',
+  label: 'OpenCode',
+  bin: 'opencode',
+  spawnArgs: ({ model, cwd, resumeId, skipPermissions }) => [
+    cwd,
+    ...modelArgs('-m', model),
+    ...(skipPermissions ? ['--auto'] : []),
+    ...(resumeId ? ['-s', resumeId] : []),
+  ],
+  env: () => ({}),
+  detectSessionId: (cwd, sinceMs) => {
+    const db = join(process.env.HOME!, '.local', 'share', 'opencode', 'opencode.db')
+    const q = (s: string) => `'${s.replace(/'/g, "''")}'`
+    try {
+      const out = execFileSync('sqlite3', [db, `SELECT id FROM session WHERE parent_id IS NULL AND directory IN (${q(cwd)},${q(realpath(cwd))}) AND time_created >= ${sinceMs - 1000} ORDER BY time_created DESC LIMIT 1;`], { timeout: 3000 }).toString().trim()
+      return out || null
+    } catch { return null }
+  },
+}
+
+// OpenAI Codex CLI. Resume is a subcommand; sessions are JSONL files under
+// ~/.codex/sessions/YYYY/MM/DD whose first line holds {payload: {id, cwd}}.
+function findCodexSessionIdSince(cwd: string, sinceMs: number): string | null {
+  const root = join(process.env.HOME!, '.codex', 'sessions')
+  const real = realpath(cwd)
+  const d = new Date(sinceMs)
+  const dirs = [0, 1].map(off => { const x = new Date(d.getTime() + off * 86400000); return join(root, String(x.getFullYear()), String(x.getMonth() + 1).padStart(2, '0'), String(x.getDate()).padStart(2, '0')) })
+  let best: { id: string; t: number } | null = null
+  for (const dir of dirs) {
+    let files: string[] = []
+    try { files = readdirSync(dir).filter(f => f.endsWith('.jsonl')) } catch { continue }
+    for (const f of files) {
+      const p = join(dir, f)
+      try {
+        const t = statSync(p).birthtimeMs
+        if (t < sinceMs - 1000 || (best && t < best.t)) continue
+        const fd = openSync(p, 'r'); const buf = Buffer.alloc(8192); const n = readSync(fd, buf, 0, buf.length, 0); closeSync(fd)
+        const meta = JSON.parse(buf.toString('utf-8', 0, n).split('\n')[0])
+        const pl = meta.payload ?? meta
+        if (pl.id && (pl.cwd === cwd || pl.cwd === real)) best = { id: pl.id, t }
+      } catch { /* partial file */ }
+    }
+  }
+  return best?.id ?? null
+}
+
+const CODEX: BackendSpec = {
+  id: 'codex',
+  label: 'Codex',
+  bin: 'codex',
+  spawnArgs: ({ model, resumeId, skipPermissions }) => [
+    ...(resumeId ? ['resume', resumeId] : []),
+    ...modelArgs('-m', model),
+    ...(skipPermissions ? ['--dangerously-bypass-approvals-and-sandbox'] : []),
+  ],
+  env: () => ({}),
+  detectSessionId: findCodexSessionIdSince,
+}
+
+// Google Gemini CLI. --yolo = approve all tool calls. No resume support here yet.
+const GEMINI: BackendSpec = {
+  id: 'gemini',
+  label: 'Gemini',
+  bin: 'gemini',
+  spawnArgs: ({ model, skipPermissions }) => [
+    ...modelArgs('-m', model),
+    ...(skipPermissions ? ['--yolo'] : []),
+  ],
+  env: () => ({}),
+}
+
 export const BACKENDS: Record<BackendId, BackendSpec> = {
   claude: CLAUDE,
   copilot: COPILOT,
+  opencode: OPENCODE,
+  codex: CODEX,
+  gemini: GEMINI,
 }
 
 export const DEFAULT_BACKEND: BackendId = 'claude'

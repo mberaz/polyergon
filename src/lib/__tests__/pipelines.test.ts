@@ -8,6 +8,7 @@ const session = { id: 'L1', status: 'waiting', prUrl: null as string | null, bac
 const writes: string[] = []
 const posts: string[] = []
 let dirty = true
+let threads: { isResolved: boolean }[] = []
 type Pr = { number: number; state: string; isDraft: boolean; reviewDecision: string | null; statusCheckRollup: object[]; author: { login: string }; reviews: object[]; latestReviews: object[]; reviewRequests: object[]; comments: object[]; title: string }
 const base = (n: number): Pr => ({ number: n, state: 'OPEN', isDraft: false, reviewDecision: null, statusCheckRollup: [], author: { login: 'me' }, reviews: [], latestReviews: [], reviewRequests: [{ login: 'alice' }], comments: [], title: `PR ${n}` })
 const prs: Record<string, Pr> = {}
@@ -17,6 +18,7 @@ jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writ
 jest.mock('../slackBridge', () => ({ postToSlack: async (_c: unknown, t: string) => { posts.push(t); return { permalink: null } }, readSlackThread: async () => null }))
 jest.mock('child_process', () => ({ execFile: (cmd: string, a: string[], _o: object, cb: (e: Error | null, r?: { stdout: string }) => void) => {
   if (cmd === 'git') return a.includes('--porcelain') ? cb(null, { stdout: dirty ? ' M file.ts' : '' }) : cb(new Error('no upstream'))
+  if (a[0] === 'api') return cb(null, { stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: threads } } } } }) })
   const pr = prs[a[2]]
   pr ? cb(null, { stdout: JSON.stringify(pr) }) : cb(new Error('no pr'))
 } }))
@@ -100,4 +102,26 @@ test('default automatic steps send review feedback to the idle session, up to ma
   later(); await pipelineEngine.step(p.id, true)
   expect(writes.length).toBe(before + 1)
   expect(p.prs[0].suggestion).toMatchObject({ kind: 'review' })
+})
+
+test('ready to merge only when approved, green, not a draft and no unresolved threads', async () => {
+  pipelineEngine.list().forEach((x: { id: string }) => pipelineEngine.stop(x.id))
+  const U4 = 'https://github.com/o/r/pull/4'
+  prs[U4] = { ...base(4), reviewDecision: 'APPROVED', isDraft: true, statusCheckRollup: [{ __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' }] }
+  threads = [{ isResolved: false }, { isResolved: true }]
+  session.prUrl = U4
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
+  await flush(); later(); await pipelineEngine.step(p.id, true); await flush()
+  later(); await pipelineEngine.step(p.id, true)
+  later(); await pipelineEngine.step(p.id, true)
+  expect(p.prs[0].state).not.toBe('ready')                       // draft + 1 open thread
+  expect(p.prs[0].suggestion).toMatchObject({ kind: 'review' })  // asks the session to handle the thread
+  pipelineEngine.dismiss(p.id, U4)
+  prs[U4].isDraft = false; threads = [{ isResolved: true }]
+  later(); await pipelineEngine.step(p.id, true)
+  expect(p.prs[0].state).toBe('ready')
+  expect(p.prs[0].suggestion).toMatchObject({ kind: 'merge' })
+  threads = [{ isResolved: false }]                              // a new comment arrives
+  later(); await pipelineEngine.step(p.id, true)
+  expect(p.prs[0].state).toBe('in-review')
 })

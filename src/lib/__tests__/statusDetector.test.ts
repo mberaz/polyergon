@@ -57,3 +57,13 @@ describe('copilot backend (footer-based; ❯ is always on screen)', () => {
     expect(detectStatus(idle)).toBe('waiting')
   })
 })
+
+describe('other agents read the footer', () => {
+  it('opencode / codex / gemini are thinking only while the footer offers to interrupt', () => {
+    expect(detectStatus('   ⬝⬝⬝⬝  esc interrupt     tab agents', 'opencode')).toBe('thinking')
+    expect(detectStatus('  Build · Big Pickle\n  ~/repo   38.1K (19%) ctrl+p commands', 'opencode')).toBe('waiting')
+    expect(detectStatus('• Working (4s • esc to interrupt)', 'codex')).toBe('thinking')
+    expect(detectStatus('⠏ Thinking (esc to cancel, 3s)', 'gemini')).toBe('thinking')
+    expect(detectStatus('> Type your message', 'gemini')).toBe('waiting')
+  })
+})

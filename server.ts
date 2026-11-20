@@ -372,7 +372,7 @@ app.prepare().then(async () => {
         // claude.ai show the title. Sent now if the prompt is idle, else on next idle.
         const name = String(msg.name ?? '').replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0, 80)
         const target = liveSessionStore.get(msg.id as string)
-        if (name && target && target.backend !== 'copilot') {
+        if (name && target && (target.backend ?? 'claude') === 'claude') { // /rename is Claude-only
           pendingRenames.set(target.id, name)
           if (target.status === 'waiting') flushRename(target.id)
         }
