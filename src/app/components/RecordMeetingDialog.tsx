@@ -1,0 +1,98 @@
+'use client'
+import { useState } from 'react'
+import type { Org } from '@/lib/orgRegistry'
+
+interface Props {
+  orgs: Org[]
+  defaultOrgId: string
+  onStart: (title: string, orgId: string) => void
+  onCancel: () => void
+  onMicTest: () => Promise<{ level?: number; error?: string }>
+}
+
+export function RecordMeetingDialog({ orgs, defaultOrgId, onStart, onCancel, onMicTest }: Props) {
+  const [title, setTitle] = useState('')
+  const [orgId, setOrgId] = useState(defaultOrgId)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ level?: number; error?: string } | null>(null)
+
+  async function runMicTest() {
+    setTesting(true)
+    setTestResult(null)
+    setTestResult(await onMicTest())
+    setTesting(false)
+  }
+
+  // Rough mapping of RMS to a 0-10 bar count; speech on a healthy device
+  // typically lands around 0.02-0.15 RMS
+  const bars = testResult?.level !== undefined ? Math.min(10, Math.round(testResult.level * 100)) : 0
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onCancel}>
+      <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-[440px] shadow-xl" onClick={e => e.stopPropagation()}>
+        <h2 className="text-white font-semibold mb-1 flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Record Meeting
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">Captures meeting audio (via BlackHole) + your mic. Set your Mac&apos;s sound output to &quot;Claude Playback&quot; first so you hear the meeting while it records.</p>
+
+        <input
+          type="text"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') onStart(title.trim(), orgId) }}
+          placeholder="Meeting title (optional)"
+          className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-red-500 placeholder-gray-600 mb-3"
+          autoFocus
+        />
+
+        <label className="text-xs text-gray-500 mb-1 block">Org</label>
+        <select
+          value={orgId}
+          onChange={e => setOrgId(e.target.value)}
+          className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-red-500 mb-4"
+        >
+          {orgs.map(org => (
+            <option key={org.id} value={org.id}>{org.name}</option>
+          ))}
+        </select>
+
+        {/* Mic check */}
+        <div className="border border-gray-800 rounded-lg p-3 mb-4">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              onClick={runMicTest}
+              disabled={testing}
+              className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 rounded px-3 py-1.5 text-xs font-medium"
+            >{testing ? 'Listening… (2s)' : 'Test audio'}</button>
+            <div className="flex items-end gap-0.5 h-5 flex-1 justify-end">
+              {Array.from({ length: 10 }, (_, i) => (
+                <span
+                  key={i}
+                  className={`w-1.5 rounded-sm ${i < bars ? (i < 7 ? 'bg-green-500' : 'bg-yellow-400') : 'bg-gray-800'}`}
+                  style={{ height: `${6 + i * 1.5}px` }}
+                />
+              ))}
+            </div>
+          </div>
+          {testResult?.error && <p className="text-xs text-red-400 mt-2">{testResult.error}</p>}
+          {testResult?.level !== undefined && testResult.level < 0.004 && (
+            <p className="text-xs text-yellow-500 mt-2">Silence detected — check the aggregate device and that audio is playing.</p>
+          )}
+          {testResult?.level !== undefined && testResult.level >= 0.004 && (
+            <p className="text-xs text-green-500 mt-2">Audio detected ✓</p>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3">
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
+          <button
+            onClick={() => onStart(title.trim(), orgId)}
+            className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium flex items-center gap-2"
+          >
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> Start recording
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

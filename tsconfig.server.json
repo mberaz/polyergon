@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": ".server-dist",
+    "noEmit": false,
+    "skipLibCheck": true
+  },
+  "include": [
+    "server.ts",
+    "src/lib/**/*"
+  ],
+  "exclude": [
+    "src/lib/**/__tests__/**"
+  ]
+}
