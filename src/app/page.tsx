@@ -372,9 +372,12 @@ export default function Home() {
             onAsk={askMeeting}
             onAddContext={addMeetingContext}
             onBack={() => setView({ mode: 'meetinglib' })}
-            sessionOptions={liveSessions.filter(s => s.claudeSessionId).map(s => {
-              const name = sessionNameOverrides[s.id] || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session'
-              return { id: s.id, label: name.length > 70 ? name.slice(0, 70) + '…' : name }
+            sessionOptions={[...sessions].sort((a, b) => (b.lastTimestamp ?? '').localeCompare(a.lastTimestamp ?? '')).map(h => {
+              const live = liveSessions.find(s => s.claudeSessionId === h.sessionId)
+              const name = (live && sessionNameOverrides[live.id]) || sessionNameOverrides[h.sessionId] || h.firstUserMessage || h.cwd?.split('/').at(-1) || 'Session'
+              const short = name.length > 60 ? name.slice(0, 60) + '…' : name
+              const date = h.lastTimestamp ? new Date(h.lastTimestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
+              return { id: h.sessionId, label: `${short}${date ? ` · ${date}` : ''}` }
             })}
             meetingOptions={meetings.filter(m => m.status !== 'recording').map(m => ({ id: m.id, label: `${m.title} · ${new Date(m.startedAt).toLocaleDateString()}` }))}
           />

@@ -15,7 +15,7 @@ export interface MeetingNotes {
 }
 
 // Extra material the user gave the meeting assistant (see meetingContext.ts)
-export type ContextKind = 'text' | 'link' | 'session' | 'meeting'
+export type ContextKind = 'text' | 'link' | 'slack' | 'session' | 'meeting'
 export interface ContextItem {
   id: string
   kind: ContextKind

@@ -18,6 +18,9 @@ test('text is passed through and clipped; links are fetched by the assistant', a
   const long = await resolveContext('text', 'x'.repeat(MAX_CONTEXT_CHARS + 10))
   expect(long.body.length).toBe(MAX_CONTEXT_CHARS + 1)
   expect(await resolveContext('link', ' https://example.com ')).toEqual({ label: 'https://example.com', body: 'https://example.com', fetch: true })
+  const slack = await resolveContext('slack', 'eng-oncall')
+  expect(slack).toMatchObject({ label: 'Slack: #eng-oncall', fetch: true })
+  expect(slack.body).toContain('Slack channel #eng-oncall')
 })
 
 test('past meeting uses its summary, falling back to the transcript', async () => {

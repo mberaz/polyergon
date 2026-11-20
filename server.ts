@@ -13,7 +13,7 @@ import { spawnSession, writeToSession, resizeSession, killSession, onOutput, onS
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
-import { meetingStore } from './src/lib/meetingStore'
+import { meetingStore, type ContextKind } from './src/lib/meetingStore'
 import { sessionNameStore } from './src/lib/sessionNameStore'
 import { firstUserMessageSync } from './src/lib/sessionStore'
 import { realpathSync } from 'fs'
@@ -328,9 +328,9 @@ app.prepare().then(async () => {
         meetingManager.ask(msg.meetingId as string, msg.question as string)
 
       } else if (msg.type === 'meeting-add-context') {
-        const kinds = ['text', 'link', 'session', 'meeting']
+        const kinds = ['text', 'link', 'slack', 'session', 'meeting']
         if (typeof msg.meetingId === 'string' && kinds.includes(msg.kind as string) && typeof msg.value === 'string' && msg.value.trim() && msg.value.length <= 500_000) {
-          meetingManager.addContext(msg.meetingId, msg.kind as 'text' | 'link' | 'session' | 'meeting', msg.value)
+          meetingManager.addContext(msg.meetingId, msg.kind as ContextKind, msg.value)
         }
       } else if (msg.type === 'meeting-mic-test') {
         meetingManager.micTest().then(result => send({ type: 'meeting-mic-test-result', ...result }))

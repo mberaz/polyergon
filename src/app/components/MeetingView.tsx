@@ -64,6 +64,7 @@ function NotesCards({ notes }: { notes: MeetingNotes }) {
 
 const CONTEXT_TABS: { kind: ContextKind; label: string }[] = [
   { kind: 'link', label: 'Link / file' },
+  { kind: 'slack', label: 'Slack channel' },
   { kind: 'text', label: 'Paste text' },
   { kind: 'session', label: 'Session' },
   { kind: 'meeting', label: 'Past meeting' },
@@ -115,6 +116,10 @@ function ContextPanel({ items, isLive, onAdd, sessionOptions, meetingOptions }: 
           </div>
           {kind === 'text' && (
             <textarea value={value} onChange={e => setValue(e.target.value)} rows={3} placeholder="Paste an agenda, email, doc excerpt…" className={`${input} resize-none`} />
+          )}
+          {kind === 'slack' && (
+            <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add() }}
+              placeholder="#channel-name or a Slack link" className={input} />
           )}
           {kind === 'link' && (
             <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add() }}
