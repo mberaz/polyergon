@@ -13,7 +13,7 @@ import { spawnSession, writeToSession, submitLine, sendWhenReady, resizeSession,
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
-import { pipelineEngine } from './src/lib/pipelines'
+import { pipelineEngine, type PipelineConfig } from './src/lib/pipelines'
 import { keepAwake } from './src/lib/keepAwake'
 import { createWorktree, removeWorktree } from './src/lib/worktrees'
 import { updateTask } from './src/lib/taskStore'
@@ -225,7 +225,14 @@ app.prepare().then(async () => {
         const rc = !!msg.rc
         liveSessionStore.add({ id, cwd, gitRoot, claudeSessionId: null, status: 'thinking', createdAt: Date.now(), prUrl: null, orgId, backend, model, rc, worktree })
         spawnSession(id, cwd, undefined, org?.configDir ?? null, model, rcName, backend, rc)
-        if (typeof msg.taskId === 'string') updateTask(msg.taskId, { liveId: id }) // board: this session works on that task
+        if (typeof msg.taskId === 'string') {
+          // Board: link the session; a repo task with "ship" gets a Ship it pipeline right away.
+          // Opening the PR waits for you ("Your review" column); fixes run on their own; merge asks.
+          const task = updateTask(msg.taskId, { liveId: id })
+          if (task?.ship && gitRoot && backend === 'claude') {
+            pipelineEngine.create(id, { slackChannel: task.slackChannel ?? null, maxRounds: 3, auto: { openPr: false, review: true, ci: true, merge: false } })
+          }
+        }
         send({ type: 'created', id, cwd, gitRoot, orgId })
         attachToSession(id)
         // First prompt (e.g. "cr <url>", "/mcp"): sent only once Claude is at its input prompt
@@ -379,9 +386,9 @@ app.prepare().then(async () => {
           if (target.status === 'waiting') flushRename(target.id)
         }
       } else if (msg.type === 'pipeline-start') {
-        const cfg = (msg.config ?? {}) as { slackChannel?: { id?: string; name?: string } | null; maxRounds?: number }
+        const cfg = (msg.config ?? {}) as { slackChannel?: { id?: string; name?: string } | null; maxRounds?: number; auto?: object }
         const ch = cfg.slackChannel?.name ? { id: String(cfg.slackChannel.id ?? '').replace(/[^A-Z0-9]/gi, ''), name: cfg.slackChannel.name.replace(/^#/, '').slice(0, 80) } : null
-        const result = pipelineEngine.create(msg.liveId as string, { slackChannel: ch, maxRounds: Number(cfg.maxRounds) || 3 })
+        const result = pipelineEngine.create(msg.liveId as string, { slackChannel: ch, maxRounds: Number(cfg.maxRounds) || 3, auto: cfg.auto as PipelineConfig['auto'] })
         if ('error' in result) send({ type: 'pipeline-error', liveId: msg.liveId, message: result.error })
       } else if (msg.type === 'pipeline-add-pr') {
         const err = pipelineEngine.addPr(msg.id as string, String(msg.url ?? '').trim())

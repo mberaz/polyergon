@@ -11,6 +11,8 @@ export interface Task {
   details: string
   cwd: string // folder to work in, or 'general' for a plain chat
   worktree: boolean // run in its own branch + worktree
+  ship: boolean // run Ship it for the session (PR, reviews, CI; you merge)
+  slackChannel?: { id: string; name: string } | null // where Ship it posts the PR for review
   orgId: string
   liveId: string | null // session started for it
   done: boolean
@@ -29,13 +31,13 @@ function save(tasks: Task[], file: string) {
   writeFileSync(file, JSON.stringify(tasks, null, 2))
 }
 
-export function addTask(input: Pick<Task, 'title' | 'details' | 'cwd' | 'worktree' | 'orgId'>, file = FILE): Task {
-  const t: Task = { id: randomUUID(), title: input.title.trim().slice(0, 200), details: input.details.trim().slice(0, 20000), cwd: input.cwd || 'general', worktree: !!input.worktree, orgId: input.orgId || 'default', liveId: null, done: false, createdAt: Date.now() }
+export function addTask(input: Pick<Task, 'title' | 'details' | 'cwd' | 'worktree' | 'orgId'> & Partial<Pick<Task, 'ship' | 'slackChannel'>>, file = FILE): Task {
+  const t: Task = { id: randomUUID(), title: input.title.trim().slice(0, 200), details: input.details.trim().slice(0, 20000), cwd: input.cwd || 'general', worktree: !!input.worktree, ship: input.ship ?? input.cwd !== 'general', slackChannel: input.slackChannel ?? null, orgId: input.orgId || 'default', liveId: null, done: false, createdAt: Date.now() }
   save([...listTasks(file), t], file)
   return t
 }
 
-export function updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'details' | 'cwd' | 'worktree' | 'liveId' | 'done'>>, file = FILE): Task | null {
+export function updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'details' | 'cwd' | 'worktree' | 'liveId' | 'done' | 'ship' | 'slackChannel'>>, file = FILE): Task | null {
   const tasks = listTasks(file)
   const t = tasks.find(x => x.id === id)
   if (!t) return null

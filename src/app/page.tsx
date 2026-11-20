@@ -484,6 +484,8 @@ export default function Home() {
             onOpenSession={handleAttachLive}
             onReview={id => setView({ mode: 'diff', liveId: id })}
             onAutomate={id => setView({ mode: 'pipeline', liveId: id })}
+            onAct={(pid, lid, prUrl) => actPipeline(pid, lid, prUrl)}
+            onDismiss={dismissPipeline}
           />
         )}
         {view.mode === 'diff' && (() => {
