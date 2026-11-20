@@ -135,6 +135,19 @@
   .req li::before { content: "+ "; color: var(--accent); }
   @media (max-width: 860px) { .install { grid-template-columns: 1fr; padding: 28px; gap: 28px; } }
 
+  /* Get updates */
+  .updates { margin-top: 24px; display: flex; flex-wrap: wrap; align-items: end; gap: 12px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); padding: 28px 48px; }
+  .updates h3 { margin: 0; font-size: 18px; font-weight: 600; }
+  .updates p { margin: 4px 0 0; color: var(--muted); font-size: 15px; }
+  .updates form { margin-left: auto; display: grid; gap: 6px; }
+  .updates label { font-size: 13px; color: var(--muted); }
+  .updates .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .updates input { height: 44px; min-width: 0; width: 260px; max-width: 100%; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; font-size: 15px; }
+  .updates input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .updates .msg { min-height: 1.4em; font-size: 13px; color: var(--muted); }
+  .updates .msg.ok { color: var(--accent); }
+  @media (max-width: 860px) { .updates { padding: 28px; } .updates form { margin-left: 0; } }
+
   footer { border-top: 1px solid var(--line); padding-block: 40px; color: var(--dim); font-size: 14px; }
   footer .wrap { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
   footer .links { margin-left: auto; display: flex; gap: 22px; flex-wrap: wrap; }
@@ -266,6 +279,20 @@
       </div>
       <pre><span class="p">$</span> npx polyergon <span class="c"># opens Polyergon in its own window</span></pre>
     </div>
+    <div class="updates reveal">
+      <div>
+        <h3>Get updates</h3>
+        <p>New releases and features, a few times a year. No spam.</p>
+      </div>
+      <form id="subscribe" novalidate>
+        <label for="sub-email">Email</label>
+        <div class="row">
+          <input id="sub-email" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="you@example.com">
+          <button class="btn btn-primary" type="submit">Subscribe</button>
+        </div>
+        <span class="msg" role="status" aria-live="polite"></span>
+      </form>
+    </div>
   </section>
 </main>
 
@@ -285,6 +312,22 @@
   // Reveal sections as they enter the viewport (IntersectionObserver, no scroll listeners)
   const io = new IntersectionObserver(entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target) } }), { threshold: 0.15 })
   document.querySelectorAll('.reveal').forEach(el => io.observe(el))
+
+  // Get updates: POST the email to the worker, show the result inline
+  const form = document.getElementById('subscribe')
+  form.addEventListener('submit', async e => {
+    e.preventDefault()
+    const msg = form.querySelector('.msg'), btn = form.querySelector('button'), input = form.email
+    msg.className = 'msg'
+    if (!input.checkValidity()) { msg.textContent = 'Please enter a valid email.'; return }
+    btn.disabled = true; msg.textContent = 'Subscribing...'
+    try {
+      const r = await fetch('/api/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: input.value, source: 'site' }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok || !d.ok) throw new Error(d.error || 'Something went wrong. Try again later.')
+      msg.className = 'msg ok'; msg.textContent = 'Thanks! You are on the list.'; input.value = ''
+    } catch (err) { msg.textContent = err.message } finally { btn.disabled = false }
+  })
 </script>
 </body>
 </html>

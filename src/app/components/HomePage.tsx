@@ -8,6 +8,8 @@ import type { PrInbox } from '@/lib/ghInbox'
 import type { UsageReport } from '@/lib/usageStore'
 import { isRunning } from '@/lib/pipelineView'
 import { withOrg } from '@/lib/activeOrg'
+import type { Settings } from '@/lib/settingsStore'
+import { UpdatesCard } from './UpdatesSignup'
 
 interface LiveLite { id: string; status: string; orgId?: string | null; claudeSessionId: string | null }
 
@@ -31,6 +33,10 @@ export function HomePage({ orgName, live, nameOf, meetings, notes, pipelines, wa
   // Greeting, dates and counts depend on the clock and live data: render in the browser only
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
+  const [askUpdates, setAskUpdates] = useState(false)
+  useEffect(() => {
+    fetch('/api/settings').then(r => r.json()).then((s: Settings) => setAskUpdates(s.updates?.asked === false)).catch(() => {})
+  }, [])
   useEffect(() => {
     fetch(withOrg('/api/slack/inbox')).then(r => r.json()).then(d => setSlackWaiting(d.error && !d.items?.length ? null : (d.items?.length ?? null))).catch(() => {})
   }, [orgName])
@@ -80,6 +86,8 @@ export function HomePage({ orgName, live, nameOf, meetings, notes, pipelines, wa
             <span className="text-xs text-gray-500 self-center hidden md:inline">⌘K to search</span>
           </div>
         </div>
+
+        {askUpdates && <UpdatesCard onClose={() => setAskUpdates(false)} />}
 
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
           {stat('Sessions', live.length, `${thinking.length} working · ${waiting.length} waiting`)}

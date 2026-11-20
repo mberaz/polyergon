@@ -1,11 +1,16 @@
-// Deploy: cd site && npx wrangler deploy  (static assets on Cloudflare, polyergon.ai + www)
+// Deploy: cd site && npx wrangler deploy  (static assets + /api/subscribe on Cloudflare, polyergon.ai + www)
+// Subscribers: npx wrangler d1 execute polyergon-subscribers --remote --command "SELECT * FROM subscribers ORDER BY created_at DESC"
 {
   "name": "polyergon",
+  "main": "worker.js",
   "compatibility_date": "2026-11-01",
   "workers_dev": false,
   "routes": [
     { "pattern": "polyergon.ai", "custom_domain": true },
     { "pattern": "www.polyergon.ai", "custom_domain": true }
   ],
-  "assets": { "directory": "." }
+  "assets": { "directory": ".", "binding": "ASSETS" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "polyergon-subscribers", "database_id": "ce35bb95-495d-4669-9624-a0434d10e5fb" }
+  ]
 }
