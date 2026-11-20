@@ -21,7 +21,7 @@ import { notificationsEnabled } from '@/hooks/useDesktopNotifications'
 // One meaning per color: blue = working, amber = needs you, gray = idle. Green is kept for done/ready.
 const STATUS_BORDER: Record<SessionStatus, string> = {
   thinking: 'border-l-blue-400',
-  waiting:  'border-l-amber-400',
+  waiting:  'border-l-gray-700',
   idle:     'border-l-gray-700',
 }
 
