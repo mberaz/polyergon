@@ -472,6 +472,13 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
             ⚡ {pipelineSummary(pipeline)}
           </button>
         )}
+        {!!(s.gitRoot || s.prUrl || pipeline?.prs.length) && (
+          <button onClick={e => { e.stopPropagation(); onReview(s.id) }}
+            className="mt-1.5 ml-4 flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+            title="See what this session changed, comment on lines, then send feedback or approve">
+            <span className="font-mono">±</span> Review changes
+          </button>
+        )}
 
         {/* Meta row: status text · folder · time · cost · org */}
         <div className="flex items-center gap-1.5 mt-1.5 pl-4 text-[11px] min-w-0">
@@ -535,13 +542,6 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
               onClick={e => { e.stopPropagation(); onResume(s.id) }}
               className="text-[11px] text-blue-500 hover:text-blue-300"
             >Resume</button>
-          )}
-          {!!(s.gitRoot || s.prUrl || pipeline?.prs.length) && (
-            <button
-              onClick={e => { e.stopPropagation(); onReview(s.id) }}
-              className="text-[11px] text-emerald-500 hover:text-emerald-300"
-              title="See what this session changed, comment on lines, then send feedback or approve"
-            >Review changes</button>
           )}
           <button
             onClick={e => { e.stopPropagation(); onKillLive(s.id) }}
