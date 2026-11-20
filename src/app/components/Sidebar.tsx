@@ -891,6 +891,13 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
             <span className="text-base leading-none">+</span> New Session
           </button>
           <button
+            onClick={onOpenBoard}
+            title="Task board: plan tasks and follow each one from session to merged PR"
+            className="bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1.5"
+          >
+            <span className="text-gray-400">▦</span> Board
+          </button>
+          <button
             onClick={onRecordMeeting}
             title="Record a meeting"
             className="bg-gray-800 hover:bg-red-900/60 text-red-400 rounded-lg px-3 py-2 text-sm font-medium transition-colors flex items-center justify-center"
@@ -1036,10 +1043,6 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
       {/* Live tab */}
       {tab === 'live' && (
         <div className="flex-1 overflow-y-auto px-3 py-3">
-          <button onClick={onOpenBoard} title="Task board: To do, In progress, Review, Done. Each task runs in its own session."
-            className="w-full mb-2 flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-gray-800 hover:border-gray-700 hover:bg-gray-900 text-xs text-gray-300">
-            <span className="text-gray-500">▦</span> Task board
-          </button>
           {orgLive.length > 1 && (
             <div className="flex items-center justify-end gap-1 mb-2 text-[11px]">
               <span className="text-gray-600 mr-0.5">Sort:</span>
