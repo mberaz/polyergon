@@ -1,7 +1,6 @@
 {
   "name": "polyergon",
   "version": "0.1.0",
-  "private": true,
   "license": "MIT",
   "scripts": {
     "dev": "ts-node --project tsconfig.server.json server.ts",

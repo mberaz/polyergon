@@ -4,7 +4,7 @@
 
 Polyergon is a local app for people who run many Claude Code (or GitHub Copilot CLI) sessions at once. It shows which sessions need you, ships their pull requests, keeps up with Slack, and records meetings. It runs on your machine, and it's open source under the MIT license.
 
-[polyergon.ai](https://polyergon.ai)
+[polyergon.ai](https://polyergon.ai) · [npm](https://www.npmjs.com/package/polyergon)
 
 ![The Ship it pipeline: two pull requests with review, CI and Slack status, and the automation's activity log](site/img/pipeline.jpg)
 
@@ -53,11 +53,23 @@ Record a call and get a live transcript, running notes, answers to your question
 ## Install
 
 ```bash
+npx polyergon
+```
+
+That's it. Or install it once and run `polyergon`:
+
+```bash
+npm install -g polyergon
+polyergon
+```
+
+From source:
+
+```bash
 git clone https://github.com/polyergon/polyergon.git
 cd polyergon
-npm ci
-npm run build
-npm start          # opens Polyergon in its own window
+npm ci && npm run build
+npm start
 ```
 
 Polyergon opens in its own window, with no tabs or address bar, at `http://polyergon.localhost:3030`. To keep it in the Dock, choose **Install Polyergon** from Chrome's menu.
