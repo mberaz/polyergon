@@ -133,10 +133,10 @@ interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrC
 
 // Asks Copilot to review the PR again (it only reviews when requested)
 async function requestCopilotReview(url: string): Promise<void> {
-  const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/)
-  if (!m) throw new Error('Not a PR link')
   const env = { ...process.env }; delete env.GITHUB_TOKEN; delete env.GH_TOKEN
-  await execFileAsync('gh', ['api', '-X', 'POST', `repos/${m[1]}/${m[2]}/pulls/${m[3]}/requested_reviewers`, '-f', 'reviewers[]=copilot-pull-request-reviewer'], { timeout: 15000, env })
+  // The REST API rejects Copilot as "not a collaborator"; gh knows the special @copilot reviewer
+  try { await execFileAsync('gh', ['pr', 'edit', url, '--add-reviewer', '@copilot'], { timeout: 30000, env }) }
+  catch (e) { throw new Error(String((e as { stderr?: string }).stderr || (e as Error).message).trim().split('\n').filter(Boolean).at(-1) || 'gh failed') }
 }
 
 const isBot = (login: string) => /\[bot\]$|^copilot/i.test(login)
@@ -436,7 +436,7 @@ class PipelineEngine {
         this.patchTrack(p, t, { copilotRequestedFor: pr.headOid })
         requestCopilotReview(t.url)
           .then(() => this.update(p, {}, `Asked Copilot to review the latest commit on ${shortPr(t.url)}`))
-          .catch(e => this.update(p, {}, `Couldn't request a Copilot review on ${shortPr(t.url)}: ${(e as Error).message.split('\n').at(-1)}`))
+          .catch(e => this.update(p, {}, `Couldn't request a Copilot review on ${shortPr(t.url)}: ${(e as Error).message}`))
       }
       // Mergeable only when approved, CI done, not a draft and no open threads (unknown thread count = not ready)
       const blockers = [pr.isDraft && 'still a draft', pr.unresolved !== 0 && (pr.unresolved < 0 ? 'review threads unknown' : `${pr.unresolved} unresolved review thread${pr.unresolved > 1 ? 's' : ''}`), pr.reviewDecision !== 'APPROVED' && 'not approved', pr.checks === 'pending' && 'CI running', ...pr.reviewBlockers].filter(Boolean) as string[]
