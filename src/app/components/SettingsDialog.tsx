@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import type { Settings } from '@/lib/settingsStore'
 import type { TranscriptionStatus } from '@/lib/meetingConfig'
+import type { ClaudeAuthStatus } from '@/lib/claudeAuth'
 import { setNotificationsEnabled } from '@/hooks/useDesktopNotifications'
 
 const MIN_K = 100
@@ -22,6 +23,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [tDeployment, setTDeployment] = useState('')
   const [tKey, setTKey] = useState('')
   const [tDirty, setTDirty] = useState(false)
+  const [auth, setAuth] = useState<ClaudeAuthStatus | null>(null)
+  const [authMode, setAuthMode] = useState<'login' | 'apiKey'>('login')
+  const [authKey, setAuthKey] = useState('')
+  const [authDirty, setAuthDirty] = useState(false)
 
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then((s: Settings) => {
@@ -40,6 +45,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       setTEndpoint(t.endpoint ?? '')
       setTDeployment(t.deployment ?? '')
     }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/settings/auth').then(r => r.json()).then((a: ClaudeAuthStatus) => { setAuth(a); setAuthMode(a.mode) }).catch(() => {})
   }, [])
 
   const editT = <T,>(set: (v: T) => void) => (v: T) => { set(v); setTDirty(true); setState('idle') }
@@ -73,6 +82,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         if (!tr.ok) throw new Error(data.error ?? 'Could not save transcription')
         setTStatus(data); setTKey(''); setTDirty(false)
       }
+      if (authDirty) {
+        const ar = await fetch('/api/settings/auth', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(authMode === 'apiKey' ? { mode: 'apiKey', apiKey: authKey } : { mode: 'login' }) })
+        const ad = await ar.json()
+        if (!ar.ok) throw new Error(ad.error ?? 'Could not save sign-in')
+        setAuth(ad); setAuthKey(''); setAuthDirty(false)
+      }
       setNotificationsEnabled(notifyOn)
       setState('saved')
     } catch (e) { setErrorMsg((e as Error).message || 'Could not save settings'); setState('error') }
@@ -85,6 +100,25 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           <h2 className="text-base font-semibold">Settings</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label="Close">✕</button>
         </div>
+
+        <section className="space-y-2 mb-5 pb-4 border-b border-gray-800">
+          <p className="text-sm font-medium">Claude sign-in</p>
+          <div className="flex gap-4 text-sm">
+            <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'login'} onChange={() => { setAuthMode('login'); setAuthDirty(true); setState('idle') }} />Claude login</label>
+            <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'apiKey'} onChange={() => { setAuthMode('apiKey'); setAuthDirty(true); setState('idle') }} />API key</label>
+          </div>
+          {authMode === 'apiKey' && (
+            <label className="block text-xs text-gray-400">Anthropic API key
+              <input type="password" autoComplete="off" value={authKey} onChange={e => { setAuthKey(e.target.value); setAuthDirty(true); setState('idle') }}
+                placeholder={auth?.keyHint ? `Saved (${auth.keyHint}). Leave blank to keep it.` : 'sk-ant-…'} className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white mt-1" />
+            </label>
+          )}
+          <p className="text-xs text-gray-500 leading-relaxed">
+            {authMode === 'login'
+              ? 'Sessions use the account you logged in with in Claude Code (subscription or SSO).'
+              : 'Sessions bill this API key at API rates. Claude Code may ask once, in the session, to confirm using the key. Applies to sessions started, resumed or restarted after you save.'}
+          </p>
+        </section>
 
         <section className="space-y-3">
           <label className="flex items-center gap-2 text-sm font-medium">

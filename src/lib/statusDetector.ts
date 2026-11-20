@@ -12,6 +12,10 @@ const CURSOR_FWD_RE = /\x1b\[\d*C/g
 // The spinner cycles through several other frames, so missing this one frame
 // doesn't hurt real detection.
 const SPINNER_RE = /^[✢✳✶✻✽]\s/m
+// When a turn ends, newer Claude Code leaves a summary in the same spot with the
+// same glyph: "✻ Brewed for 1s · done 14:49" / "✻ Cooked for 2m 3s". That's
+// finished, not busy. Active lines read "✻ Vibing… (3s · thinking)".
+const DONE_LINE_RE = /^[✢✳✶✻✽]\s+\S+ for \d[\dhms ]*(?:·|$)/
 
 // Copilot's TUI: the prompt glyph ❯ is on screen in EVERY state, so it can't
 // signal "waiting". Its footer row says "◎ Working  esc edit prompt" while
@@ -25,7 +29,7 @@ export function detectStatus(chunk: string, backend?: string): SessionStatus {
   // The ❯ prompt is rendered as permanent UI chrome below the status line
   // regardless of state, so it can't distinguish thinking from waiting on its
   // own — the spinner is the actual "busy" signal and must be checked first.
-  if (SPINNER_RE.test(stripped)) return 'thinking'
+  if (stripped.split('\n').some(l => SPINNER_RE.test(l) && !DONE_LINE_RE.test(l))) return 'thinking'
   // Claude shows ❯ (U+276F) when waiting for input at the prompt.
   // It appears mid-chunk (above the status bar), so we search anywhere.
   if (stripped.includes('❯')) return 'waiting'

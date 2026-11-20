@@ -316,6 +316,10 @@ app.prepare().then(async () => {
         if ('error' in result) send({ type: 'meeting-error', meetingId: null, message: result.error })
         else send({ type: 'meeting-started', meeting: result })
 
+      } else if (msg.type === 'meeting-resume') {
+        const result = meetingManager.resume(msg.meetingId as string)
+        if ('error' in result) send({ type: 'meeting-error', meetingId: msg.meetingId ?? null, message: result.error })
+        else send({ type: 'meeting-started', meeting: result })
       } else if (msg.type === 'meeting-stop') {
         // stop() emits a 'meeting-status' (ended) itself, but if it throws
         // before that (e.g. ffmpeg teardown rejects) the UI would be stuck

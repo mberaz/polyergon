@@ -79,7 +79,10 @@ export function startCapture(meetingDir: string, devices: AudioDevices, cb: Capt
   const audioDir = join(meetingDir, 'audio')
   mkdirSync(audioDir, { recursive: true })
 
-  const proc: ChildProcess = spawn('ffmpeg', ffmpegArgs(devices, join(audioDir, 'chunk-%05d.wav')))
+  // Each capture run (first start, auto-restart, resume) gets its own prefix so
+  // it never overwrites or re-reports an earlier run's chunks.
+  const prefix = `chunk-${Date.now()}-`
+  const proc: ChildProcess = spawn('ffmpeg', ffmpegArgs(devices, join(audioDir, `${prefix}%05d.wav`)))
   let stderrTail = ''
   proc.stderr?.on('data', (d: Buffer) => { stderrTail = (stderrTail + d.toString()).slice(-2000) })
 
@@ -88,7 +91,7 @@ export function startCapture(meetingDir: string, devices: AudioDevices, cb: Capt
 
   function scan(includeLatest: boolean) {
     let files: string[]
-    try { files = readdirSync(audioDir).filter(f => f.endsWith('.wav')).sort() } catch { return }
+    try { files = readdirSync(audioDir).filter(f => f.startsWith(prefix) && f.endsWith('.wav')).sort() } catch { return }
     // The highest-numbered chunk is still being written unless capture ended
     const complete = includeLatest ? files : files.slice(0, -1)
     for (const f of complete) {

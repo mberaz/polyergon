@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync, existsSync, statSync } from 'fs'
+import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync, renameSync } from 'fs'
+import { DATA_DIR } from './dataDir'
 import { join } from 'path'
 
 export interface SkillInfo {
@@ -12,7 +13,7 @@ export interface SkillInfo {
 // Parse the `name` and `description` from a SKILL.md YAML frontmatter block.
 // Handles inline values (`description: text`), quoted values, and YAML block
 // scalars (`description: >-` / `|` with the text indented on following lines).
-function parseFrontmatter(md: string): { name?: string; description?: string } {
+export function parseFrontmatter(md: string): { name?: string; description?: string } {
   const m = md.match(/^---\s*\n([\s\S]*?)\n---/)
   if (!m) return {}
   const lines = m[1].split('\n')
@@ -98,4 +99,67 @@ export function listSkills(): SkillInfo[] {
 function safeReaddir(dir: string): string[] {
   try { return readdirSync(dir).filter(e => { try { return statSync(join(dir, e)).isDirectory() } catch { return false } }) }
   catch { return [] }
+}
+
+// ---- Writing user skills (~/.claude/skills/<name>/SKILL.md) ----
+
+const userSkillsRoot = () => join(process.env.HOME!, '.claude', 'skills')
+// Claude Code skill names: lowercase letters, digits and hyphens.
+export const SKILL_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+export interface SkillInput {
+  raw?: string // a full SKILL.md (frontmatter + body)
+  name?: string
+  description?: string
+  instructions?: string
+}
+
+// Builds the SKILL.md text and validates it. Throws a user-facing message.
+export function buildSkill(input: SkillInput): { name: string; content: string } {
+  let content: string
+  let name: string | undefined
+  let description: string | undefined
+  if (input.raw?.trim()) {
+    content = input.raw.replace(/\r\n/g, '\n').trim() + '\n'
+    ;({ name, description } = parseFrontmatter(content))
+    if (!name && !description) throw new Error('SKILL.md must start with a --- frontmatter block that has name and description')
+  } else {
+    name = input.name?.trim()
+    description = input.description?.trim().replace(/\s+/g, ' ')
+    const body = input.instructions?.trim() ?? ''
+    if (!body) throw new Error('Instructions are required')
+    // Folded block scalar: any characters (quotes, colons) are kept as-is
+    content = `---\nname: ${name ?? ''}\ndescription: >-\n  ${description ?? ''}\n---\n\n${body}\n`
+  }
+  if (!name || !SKILL_NAME.test(name)) throw new Error('Name must be lowercase letters, digits and hyphens (e.g. release-notes)')
+  if (!description) throw new Error('Description is required: it tells Claude when to use the skill')
+  if (content.length > 200_000) throw new Error('Skill is too large (max 200 KB)')
+  return { name, content }
+}
+
+export function readUserSkill(name: string): string | null {
+  if (!SKILL_NAME.test(name)) return null
+  try { return readFileSync(join(userSkillsRoot(), name, 'SKILL.md'), 'utf-8') } catch { return null }
+}
+
+// replaces: the existing skill being edited (null = new skill, must not exist).
+export function saveUserSkill(input: SkillInput, replaces: string | null = null): string {
+  const { name, content } = buildSkill(input)
+  const dir = join(userSkillsRoot(), name)
+  if (name !== replaces && existsSync(dir)) throw new Error(`A skill named "${name}" already exists`)
+  if (replaces && name !== replaces) trashUserSkill(replaces) // renamed
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'SKILL.md'), content)
+  return name
+}
+
+// Moves the skill folder to <data>/trash/skills (never deletes).
+export function trashUserSkill(name: string): boolean {
+  if (!SKILL_NAME.test(name)) return false
+  const dir = join(userSkillsRoot(), name)
+  if (!existsSync(dir)) return false
+  const dest = join(DATA_DIR, 'trash', 'skills')
+  mkdirSync(dest, { recursive: true })
+  renameSync(dir, join(dest, `${name}-${Date.now()}`))
+  return true
 }

@@ -82,6 +82,10 @@ export function useMeetings(ws: WebSocket | null) {
     wsRef.current?.send(JSON.stringify({ type: 'meeting-start', title, orgId }))
   }, [])
 
+  const resumeMeeting = useCallback((meetingId: string) => {
+    wsRef.current?.send(JSON.stringify({ type: 'meeting-resume', meetingId }))
+  }, [])
+
   const stopMeeting = useCallback((meetingId: string) => {
     wsRef.current?.send(JSON.stringify({ type: 'meeting-stop', meetingId }))
   }, [])
@@ -124,5 +128,5 @@ export function useMeetings(ws: WebSocket | null) {
 
   const activeMeeting = meetings.find(m => m.status === 'recording') ?? null
 
-  return { meetings, live, activeMeeting, startMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings: fetchMeetings }
+  return { meetings, live, activeMeeting, startMeeting, resumeMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings: fetchMeetings }
 }

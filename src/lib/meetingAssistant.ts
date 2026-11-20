@@ -1,7 +1,52 @@
 import { spawn } from 'child_process'
 import type { MeetingNotes } from './meetingStore'
+import { claudeAuthEnv } from './claudeAuth'
 
 const CALL_TIMEOUT_MS = 180_000
+
+// One headless `claude -p` call (optionally resuming a conversation). Runs with
+// permission prompts off so it can use web/file tools and MCP connectors.
+export function runClaude(prompt: string, opts: AssistantSpawnOpts & { resumeId?: string | null }): Promise<{ result: string; sessionId: string | null }> {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-p', '--output-format', 'json',
+      '--permission-mode', 'bypassPermissions',
+      ...(opts.model ? ['--model', opts.model] : []),
+      ...(opts.resumeId ? ['--resume', opts.resumeId] : []),
+    ]
+    const env = {
+      ...Object.fromEntries(
+        ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'LANG', 'LC_ALL']
+          .filter(k => process.env[k])
+          .map(k => [k, process.env[k]!])
+      ),
+      ...claudeAuthEnv(),
+      ...(opts.configDir ? { CLAUDE_CONFIG_DIR: opts.configDir } : {}),
+    } as NodeJS.ProcessEnv
+    const proc = spawn('claude', args, { cwd: opts.cwd, env })
+    let stdout = ''
+    let stderr = ''
+    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
+    proc.stderr.on('data', (d: Buffer) => { stderr = (stderr + d.toString()).slice(-1000) })
+    const killer = setTimeout(() => proc.kill('SIGKILL'), CALL_TIMEOUT_MS)
+    proc.on('error', (e) => { clearTimeout(killer); reject(e) })
+    proc.on('exit', (code) => {
+      clearTimeout(killer)
+      if (code !== 0) {
+        reject(new Error(`claude -p exited ${code}: ${stderr.trim().slice(-300)}`))
+        return
+      }
+      try {
+        const parsed = JSON.parse(stdout) as { result?: string; session_id?: string }
+        resolve({ result: parsed.result ?? '', sessionId: parsed.session_id ?? null })
+      } catch {
+        reject(new Error(`unparseable claude output: ${stdout.slice(0, 200)}`))
+      }
+    })
+    proc.stdin.write(prompt)
+    proc.stdin.end()
+  })
+}
 
 export interface AssistantSpawnOpts {
   cwd: string
@@ -46,49 +91,13 @@ export class MeetingAssistant {
     return run
   }
 
-  private call(prompt: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const args = [
-        '-p', '--output-format', 'json',
-        '--permission-mode', 'bypassPermissions',
-        ...(this.opts.model ? ['--model', this.opts.model] : []),
-        ...(this.sessionId ? ['--resume', this.sessionId] : []),
-      ]
-      const env = {
-        ...Object.fromEntries(
-          ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'LANG', 'LC_ALL']
-            .filter(k => process.env[k])
-            .map(k => [k, process.env[k]!])
-        ),
-        ...(this.opts.configDir ? { CLAUDE_CONFIG_DIR: this.opts.configDir } : {}),
-      } as NodeJS.ProcessEnv
-      const proc = spawn('claude', args, { cwd: this.opts.cwd, env })
-      let stdout = ''
-      let stderr = ''
-      proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
-      proc.stderr.on('data', (d: Buffer) => { stderr = (stderr + d.toString()).slice(-1000) })
-      const killer = setTimeout(() => proc.kill('SIGKILL'), CALL_TIMEOUT_MS)
-      proc.on('error', (e) => { clearTimeout(killer); reject(e) })
-      proc.on('exit', (code) => {
-        clearTimeout(killer)
-        if (code !== 0) {
-          reject(new Error(`claude -p exited ${code}: ${stderr.trim().slice(-300)}`))
-          return
-        }
-        try {
-          const parsed = JSON.parse(stdout) as { result?: string; session_id?: string }
-          if (parsed.session_id) {
-            this.sessionId = parsed.session_id
-            this.onSessionId?.(parsed.session_id)
-          }
-          resolve(parsed.result ?? '')
-        } catch {
-          reject(new Error(`unparseable claude output: ${stdout.slice(0, 200)}`))
-        }
-      })
-      proc.stdin.write(prompt)
-      proc.stdin.end()
-    })
+  private async call(prompt: string): Promise<string> {
+    const { result, sessionId } = await runClaude(prompt, { ...this.opts, resumeId: this.sessionId })
+    if (sessionId) {
+      this.sessionId = sessionId
+      this.onSessionId?.(sessionId)
+    }
+    return result
   }
 
   private withPreamble(body: string): string {

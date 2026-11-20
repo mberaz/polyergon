@@ -8,6 +8,7 @@ import { detectStatus } from './statusDetector'
 import { extractPrUrl } from './prDetector'
 import { getBackend, type BackendSpec } from './backends'
 import { autoCompactEnv, getSettings } from './settingsStore'
+import { claudeAuthEnv } from './claudeAuth'
 
 const UUID_JSONL = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/i
 
@@ -171,7 +172,7 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
       ),
       ...backend.env(effectiveModel),
       // Native auto-compact threshold (Settings ⚙). Claude-only env; read per spawn.
-      ...(backend.id === 'claude' ? autoCompactEnv() : {}),
+      ...(backend.id === 'claude' ? { ...autoCompactEnv(), ...claudeAuthEnv() } : {}),
       ...(configDir ? { CLAUDE_CONFIG_DIR: configDir } : {}),
     },
   })

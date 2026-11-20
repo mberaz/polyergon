@@ -36,7 +36,7 @@ export default function Home() {
   const { entries: prEntries } = usePrSessions(ws)
   const { inbox, loading: inboxLoading, refreshing: inboxRefreshing, refresh: refreshInbox } = usePrInbox(ws)
   const { orgs, addOrg } = useOrgs()
-  const { meetings, live: meetingLive, activeMeeting, startMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings } = useMeetings(ws)
+  const { meetings, live: meetingLive, activeMeeting, startMeeting, resumeMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings } = useMeetings(ws)
   const { usage } = useUsage()
   const { limits } = useLimits()
   const [view, setView] = useState<View>({ mode: 'empty' })
@@ -369,6 +369,7 @@ export default function Home() {
             live={meetingLive[viewedMeeting.id]}
             orgName={viewedMeeting.orgId !== 'default' ? orgs.find(o => o.id === viewedMeeting.orgId)?.name ?? null : null}
             onStop={stopMeeting}
+            onResume={resumeMeeting}
             onAsk={askMeeting}
             onAddContext={addMeetingContext}
             onBack={() => setView({ mode: 'meetinglib' })}

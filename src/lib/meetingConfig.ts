@@ -1,12 +1,4 @@
-import { DATA_DIR } from './dataDir'
-import { readFileSync, writeFileSync, chmodSync, mkdirSync } from 'fs'
-import { join } from 'path'
-
-const CONFIG_FILE = join(DATA_DIR, 'config.json')
-
-function readConfig(file = CONFIG_FILE): Record<string, unknown> {
-  try { return JSON.parse(readFileSync(file, 'utf-8')) } catch { return {} }
-}
+import { CONFIG_FILE, readConfig, writeConfig } from './configFile'
 
 export type TranscriptionConfig =
   | { kind: 'openai'; apiKey: string }
@@ -76,9 +68,7 @@ export function saveTranscriptionConfig(input: TranscriptionInput, file = CONFIG
   } else {
     throw new Error('Unknown provider')
   }
-  mkdirSync(join(file, '..'), { recursive: true })
-  writeFileSync(file, JSON.stringify(cfg, null, 2), { mode: 0o600 })
-  chmodSync(file, 0o600) // mode above only applies when the file is created
+  writeConfig(cfg, file)
   return getTranscriptionStatus(file)
 }
 

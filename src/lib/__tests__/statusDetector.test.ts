@@ -29,6 +29,9 @@ describe('detectStatus', () => {
     // active work from a genuine idle prompt.
     expect(detectStatus('✻ Vibing… (3s · thinking)\n\n\n❯ ')).toBe('thinking')
     expect(detectStatus('✢ Hashing…                    esc to interrupt · ← for agents\n\n\n❯ ')).toBe('thinking')
+    // Turn finished: the summary line keeps the glyph but is not busy
+    expect(detectStatus('● Hi. What do you need?\n\n✻ Brewed for 1s · done 14:49\n\n❯ ')).toBe('waiting')
+    expect(detectStatus('✻ Cooked for 2m 3s\n\n❯ ')).toBe('waiting')
   })
 
   it('returns waiting when the idle footer wraps and "·" lands at column 0', () => {

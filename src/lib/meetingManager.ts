@@ -58,27 +58,46 @@ class MeetingManager {
     if (!getTranscriptionConfig()) {
       return { error: 'Transcription not configured: open Settings → Meeting transcription and add an OpenAI or Azure OpenAI key.' }
     }
-    const meeting = meetingStore.create(title, orgId || DEFAULT_ORG_ID)
+    return this.begin(meetingStore.create(title, orgId || DEFAULT_ORG_ID))
+  }
+
+  // Continue an ended/interrupted meeting: same transcript, notes and assistant
+  // conversation; new audio is appended. The summary is rewritten on stop.
+  resume(meetingId: string): Meeting | { error: string } {
+    if (!getTranscriptionConfig()) {
+      return { error: 'Transcription not configured: open Settings → Meeting transcription and add an OpenAI or Azure OpenAI key.' }
+    }
+    const existing = meetingStore.get(meetingId)
+    if (!existing) return { error: 'Meeting not found' }
+    if (this.active.has(meetingId) || existing.status === 'recording') return { error: 'Meeting is already recording' }
+    if (this.active.size > 0) return { error: 'Another meeting is recording. Stop it first.' }
+    const meeting = meetingStore.update(meetingId, { status: 'recording', endedAt: null }) ?? existing
+    return this.begin(meeting)
+  }
+
+  private begin(meeting: Meeting): Meeting {
     const org = orgRegistry.get(meeting.orgId)
     const assistant = new MeetingAssistant({
       cwd: meetingStore.dir(meeting.id),
       configDir: org?.configDir ?? null,
       model: org?.model ?? null,
-    })
+    }, meeting.claudeSessionId)
     assistant.onSessionId = (sid) => {
       const updated = meetingStore.update(meeting.id, { claudeSessionId: sid })
       const a = this.active.get(meeting.id)
       if (a && updated) a.meeting = updated
     }
 
+    // On resume, the earlier transcript was already sent to the assistant
+    const priorText = meetingStore.readTranscript(meeting.id).map(s => s.text).join('\n')
     const active: ActiveMeeting = {
       meeting,
       assistant,
       chunkQueue: [],
       transcribing: false,
       restarted: false,
-      sentTranscriptChars: 0,
-      transcriptText: '',
+      sentTranscriptChars: priorText.length,
+      transcriptText: priorText,
       capture: this.spawnCapture(meeting.id),
       notesTimer: setInterval(() => this.notesTick(meeting.id), NOTES_TICK_MS),
     }

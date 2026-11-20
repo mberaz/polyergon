@@ -10,6 +10,7 @@ import { useNotes } from '@/hooks/useNotes'
 import type { Note } from '@/lib/notesStore'
 import { findDueReminder } from '@/lib/reminders'
 import type { SkillInfo } from '@/lib/skillsReader'
+import { SkillDialog } from './SkillDialog'
 import type { Org } from '@/lib/orgRegistry'
 import type { Meeting } from '@/lib/meetingStore'
 import type { UsageReport, OrgUsage } from '@/lib/usageStore'
@@ -573,6 +574,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
   const [tab, setTab] = useState<'live' | 'history' | 'prs' | 'notes' | 'meetings' | 'usage' | 'skills'>('live')
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [skillsLoaded, setSkillsLoaded] = useState(false)
+  const [skillDialog, setSkillDialog] = useState<{ editing: string | null } | null>(null)
   // Lazy-load skills the first time the Skills tab is opened.
   useEffect(() => {
     if (tab !== 'skills' || skillsLoaded) return
@@ -1360,13 +1362,24 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
                 const shown = q
                   ? skills.filter(sk => sk.name.toLowerCase().includes(q) || sk.description.toLowerCase().includes(q))
                   : skills
-                if (shown.length === 0) return <p className="text-xs text-gray-600 text-center mt-8">{skills.length === 0 ? 'No skills installed' : 'No matching skills'}</p>
+                if (shown.length === 0) return (
+                  <div className="text-center mt-8 space-y-3">
+                    <p className="text-xs text-gray-600">{skills.length === 0 ? 'No skills installed' : 'No matching skills'}</p>
+                    <button onClick={() => setSkillDialog({ editing: null })} className="text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1">+ New skill</button>
+                  </div>
+                )
                 return (
                   <>
-                    <p className="text-[11px] text-gray-600 mb-2">{shown.length} skill{shown.length === 1 ? '' : 's'}{q ? ` matching “${search}”` : ' installed'}</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[11px] text-gray-600">{shown.length} skill{shown.length === 1 ? '' : 's'}{q ? ` matching “${search}”` : ' installed'}</p>
+                      <button onClick={() => setSkillDialog({ editing: null })} className="text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1">+ New skill</button>
+                    </div>
                     <div className="flex flex-col gap-1.5">
                       {shown.map(sk => (
-                        <div key={sk.path} className="rounded-lg bg-gray-900 border border-gray-800 px-3 py-2">
+                        <div key={sk.path}
+                          onClick={sk.source === 'user' ? () => setSkillDialog({ editing: sk.name }) : undefined}
+                          title={sk.source === 'user' ? 'Click to edit' : 'Plugin skills are read-only'}
+                          className={`rounded-lg bg-gray-900 border border-gray-800 px-3 py-2 ${sk.source === 'user' ? 'cursor-pointer hover:border-gray-600' : ''}`}>
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="text-sm text-gray-100 font-medium truncate flex-1" title={sk.name}>{sk.name}</span>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${sk.source === 'user' ? 'bg-blue-900/50 text-blue-300' : 'bg-gray-800 text-gray-400'}`} title={sk.source === 'plugin' ? `Plugin: ${sk.plugin}` : 'Your skill'}>
@@ -1384,6 +1397,9 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
               })()
           }
         </div>
+      )}
+      {skillDialog && (
+        <SkillDialog editing={skillDialog.editing} onClose={() => setSkillDialog(null)} onSaved={() => setSkillsLoaded(false)} />
       )}
       {dueNote && (
         <div className="fixed bottom-4 left-4 z-50 w-80 rounded-lg border border-amber-700/60 bg-gray-900 shadow-xl p-3">

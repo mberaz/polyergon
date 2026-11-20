@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import type { LibraryEntry, MeetingStatus } from '@/lib/meetingStore'
 import type { Org } from '@/lib/orgRegistry'
+import { SendToSlackDialog } from './SendToSlackDialog'
 
 interface Props {
   orgs: Org[]
@@ -58,6 +59,7 @@ export function MeetingsLibrary({ orgs, activeOrgId, refreshKey, onOpen, onDelet
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
+  const [slackFor, setSlackFor] = useState<LibraryEntry | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 250)
@@ -109,6 +111,7 @@ export function MeetingsLibrary({ orgs, activeOrgId, refreshKey, onOpen, onDelet
 
   return (
     <div className="absolute inset-0 flex flex-col bg-gray-950 text-gray-100">
+      {slackFor && <SendToSlackDialog meetingId={slackFor.id} title={slackFor.title} onClose={() => setSlackFor(null)} />}
       <div className="px-6 pt-5 pb-4 flex flex-col gap-3 flex-shrink-0">
         <div className="flex items-baseline gap-3">
           <h1 className="text-lg font-semibold">Recordings</h1>
@@ -186,6 +189,8 @@ export function MeetingsLibrary({ orgs, activeOrgId, refreshKey, onOpen, onDelet
                       ) : (
                         <span className="inline-flex gap-1.5">
                           <button onClick={() => onOpen(m.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800">Open</button>
+                          <button onClick={() => setSlackFor(m)} disabled={!m.snippet} title={m.snippet ? 'Send the summary to a Slack channel' : 'No summary yet'}
+                            className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800 disabled:opacity-30 disabled:hover:bg-transparent">Slack</button>
                           <button
                             onClick={() => setConfirmId(m.id)} disabled={m.status === 'recording'}
                             className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-red-400 hover:bg-red-950/40 disabled:opacity-30 disabled:hover:bg-transparent"

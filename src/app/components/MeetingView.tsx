@@ -3,12 +3,15 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import type { Meeting, MeetingNotes, TranscriptSegment, ContextItem, ContextKind } from '@/lib/meetingStore'
 import type { MeetingLive } from '@/hooks/useMeetings'
 import { Markdown } from './Markdown'
+import { SlackChannelPicker } from './SlackChannelPicker'
+import { SendToSlackDialog } from './SendToSlackDialog'
 
 interface Props {
   meeting: Meeting
   live: MeetingLive | undefined
   orgName: string | null
   onStop: (id: string) => void
+  onResume: (id: string) => void
   onAsk: (id: string, question: string) => void
   onAddContext: (id: string, kind: ContextKind, value: string) => void
   onBack: () => void
@@ -117,10 +120,7 @@ function ContextPanel({ items, isLive, onAdd, sessionOptions, meetingOptions }: 
           {kind === 'text' && (
             <textarea value={value} onChange={e => setValue(e.target.value)} rows={3} placeholder="Paste an agenda, email, doc excerpt…" className={`${input} resize-none`} />
           )}
-          {kind === 'slack' && (
-            <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add() }}
-              placeholder="#channel-name or a Slack link" className={input} />
-          )}
+          {kind === 'slack' && <SlackChannelPicker value={value} onChange={v => setValue(v)} onEnter={add} className={input} />}
           {kind === 'link' && (
             <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add() }}
               placeholder="URL, file path, or Slack / Notion / Drive link" className={input} />
@@ -138,7 +138,7 @@ function ContextPanel({ items, isLive, onAdd, sessionOptions, meetingOptions }: 
   )
 }
 
-export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContext, onBack, sessionOptions, meetingOptions }: Props) {
+export function MeetingView({ meeting, live, orgName, onStop, onResume, onAsk, onAddContext, onBack, sessionOptions, meetingOptions }: Props) {
   const [baseTranscript, setBaseTranscript] = useState<TranscriptSegment[]>([])
   const [baseNotes, setBaseNotes] = useState<MeetingNotes | null>(null)
   const [summary, setSummary] = useState<string | null>(null)
@@ -147,6 +147,7 @@ export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContex
   const [dismissed, setDismissed] = useState<Record<string, boolean>>({})
   const [stopping, setStopping] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [slackOpen, setSlackOpen] = useState(false)
   const [now, setNow] = useState(Date.now())
   const isLive = meeting.status === 'recording'
   const [tab, setTab] = useState<'summary' | 'transcript'>(isLive ? 'transcript' : 'summary')
@@ -167,7 +168,7 @@ export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContex
       .catch(() => {})
   }, [meeting.id, meeting.status])
 
-  useEffect(() => { setTab(isLive ? 'transcript' : 'summary'); setFind('') }, [meeting.id, isLive])
+  useEffect(() => { setTab(isLive ? 'transcript' : 'summary'); setFind(''); setStopping(false) }, [meeting.id, isLive])
 
   useEffect(() => {
     if (!isLive) return
@@ -238,6 +239,12 @@ export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContex
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {!isLive && (
+              <button onClick={() => onResume(meeting.id)} className="text-xs bg-red-600/90 hover:bg-red-500 text-white rounded-md px-3 py-1.5 font-medium">● Continue recording</button>
+            )}
+            {!isLive && summary && (
+              <button onClick={() => setSlackOpen(true)} className="text-xs border border-gray-700 hover:bg-gray-800 text-gray-200 rounded-md px-3 py-1.5">Send to Slack</button>
+            )}
+            {!isLive && (
               <button onClick={copyAsMarkdown} className="text-xs border border-gray-700 hover:bg-gray-800 text-gray-200 rounded-md px-3 py-1.5">{copied ? 'Copied ✓' : 'Copy as Markdown'}</button>
             )}
             {isLive && (
@@ -250,6 +257,8 @@ export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContex
           </div>
         </div>
       </div>
+
+      {slackOpen && <SendToSlackDialog meetingId={meeting.id} title={meeting.title} onClose={() => setSlackOpen(false)} />}
 
       {live?.lastError && (
         <div className="px-6 py-1.5 bg-amber-900/20 border-b border-amber-800/30 text-amber-400 text-xs flex-shrink-0">{live.lastError}</div>
