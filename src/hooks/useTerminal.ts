@@ -16,6 +16,8 @@ export interface LiveSessionInfo {
   orgId: string
   worktree?: { branch: string; repo: string } | null
   backend?: string
+  limitResetAt?: number | null // usage limit hit; Polyergon continues it after this
+  stalledSince?: number | null // thinking with no progress since
 }
 
 export function useTerminal() {

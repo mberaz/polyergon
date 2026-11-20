@@ -50,6 +50,18 @@ export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
   const { permission: notificationPermission, enabled: notificationsOn, requestPermission: requestNotificationPermission, notifyNeedsInput } = useDesktopNotifications()
   const { removeWorktree, sendToLive, ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
+  // Usage-limit and stall alerts from the server
+  useEffect(() => {
+    if (!ws) return
+    const on = (e: MessageEvent) => {
+      try {
+        const m = JSON.parse(e.data)
+        if (m.type === 'session-alert') notifyNeedsInput(m.title, m.body, () => { attachSession(m.id); setView({ mode: 'live' }) })
+      } catch { /* not JSON */ }
+    }
+    ws.addEventListener('message', on)
+    return () => ws.removeEventListener('message', on)
+  }, [ws, notifyNeedsInput, attachSession])
   const { watchers, watcherError, watcherCmd } = useSlackWatchers(ws, (title, body) => notifyNeedsInput(`👂 ${title}`, body))
   const [showWatcherDialog, setShowWatcherDialog] = useState(false)
   const [editWatcher, setEditWatcher] = useState<SlackWatcher | null>(null)

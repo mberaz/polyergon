@@ -484,7 +484,11 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
 
         {/* Meta row: status text · folder · time · cost · org */}
         <div className="flex items-center gap-1.5 mt-1.5 pl-4 text-[11px] min-w-0">
-          <span className={`flex-shrink-0 font-medium ${STATUS_TEXT[s.status]}`}>{STATUS_LABEL[s.status]}</span>
+          {s.limitResetAt
+            ? <span className="flex-shrink-0 font-medium text-amber-300" title="Claude's usage limit was reached. Polyergon sends &quot;continue&quot; a minute after it resets.">limit · resumes {new Date(s.limitResetAt + 60_000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            : s.stalledSince && s.status === 'thinking'
+              ? <span className="flex-shrink-0 font-medium text-amber-300" title="Says it's working, but nothing has changed for a while. Open it to check.">stalled {Math.round((Date.now() - s.stalledSince) / 60_000)}m</span>
+              : <span className={`flex-shrink-0 font-medium ${STATUS_TEXT[s.status]}`}>{STATUS_LABEL[s.status]}</span>}
           {s.worktree
             ? <><span className="text-gray-700">·</span><span className="truncate text-gray-400" title={`Own worktree of ${s.worktree.repo} on branch ${s.worktree.branch}`}>⑂ {s.worktree.branch.replace(/^polyergon\//, '')}</span></>
             : folderLabel && <><span className="text-gray-700">·</span><span className="truncate text-gray-500">{folderLabel}</span></>}

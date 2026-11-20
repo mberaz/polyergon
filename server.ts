@@ -15,13 +15,14 @@ import { DEFAULT_BACKEND } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
 import { pipelineEngine, type PipelineConfig } from './src/lib/pipelines'
 import { keepAwake } from './src/lib/keepAwake'
+import { sessionWatch } from './src/lib/sessionWatch'
 import { createWorktree, removeWorktree } from './src/lib/worktrees'
 import { updateTask } from './src/lib/taskStore'
 import type { LiveSession } from './src/lib/liveSessionStore'
 
 // What the browser sees of a live session
 const sessionView = (s: LiveSession) => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot ?? getGitRoot(s.cwd), // restored sessions may lack it (cached lookup)
-  status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId, backend: s.backend ?? 'claude', worktree: s.worktree ? { branch: s.worktree.branch, repo: s.worktree.repo } : null })
+  status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId, backend: s.backend ?? 'claude', limitResetAt: sessionWatch.limitResetAt.get(s.id) ?? null, stalledSince: sessionWatch.stalledSince.get(s.id) ?? null, worktree: s.worktree ? { branch: s.worktree.branch, repo: s.worktree.repo } : null })
 import { slackWatchers } from './src/lib/slackWatchers'
 import { meetingStore, type ContextKind } from './src/lib/meetingStore'
 import { sessionNameStore } from './src/lib/sessionNameStore'
@@ -120,6 +121,12 @@ app.prepare().then(async () => {
   pipelineEngine.start()
   slackWatchers.start()
   keepAwake.start()
+  sessionWatch.start()
+  // Limit / stall alerts go to every open window (desktop notification + card)
+  sessionWatch.onAlert(a => {
+    const sessions = liveSessionStore.list().map(sessionView)
+    wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) { c.send(JSON.stringify({ type: 'session-alert', ...a })); c.send(JSON.stringify({ type: 'sessions', sessions })) } })
+  })
   slackWatchers.on((ev) => {
     const msg = JSON.stringify(ev)
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg) })

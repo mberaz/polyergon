@@ -15,7 +15,14 @@
     "testEnvironment": "node",
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1"
-    }
+    },
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/.claude/"
+    ],
+    "modulePathIgnorePatterns": [
+      "<rootDir>/.claude/"
+    ]
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

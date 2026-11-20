@@ -46,3 +46,6 @@ next-env.d.ts
 /public/alert.mp3
 
 /.git-pre-oss/
+
+# agent worktrees
+.claude/

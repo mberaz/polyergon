@@ -205,6 +205,7 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
   prScanBuffers.set(id, '')
 
   proc.onData((data) => {
+    lastOutputAt.set(id, Date.now())
     outputListeners.get(id)?.forEach(fn => fn(data))
     const stripped = data.replace(ANSI_STRIP, '')
 
@@ -304,6 +305,15 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
     prScanBuffers.delete(id)
   })
 }
+
+// Plain text of the bottom of a session's screen (for limit / prompt detection)
+export function screenText(id: string, rows = 20): string {
+  const h = headlessTerms.get(id)
+  return h ? bottomRows(h.term, Math.min(rows, h.term.rows)) : ''
+}
+
+// When the session last printed anything
+export const lastOutputAt = new Map<string, number>()
 
 export function writeToSession(id: string, data: string) {
   ptyProcesses.get(id)?.write(data)
