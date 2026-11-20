@@ -15,6 +15,11 @@ import { DEFAULT_BACKEND } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
 import { pipelineEngine } from './src/lib/pipelines'
 import { keepAwake } from './src/lib/keepAwake'
+import { createWorktree, removeWorktree } from './src/lib/worktrees'
+import type { LiveSession } from './src/lib/liveSessionStore'
+
+// What the browser sees of a live session
+const sessionView = (s: LiveSession) => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot, status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId, worktree: s.worktree ? { branch: s.worktree.branch, repo: s.worktree.repo } : null })
 import { slackWatchers } from './src/lib/slackWatchers'
 import { meetingStore, type ContextKind } from './src/lib/meetingStore'
 import { sessionNameStore } from './src/lib/sessionNameStore'
@@ -186,7 +191,7 @@ app.prepare().then(async () => {
       try { msg = JSON.parse(raw.toString()) } catch { return }
 
       if (msg.type === 'list') {
-        send({ type: 'sessions', sessions: liveSessionStore.list().map(s => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot, status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId })) })
+        send({ type: 'sessions', sessions: liveSessionStore.list().map(sessionView) })
 
       } else if (msg.type === 'create') {
         let cwd = (msg.cwd as string) || process.env.HOME!
@@ -197,6 +202,12 @@ app.prepare().then(async () => {
         if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
           send({ type: 'error', message: `Directory not found: ${cwd}` })
           return
+        }
+        // Isolated copy: new branch + worktree folder for this session
+        let worktree: LiveSession['worktree']
+        if (msg.worktree === true) {
+          try { worktree = createWorktree(cwd, (msg.name as string) || path.basename(cwd)); cwd = worktree.path }
+          catch (e) { send({ type: 'error', message: /not a git repository/i.test(String((e as { stderr?: Buffer }).stderr ?? e)) ? 'That folder is not a git repository, so it can\'t get its own worktree.' : `Could not create a worktree: ${(e as Error).message}` }); return }
         }
         const orgId = (msg.orgId as string) || DEFAULT_ORG_ID
         const org = orgRegistry.get(orgId)
@@ -210,7 +221,7 @@ app.prepare().then(async () => {
         const backend = (msg.backend as string) || DEFAULT_BACKEND
         const model = (msg.model as string) || org?.model || null
         const rc = !!msg.rc
-        liveSessionStore.add({ id, cwd, gitRoot, claudeSessionId: null, status: 'thinking', createdAt: Date.now(), prUrl: null, orgId, backend, model, rc })
+        liveSessionStore.add({ id, cwd, gitRoot, claudeSessionId: null, status: 'thinking', createdAt: Date.now(), prUrl: null, orgId, backend, model, rc, worktree })
         spawnSession(id, cwd, undefined, org?.configDir ?? null, model, rcName, backend, rc)
         send({ type: 'created', id, cwd, gitRoot, orgId })
         attachToSession(id)
@@ -277,7 +288,7 @@ app.prepare().then(async () => {
             spawnSession(s.id, s.cwd, s.claudeSessionId!, org?.configDir ?? null, s.model ?? org?.model, rcNameFor(s), s.backend, s.rc)
             await new Promise(r => setTimeout(r, 300))
           }
-          const updated = liveSessionStore.list().map(s => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot, status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId }))
+          const updated = liveSessionStore.list().map(sessionView)
           wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'sessions', sessions: updated })) })
         })()
 
@@ -309,7 +320,7 @@ app.prepare().then(async () => {
             liveSessionStore.setStatus(target.id, 'thinking')
             spawnSession(target.id, target.cwd, target.claudeSessionId, org?.configDir ?? null, target.model ?? org?.model, rcNameFor(target), target.backend, target.rc)
           }
-          const updated = liveSessionStore.list().map(s => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot, status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId }))
+          const updated = liveSessionStore.list().map(sessionView)
           wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'sessions', sessions: updated })) })
         }
 
@@ -327,7 +338,17 @@ app.prepare().then(async () => {
         const targetId = msg.sessionId as string
         killSession(targetId)
         liveSessionStore.remove(targetId)
-        const updated = liveSessionStore.list().map(s => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot, status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId }))
+        const updated = liveSessionStore.list().map(sessionView)
+        wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'sessions', sessions: updated })) })
+
+      } else if (msg.type === 'worktree-remove') {
+        // Stops the session, deletes its worktree folder (branch kept). Conversation stays in History.
+        const target = liveSessionStore.get(msg.sessionId as string)
+        if (!target?.worktree) return
+        killSession(target.id)
+        try { removeWorktree(target.worktree) } catch (e) { send({ type: 'error', message: (e as Error).message }); return }
+        liveSessionStore.remove(target.id)
+        const updated = liveSessionStore.list().map(sessionView)
         wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'sessions', sessions: updated })) })
 
       } else if (msg.type === 'paste-image') {

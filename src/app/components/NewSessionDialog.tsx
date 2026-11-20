@@ -9,7 +9,7 @@ interface Props {
   orgs: Org[]
   defaultOrgId?: string
   onAddOrg: (name: string, configDir: string, model?: string) => Promise<Org>
-  onConfirm: (cwd: string, name: string, orgId: string, backend: string, model: string, prompt?: string) => void
+  onConfirm: (cwd: string, name: string, orgId: string, backend: string, model: string, prompt?: string, worktree?: boolean) => void
   onResumeById: (sessionId: string, name: string, orgId: string, backend: string, model: string) => void
   onCancel: () => void
 }
@@ -157,9 +157,11 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
     onConfirm(selectedCwd && selectedCwd !== 'general' ? selectedCwd : 'general', label, orgId, backend, model, prompt)
   }
 
+  // Folder sessions only: own branch + worktree so parallel sessions don't collide
+  const [isolate, setIsolate] = useState(false)
   function start(cwd: string) {
     localStorage.setItem('lastCwd', cwd)
-    onConfirm(cwd, name.trim(), orgId, backend, model)
+    onConfirm(cwd, name.trim(), orgId, backend, model, undefined, cwd !== 'general' && isolate)
   }
 
   async function submitNewOrg() {
@@ -347,6 +349,11 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
             {/* Project folders */}
             {folders.length > 0 && (
               <>
+                <label className="flex items-start gap-2 mb-2 text-xs text-gray-300 cursor-pointer"
+                  title="Creates a new branch and a separate copy of the repo for this session (git worktree). Other sessions in the same repo won't touch its files. Remove it from the session card when you're done.">
+                  <input type="checkbox" checked={isolate} onChange={e => setIsolate(e.target.checked)} className="mt-0.5" />
+                  <span>Isolated copy <span className="text-gray-500">· new branch + worktree, so parallel sessions in the same repo don&apos;t collide (git repos only)</span></span>
+                </label>
                 <p className="text-[11px] uppercase tracking-wide text-gray-600 mb-1">Or work in a folder<Hint text="Claude starts inside this folder: it reads and edits its files, runs commands there, and loads the folder's CLAUDE.md. Listed: folders you used before." /></p>
                 <div className="max-h-56 overflow-y-auto rounded border border-gray-700 mb-3">
                   {folders.map(cwd => {

@@ -54,6 +54,7 @@ interface Props {
   sessionNameOverrides?: Record<string, string>
   onAttachLive: (id: string) => void
   onKillLive: (id: string) => void
+  onRemoveWorktree: (id: string) => void
   onDeleteLive: (id: string, claudeSessionId: string | null) => void
   onResumeLive: (id: string) => void
   onResumeAll: () => void
@@ -289,7 +290,7 @@ function getLiveSessionTitle(s: LiveSessionInfo, sessionNames: Record<string, st
     ?? s.cwd
 }
 
-function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, contextTokens, compactAt, pipeline, onAutomate, onRenameLive, onAttachLive, onKillLive, onDeleteLive, onResume, onCompact, onSetRemote, onRename }: {
+function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, contextTokens, compactAt, pipeline, onAutomate, onRenameLive, onAttachLive, onKillLive, onRemoveWorktree, onDeleteLive, onResume, onCompact, onSetRemote, onRename }: {
   pipeline: Pipeline | null
   onAutomate: (id: string) => void
   onRenameLive: (id: string, name: string) => void
@@ -302,6 +303,7 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
   contextTokens?: number
   onAttachLive: (id: string) => void
   onKillLive: (id: string) => void
+  onRemoveWorktree: (id: string) => void
   onDeleteLive: (id: string, claudeSessionId: string | null) => void
   onResume: (id: string) => void
   onCompact: (id: string) => void
@@ -472,7 +474,9 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
         {/* Meta row: status text · folder · time · cost · org */}
         <div className="flex items-center gap-1.5 mt-1.5 pl-4 text-[11px] min-w-0">
           <span className={`flex-shrink-0 font-medium ${STATUS_TEXT[s.status]}`}>{STATUS_LABEL[s.status]}</span>
-          {folderLabel && <><span className="text-gray-700">·</span><span className="truncate text-gray-500">{folderLabel}</span></>}
+          {s.worktree
+            ? <><span className="text-gray-700">·</span><span className="truncate text-emerald-400/80" title={`Own worktree of ${s.worktree.repo} on branch ${s.worktree.branch}`}>⑂ {s.worktree.branch.replace(/^polyergon\//, '')}</span></>
+            : folderLabel && <><span className="text-gray-700">·</span><span className="truncate text-gray-500">{folderLabel}</span></>}
           {time && <><span className="text-gray-700">·</span><span className="flex-shrink-0 text-gray-600">{time}</span></>}
         </div>
 
@@ -535,6 +539,13 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
             className="text-[11px] text-gray-500 hover:text-red-400 ml-auto"
             title="Stops the live process. The conversation itself isn't deleted — it stays available in the History tab."
           >Archive</button>
+          {s.worktree && (
+            <button
+              onClick={e => { e.stopPropagation(); if (window.confirm(`Remove the worktree for branch ${s.worktree!.branch}? The session stops and its folder is deleted. The branch and any commits stay. Uncommitted changes block this.`)) onRemoveWorktree(s.id) }}
+              className="text-[11px] text-gray-500 hover:text-red-400"
+              title="Stop the session and delete its worktree folder. The branch and its commits are kept."
+            >Remove worktree</button>
+          )}
           <button
             onClick={e => {
               e.stopPropagation()
@@ -622,7 +633,7 @@ function FolderIcon({ open }: { open: boolean }) {
   )
 }
 
-export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenSettings, onOpenAutomations, onHome, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
+export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onRemoveWorktree, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenSettings, onOpenAutomations, onHome, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
   // Search text is remembered per org, so switching orgs and back restores
   // whatever you'd typed in each
   const [searchByOrg, setSearchByOrg] = useState<Record<string, string>>({})
@@ -1079,6 +1090,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
                       onSetRemote={onSetRemote}
                       onAttachLive={onAttachLive}
                       onKillLive={onKillLive}
+                      onRemoveWorktree={onRemoveWorktree}
                       onDeleteLive={onDeleteLive}
                       onResume={onResumeLive}
                       onRename={renameSession}

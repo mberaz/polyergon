@@ -22,12 +22,14 @@ export interface LiveSession {
   model?: string | null
   // Remote Control opt-in (persisted; honored on every re-spawn)
   rc?: boolean
+  // Session runs in its own git worktree (branch + folder), see worktrees.ts
+  worktree?: { repo: string; path: string; branch: string }
 }
 
 const DEFAULT_PERSIST_DIR = DATA_DIR
 const DEFAULT_PERSIST_FILE = join(DEFAULT_PERSIST_DIR, 'live-sessions.json')
 
-type SavedSession = Pick<LiveSession, 'id' | 'cwd' | 'gitRoot' | 'claudeSessionId' | 'createdAt' | 'prUrl' | 'orgId' | 'backend' | 'model' | 'rc'>
+type SavedSession = Pick<LiveSession, 'id' | 'cwd' | 'gitRoot' | 'claudeSessionId' | 'createdAt' | 'prUrl' | 'orgId' | 'backend' | 'model' | 'rc' | 'worktree'>
 
 export class LiveSessionStore {
   private sessions = new Map<string, LiveSession>()
@@ -83,7 +85,7 @@ export class LiveSessionStore {
     try {
       if (!existsSync(this.persistDir)) mkdirSync(this.persistDir, { recursive: true })
       const saved: SavedSession[] = Array.from(this.sessions.values()).map(s => ({
-        id: s.id, cwd: s.cwd, gitRoot: s.gitRoot, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, orgId: s.orgId, backend: s.backend, model: s.model, rc: s.rc,
+        id: s.id, cwd: s.cwd, gitRoot: s.gitRoot, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, orgId: s.orgId, backend: s.backend, model: s.model, rc: s.rc, worktree: s.worktree,
       }))
       writeFileSync(this.persistFile, JSON.stringify(saved))
     } catch {}

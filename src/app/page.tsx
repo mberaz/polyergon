@@ -47,7 +47,7 @@ type View = { mode: 'empty' } | { mode: 'live' } | { mode: 'meeting'; meetingId:
 export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
   const { permission: notificationPermission, enabled: notificationsOn, requestPermission: requestNotificationPermission, notifyNeedsInput } = useDesktopNotifications()
-  const { sendToLive, ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
+  const { removeWorktree, sendToLive, ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
   const { watchers, watcherError, watcherCmd } = useSlackWatchers(ws, (title, body) => notifyNeedsInput(`👂 ${title}`, body))
   const [showWatcherDialog, setShowWatcherDialog] = useState(false)
   const [editWatcher, setEditWatcher] = useState<SlackWatcher | null>(null)
@@ -216,7 +216,7 @@ export default function Home() {
 
   }, [activeSessionId])
 
-  function handleNewSession(cwd: string, name: string, orgId: string, backend: string, model: string, prompt?: string) {
+  function handleNewSession(cwd: string, name: string, orgId: string, backend: string, model: string, prompt?: string, worktree?: boolean) {
     setShowDialog(false)
     pendingNameRef.current = name
     // Persist custom path so it appears in the dialog next time
@@ -225,7 +225,7 @@ export default function Home() {
       setCustomPaths(updated)
       try { localStorage.setItem('customPaths', JSON.stringify(updated)) } catch {}
     }
-    createSession(cwd, orgId, name, backend, model, prompt)
+    createSession(cwd, orgId, name, backend, model, prompt, worktree)
   }
 
   function handleHistoryClick(sessionId: string, cwd: string | null, orgId?: string) {
@@ -363,6 +363,7 @@ export default function Home() {
           sessionNameOverrides={sessionNameOverrides}
           onAttachLive={handleAttachLive}
           onKillLive={killLiveSession}
+          onRemoveWorktree={removeWorktree}
           onDeleteLive={handleDeleteLive}
           onResumeLive={handleResumeLive}
           onResumeAll={resumeAllSessions}
