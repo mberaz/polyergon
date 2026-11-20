@@ -985,8 +985,10 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
             tab === 'automations' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
           }`}
         >
-          <span className="whitespace-nowrap">Automations</span>
-          {pipelines.filter(isRunning).length > 0 && <span className="min-w-4 h-4 px-1 rounded-full text-[10px] leading-4 text-center bg-blue-500/25 text-blue-300">{pipelines.filter(isRunning).length}</span>}
+          <span className="relative whitespace-nowrap" title={pipelines.filter(isRunning).length ? `${pipelines.filter(isRunning).length} running` : undefined}>
+            Automations
+            {pipelines.filter(isRunning).length > 0 && <span className="absolute -top-0.5 -right-2 w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+          </span>
         </button>
       </div>
 
