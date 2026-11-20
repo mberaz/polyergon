@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { Meeting, MeetingNotes, TranscriptSegment, ContextItem, ContextKind } from '@/lib/meetingStore'
 import type { MeetingLive } from '@/hooks/useMeetings'
+import { Markdown } from './Markdown'
 
 interface Props {
   meeting: Meeting
@@ -10,8 +11,55 @@ interface Props {
   onStop: (id: string) => void
   onAsk: (id: string, question: string) => void
   onAddContext: (id: string, kind: ContextKind, value: string) => void
+  onBack: () => void
   sessionOptions: { id: string; label: string }[]
   meetingOptions: { id: string; label: string }[]
+}
+
+function fmtTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function fmtDuration(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60)
+  return h > 0 ? `${h}h ${m}m` : `${m}m ${s % 60}s`
+}
+
+// Position in the recording, e.g. 04:12 or 1:02:45
+function fmtOffset(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60
+  const mm = String(m).padStart(2, '0'), ss = String(sec).padStart(2, '0')
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+function Highlight({ text, q }: { text: string; q: string }) {
+  if (!q) return <>{text}</>
+  const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+  return <>{text.split(re).map((p, i) => i % 2 ? <mark key={i} className="bg-amber-400/25 text-amber-100 rounded-sm px-0.5">{p}</mark> : p)}</>
+}
+
+function NotesCards({ notes }: { notes: MeetingNotes }) {
+  const card = (title: string, items: string[], marker: string) => items.length > 0 && (
+    <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">{title} <span className="text-gray-600">{items.length}</span></p>
+      <ul className="space-y-2">
+        {items.map((it, i) => (
+          <li key={i} className="flex gap-2.5 text-sm text-gray-300 leading-relaxed">
+            <span className="text-gray-500 flex-shrink-0">{marker}</span><span>{it}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+  return (
+    <div className="space-y-4">
+      {card('Decisions', notes.decisions, '✓')}
+      {card('Action items', notes.actionItems, '☐')}
+      {card('Topics', notes.topics, '•')}
+    </div>
+  )
 }
 
 const CONTEXT_TABS: { kind: ContextKind; label: string }[] = [
@@ -85,36 +133,7 @@ function ContextPanel({ items, isLive, onAdd, sessionOptions, meetingOptions }: 
   )
 }
 
-function fmtTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
-
-function fmtDuration(ms: number): string {
-  const s = Math.floor(ms / 1000)
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60)
-  return h > 0 ? `${h}h ${m}m` : `${m}m ${s % 60}s`
-}
-
-function NotesPanel({ notes }: { notes: MeetingNotes | null }) {
-  if (!notes) return <p className="text-xs text-gray-600">Notes will appear as the meeting progresses…</p>
-  const section = (label: string, items: string[]) => items.length > 0 && (
-    <div className="mb-3">
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</p>
-      <ul className="space-y-1">
-        {items.map((item, i) => <li key={i} className="text-xs text-gray-300 leading-relaxed pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-gray-600">{item}</li>)}
-      </ul>
-    </div>
-  )
-  return (
-    <div>
-      {section('Topics', notes.topics)}
-      {section('Decisions', notes.decisions)}
-      {section('Action items', notes.actionItems)}
-    </div>
-  )
-}
-
-export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContext, sessionOptions, meetingOptions }: Props) {
+export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContext, onBack, sessionOptions, meetingOptions }: Props) {
   const [baseTranscript, setBaseTranscript] = useState<TranscriptSegment[]>([])
   const [baseNotes, setBaseNotes] = useState<MeetingNotes | null>(null)
   const [summary, setSummary] = useState<string | null>(null)
@@ -122,9 +141,12 @@ export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContex
   const [question, setQuestion] = useState('')
   const [dismissed, setDismissed] = useState<Record<string, boolean>>({})
   const [stopping, setStopping] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [now, setNow] = useState(Date.now())
-  const transcriptEndRef = useRef<HTMLDivElement>(null)
   const isLive = meeting.status === 'recording'
+  const [tab, setTab] = useState<'summary' | 'transcript'>(isLive ? 'transcript' : 'summary')
+  const [find, setFind] = useState('')
+  const transcriptEndRef = useRef<HTMLDivElement>(null)
 
   // Base state from disk (covers page refresh mid-meeting and ended recaps);
   // live WS segments layer on top.
@@ -140,6 +162,8 @@ export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContex
       .catch(() => {})
   }, [meeting.id, meeting.status])
 
+  useEffect(() => { setTab(isLive ? 'transcript' : 'summary'); setFind('') }, [meeting.id, isLive])
+
   useEffect(() => {
     if (!isLive) return
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -154,16 +178,18 @@ export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContex
 
   const notes = live?.notes ?? baseNotes
   const contextItems = live?.context ?? baseContext
+  const q = find.trim()
+  const shownTranscript = q ? transcript.filter(s => s.text.toLowerCase().includes(q.toLowerCase())) : transcript
 
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [transcript.length])
+    if (isLive && tab === 'transcript' && !q) transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [transcript.length, isLive, tab, q])
 
   function submitQuestion() {
-    const q = question.trim()
-    if (!q) return
+    const text = question.trim()
+    if (!text) return
     setQuestion('')
-    onAsk(meeting.id, q)
+    onAsk(meeting.id, text)
   }
 
   function copyAsMarkdown() {
@@ -174,73 +200,95 @@ export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContex
       summary ?? '',
       '',
       '## Transcript',
-      ...transcript.map(s => `- **${fmtTime(s.t)}** ${s.text}`),
+      ...transcript.map(s => `- **${fmtOffset(s.t - meeting.startedAt)}** ${s.text}`),
     ].join('\n')
-    navigator.clipboard.writeText(md).catch(() => {})
+    navigator.clipboard.writeText(md).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
   }
 
   const suggestions = (live?.suggestions ?? []).filter(s => !dismissed[s.id])
+  const qa = live?.qa ?? []
+  const tabBtn = (key: typeof tab, label: string) => (
+    <button onClick={() => setTab(key)}
+      className={`px-1 pb-2.5 pt-1 text-sm border-b-2 transition-colors ${tab === key ? 'border-blue-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>{label}</button>
+  )
 
   return (
     <div className="absolute inset-0 flex flex-col bg-gray-950 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          {isLive
-            ? <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
-            : <span className="w-2.5 h-2.5 rounded-full bg-gray-600 flex-shrink-0" />}
-          <h2 className="text-white font-semibold truncate">{meeting.title}</h2>
-          {orgName && <span className="px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300 text-[10px] font-medium flex-shrink-0">{orgName}</span>}
-          <span className="text-xs text-gray-500 flex-shrink-0">
-            {isLive
-              ? fmtDuration(now - meeting.startedAt)
-              : `${new Date(meeting.startedAt).toLocaleString()} · ${meeting.endedAt ? fmtDuration(meeting.endedAt - meeting.startedAt) : ''}${meeting.status === 'interrupted' ? ' · interrupted' : ''}`}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {!isLive && (
-            <button onClick={copyAsMarkdown} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded px-3 py-1.5 font-medium">Copy as Markdown</button>
-          )}
-          {isLive && (
-            <button
-              onClick={() => { setStopping(true); onStop(meeting.id) }}
-              disabled={stopping}
-              className="text-xs bg-red-600 hover:bg-red-500 disabled:opacity-60 text-white rounded px-3 py-1.5 font-medium"
-            >{stopping ? 'Stopping — generating summary…' : '■ Stop recording'}</button>
-          )}
+      <div className="px-6 pt-4 pb-3 border-b border-gray-800 flex-shrink-0">
+        <button onClick={onBack} className="text-xs text-gray-500 hover:text-gray-300 mb-2">← Recordings</button>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {isLive && <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />}
+              <h1 className="text-xl font-semibold text-white truncate">{meeting.title}</h1>
+              {orgName && <span className="px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300 text-[10px] font-medium flex-shrink-0">{orgName}</span>}
+            </div>
+            <p className="text-xs text-gray-500 mt-1 tabular-nums">
+              {new Date(meeting.startedAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              {' · '}{isLive ? <span className="text-red-400">Recording {fmtDuration(now - meeting.startedAt)}</span> : meeting.endedAt ? fmtDuration(meeting.endedAt - meeting.startedAt) : ''}
+              {meeting.status === 'interrupted' && <span className="text-amber-400"> · interrupted</span>}
+              {notes && <> · {notes.decisions.length} decisions · {notes.actionItems.length} action items</>}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {!isLive && (
+              <button onClick={copyAsMarkdown} className="text-xs border border-gray-700 hover:bg-gray-800 text-gray-200 rounded-md px-3 py-1.5">{copied ? 'Copied ✓' : 'Copy as Markdown'}</button>
+            )}
+            {isLive && (
+              <button
+                onClick={() => { setStopping(true); onStop(meeting.id) }}
+                disabled={stopping}
+                className="text-xs bg-red-600 hover:bg-red-500 disabled:opacity-60 text-white rounded-md px-3 py-1.5 font-medium"
+              >{stopping ? 'Stopping — writing summary…' : '■ Stop recording'}</button>
+            )}
+          </div>
         </div>
       </div>
 
       {live?.lastError && (
-        <div className="px-4 py-1.5 bg-yellow-900/30 border-b border-yellow-800/40 text-yellow-400 text-xs flex-shrink-0">{live.lastError}</div>
+        <div className="px-6 py-1.5 bg-amber-900/20 border-b border-amber-800/30 text-amber-400 text-xs flex-shrink-0">{live.lastError}</div>
       )}
 
       <div className="flex-1 flex min-h-0">
-        {/* Transcript / recap main pane */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-gray-800">
-          {!isLive && summary && (
-            <div className="border-b border-gray-800 px-5 py-4 overflow-y-auto max-h-[45%] flex-shrink-0">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Summary</p>
-              <div className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{summary}</div>
-            </div>
-          )}
-          <div className="flex-1 overflow-y-auto px-5 py-4">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Transcript</p>
-            {transcript.length === 0
-              ? <p className="text-xs text-gray-600">{isLive ? 'Listening… transcript appears here a few seconds after people speak.' : 'No transcript captured.'}</p>
-              : transcript.map((s, i) => (
-                  <div key={i} className="mb-2 flex gap-3">
-                    <span className="text-[10px] text-gray-600 font-mono pt-0.5 flex-shrink-0">{fmtTime(s.t)}</span>
-                    <p className="text-sm text-gray-200 leading-relaxed">{s.text}</p>
-                  </div>
-                ))}
-            <div ref={transcriptEndRef} />
+        {/* Main: Summary / Transcript */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="px-6 pt-2 border-b border-gray-800 flex items-end gap-5 flex-shrink-0">
+            {tabBtn('summary', isLive ? 'Live notes' : 'Summary')}
+            {tabBtn('transcript', `Transcript${transcript.length ? ` · ${transcript.length}` : ''}`)}
+            {tab === 'transcript' && transcript.length > 0 && (
+              <input value={find} onChange={e => setFind(e.target.value)} placeholder="Find in transcript"
+                className="ml-auto mb-2 w-56 bg-gray-900 border border-gray-800 focus:border-gray-600 rounded-md px-2.5 py-1 text-xs outline-none placeholder-gray-600" />
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {tab === 'summary' && (
+              <div className="px-6 py-5 max-w-3xl">
+                {summary ? <Markdown text={summary} />
+                  : notes ? <NotesCards notes={notes} />
+                  : <p className="text-sm text-gray-500">{isLive ? 'Notes appear here every couple of minutes while people talk.' : 'No summary was generated for this meeting.'}</p>}
+              </div>
+            )}
+            {tab === 'transcript' && (
+              <div className="px-6 py-4 max-w-4xl">
+                {shownTranscript.length === 0
+                  ? <p className="text-sm text-gray-500">{q ? `No lines contain “${q}”.` : isLive ? 'Listening… text appears a few seconds after people speak.' : 'No transcript captured.'}</p>
+                  : shownTranscript.map((s, i) => (
+                      <div key={i} className="flex gap-4 py-1.5 group">
+                        <span className="text-[11px] text-gray-600 font-mono pt-0.5 w-14 flex-shrink-0 text-right tabular-nums" title={fmtTime(s.t)}>{fmtOffset(s.t - meeting.startedAt)}</span>
+                        <p className="text-sm text-gray-300 leading-relaxed"><Highlight text={s.text} q={q} /></p>
+                      </div>
+                    ))}
+                <div ref={transcriptEndRef} />
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Right column: notes + assistant */}
-        <div className="w-[340px] flex-shrink-0 flex flex-col min-h-0">
-          <div className="max-h-[40%] overflow-y-auto px-4 py-3 border-b border-gray-800 flex-shrink-0">
+        {/* Right: context + assistant */}
+        <div className="w-[360px] flex-shrink-0 border-l border-gray-800 flex flex-col min-h-0 bg-gray-900/20">
+          <div className="max-h-[45%] overflow-y-auto px-4 py-4 border-b border-gray-800 flex-shrink-0">
             <ContextPanel
               items={contextItems}
               isLive={isLive}
@@ -249,32 +297,30 @@ export function MeetingView({ meeting, live, orgName, onStop, onAsk, onAddContex
               meetingOptions={meetingOptions.filter(o => o.id !== meeting.id)}
             />
           </div>
-          <div className="flex-1 overflow-y-auto px-4 py-4 border-b border-gray-800">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Notes</p>
-            <NotesPanel notes={notes} />
-          </div>
 
           <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Assistant</p>
               {suggestions.map(s => (
-                <div key={s.id} className="rounded-lg bg-blue-950/60 border border-blue-800/40 px-3 py-2">
+                <div key={s.id} className="rounded-lg bg-blue-950/50 border border-blue-800/40 px-3 py-2.5">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-xs text-blue-200 leading-relaxed flex-1">{s.text}</p>
-                    <button onClick={() => setDismissed(d => ({ ...d, [s.id]: true }))} className="text-blue-700 hover:text-blue-400 text-xs flex-shrink-0">×</button>
+                    <p className="text-xs text-blue-200 leading-relaxed flex-1">💡 {s.text}</p>
+                    <button onClick={() => setDismissed(d => ({ ...d, [s.id]: true }))} className="text-blue-700 hover:text-blue-400 text-xs flex-shrink-0" aria-label="Dismiss">✕</button>
                   </div>
                 </div>
               ))}
-              {(live?.qa ?? []).map((qa, i) => (
-                <div key={i} className="rounded-lg bg-gray-900 px-3 py-2">
-                  <p className="text-xs text-gray-400 font-medium mb-1">Q: {qa.question}</p>
-                  {qa.answer === null
-                    ? <p className="text-xs text-gray-600 italic">thinking…</p>
-                    : <p className="text-xs text-gray-200 whitespace-pre-wrap leading-relaxed">{qa.answer}</p>}
+              {qa.map((x, i) => (
+                <div key={i} className="space-y-1.5">
+                  <p className="ml-8 rounded-lg bg-blue-600/90 text-white text-xs px-3 py-2 leading-relaxed">{x.question}</p>
+                  <div className="mr-4 rounded-lg bg-gray-800/80 px-3 py-2">
+                    {x.answer === null
+                      ? <p className="text-xs text-gray-500 italic">Thinking…</p>
+                      : <p className="text-xs text-gray-200 whitespace-pre-wrap leading-relaxed">{x.answer}</p>}
+                  </div>
                 </div>
               ))}
-              {suggestions.length === 0 && (live?.qa ?? []).length === 0 && (
-                <p className="text-xs text-gray-600">Ask anything about the meeting so far…</p>
+              {suggestions.length === 0 && qa.length === 0 && (
+                <p className="text-xs text-gray-600">{isLive ? 'Ask anything about the meeting so far. Suggestions appear here when Claude has something useful.' : 'Questions asked during the meeting appear here.'}</p>
               )}
             </div>
             {isLive && (

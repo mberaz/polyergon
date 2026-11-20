@@ -866,7 +866,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
           Notes
         </button>
         <button
-          onClick={() => setTab('meetings')}
+          onClick={() => { setTab('meetings'); onOpenMeetingLibrary() }}
           className={`py-2.5 text-xs font-semibold tracking-wide flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
             tab === 'meetings'
               ? 'border-blue-500 text-blue-400'
@@ -1258,7 +1258,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
             onClick={onOpenMeetingLibrary}
             className="w-full mb-2 flex items-center justify-center gap-1.5 text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1.5 transition-colors"
           >
-            🔍 All recordings &amp; search
+            All recordings
           </button>
           {orgMeetings.length === 0
             ? <p className="text-xs text-gray-600 text-center mt-8">No meetings yet — hit the red button above to record one</p>

@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic' // never prerender: reads live local state
 import { NextResponse } from 'next/server'
-import { meetingStore } from '@/lib/meetingStore'
+import { meetingStore, MeetingStore } from '@/lib/meetingStore'
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const meeting = meetingStore.get(params.id)
@@ -12,4 +12,11 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     summary: meetingStore.readSummary(params.id),
     context: meetingStore.readContext(params.id),
   })
+}
+
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  if (!/^[0-9a-f-]{36}$/.test(params.id)) return NextResponse.json({ error: 'bad id' }, { status: 400 })
+  return new MeetingStore().trash(params.id)
+    ? NextResponse.json({ ok: true })
+    : NextResponse.json({ error: 'Not found, or still recording' }, { status: 409 })
 }

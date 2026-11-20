@@ -1,5 +1,5 @@
 import { DATA_DIR } from './dataDir'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, statSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, statSync, renameSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 
@@ -58,7 +58,8 @@ export function summarySnippet(md: string | null): string | null {
 }
 
 // Excerpt of `text` around the first occurrence of `word` (lowercase).
-function excerpt(text: string, word: string): string {
+function excerpt(raw: string, word: string): string {
+  const text = raw.replace(/\*\*|__|`|^#+\s*/gm, '')
   const i = text.toLowerCase().indexOf(word)
   const start = Math.max(0, i - 60)
   return (start > 0 ? '…' : '') + text.slice(start, i + word.length + 80).replace(/\s+/g, ' ').trim() + '…'
@@ -200,6 +201,16 @@ export class MeetingStore {
 
   saveContext(id: string, items: ContextItem[]): void {
     writeFileSync(join(this.dir(id), 'context.json'), JSON.stringify(items, null, 2))
+  }
+
+  // Moves the meeting folder to <data>/trash/meetings instead of deleting it.
+  trash(id: string): boolean {
+    const m = this.get(id)
+    if (!m || m.status === 'recording') return false
+    const dest = join(this.baseDir, '..', 'trash', 'meetings')
+    mkdirSync(dest, { recursive: true })
+    renameSync(this.dir(id), join(dest, `${id}-${Date.now()}`))
+    return true
   }
 
   private writeMeta(meeting: Meeting): void {

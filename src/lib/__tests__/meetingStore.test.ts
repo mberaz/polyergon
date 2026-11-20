@@ -86,5 +86,14 @@ describe('MeetingStore', () => {
     expect(store.library('kafka lag')[0].match).toContain('Kafka lag')
     expect(store.library('kafka sharepoint')).toEqual([])
   })
+
+  test('trash moves an ended meeting aside and refuses a recording one', () => {
+    const live = store.create('Live', 'default')
+    expect(store.trash(live.id)).toBe(false)
+    store.update(live.id, { status: 'ended' })
+    expect(store.trash(live.id)).toBe(true)
+    expect(store.get(live.id)).toBeNull()
+    expect(store.list()).toEqual([])
+  })
 })
 

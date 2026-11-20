@@ -36,7 +36,7 @@ export default function Home() {
   const { entries: prEntries } = usePrSessions(ws)
   const { inbox, loading: inboxLoading, refreshing: inboxRefreshing, refresh: refreshInbox } = usePrInbox(ws)
   const { orgs, addOrg } = useOrgs()
-  const { meetings, live: meetingLive, activeMeeting, startMeeting, stopMeeting, askMeeting, addMeetingContext, micTest } = useMeetings(ws)
+  const { meetings, live: meetingLive, activeMeeting, startMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings } = useMeetings(ws)
   const { usage } = useUsage()
   const { limits } = useLimits()
   const [view, setView] = useState<View>({ mode: 'empty' })
@@ -74,6 +74,7 @@ export default function Home() {
   // the Sidebar loads persisted names from localStorage itself. Do NOT seed
   // this from localStorage — feeding the whole saved map back through here
   // races the Sidebar's own load and clobbers live renames.
+  const [hideNotifyBanner, setHideNotifyBanner] = useState(false)
   const [sessionNameOverrides, setSessionNameOverrides] = useState<Record<string, string>>({})
   // Per-session alert bookkeeping (not just the currently-viewed session) —
   // previous status, when a session was created via this client (so its own
@@ -358,6 +359,7 @@ export default function Home() {
             activeOrgId={activeOrgId}
             refreshKey={meetings.map(m => m.id + m.status).join()}
             onOpen={(id) => setView({ mode: 'meeting', meetingId: id })}
+            onDeleted={refreshMeetings}
           />
         )}
 
@@ -369,6 +371,7 @@ export default function Home() {
             onStop={stopMeeting}
             onAsk={askMeeting}
             onAddContext={addMeetingContext}
+            onBack={() => setView({ mode: 'meetinglib' })}
             sessionOptions={liveSessions.filter(s => s.claudeSessionId).map(s => {
               const name = sessionNameOverrides[s.id] || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1) || 'Session'
               return { id: s.id, label: name.length > 70 ? name.slice(0, 70) + '…' : name }
@@ -390,13 +393,14 @@ export default function Home() {
           </div>
         )}
 
-        {notificationsOn && notificationPermission === 'default' && (
-          <div className="absolute top-4 right-4 bg-gray-900/95 border border-gray-700 text-sm px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 z-10">
+        {notificationsOn && notificationPermission === 'default' && !hideNotifyBanner && (
+          <div className="absolute bottom-4 right-4 bg-gray-900/95 border border-gray-700 text-sm px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 z-10">
             <span className="text-gray-300">Get notified when a session needs input</span>
             <button
               onClick={requestNotificationPermission}
               className="bg-blue-600 hover:bg-blue-500 text-white rounded px-2 py-1 text-xs font-medium"
             >Enable notifications</button>
+            <button onClick={() => setHideNotifyBanner(true)} className="text-gray-500 hover:text-white" aria-label="Dismiss">✕</button>
           </div>
         )}
       </div>
