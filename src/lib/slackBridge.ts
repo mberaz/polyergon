@@ -59,14 +59,47 @@ export function toSlackMarkdown(md: string): string {
     .trim()
 }
 
-export async function postToSlack(channel: SlackChannel, text: string): Promise<void> {
+// Posts and returns the message permalink when Slack reports one.
+export async function postToSlack(channel: SlackChannel, text: string): Promise<{ permalink: string | null }> {
   const target = channel.id ? `${channel.id} (#${channel.name})` : `#${channel.name}`
   const { result } = await runClaude(
     `Use the Slack connector to post the message below to the Slack channel ${target}. ` +
     'Post it exactly as written, as one message, without changes or additions. ' +
-    'Reply with only "OK" when posted, or "FAILED: <reason>".\n\n<message>\n' + text + '\n</message>',
+    'Reply with only "OK <the posted message permalink>" when posted, or "FAILED: <reason>".\n\n<message>\n' + text + '\n</message>',
     opts(),
   )
   const reply = result.trim()
   if (!/^OK\b/i.test(reply)) throw new Error(reply.replace(/^FAILED:?\s*/i, '') || 'Slack did not confirm the post')
+  return { permalink: reply.match(/https:\/\/\S+slack\.com\/archives\/\S+/)?.[0] ?? null }
+}
+
+export interface SlackThreadView {
+  reviewers: string[] // said they'll review / are reviewing, or reacted 👀
+  reactions: { emoji: string; users: string[] }[]
+  replies: { user: string; text: string }[]
+}
+
+export function parseThread(raw: string): SlackThreadView | null {
+  const start = raw.indexOf('{'), end = raw.lastIndexOf('}')
+  if (start === -1 || end <= start) return null
+  try {
+    const j = JSON.parse(raw.slice(start, end + 1))
+    const strs = (x: unknown) => (Array.isArray(x) ? x.filter((v): v is string => typeof v === 'string') : [])
+    return {
+      reviewers: strs(j.reviewers),
+      reactions: (Array.isArray(j.reactions) ? j.reactions : []).map((r: { emoji?: unknown; users?: unknown }) => ({ emoji: String(r.emoji ?? ''), users: strs(r.users) })).filter((r: { emoji: string }) => r.emoji),
+      replies: (Array.isArray(j.replies) ? j.replies : []).map((r: { user?: unknown; text?: unknown }) => ({ user: String(r.user ?? ''), text: String(r.text ?? '').slice(0, 300) })).slice(-5),
+    }
+  } catch { return null }
+}
+
+// Reads replies and reactions on a posted message and picks out who is reviewing.
+export async function readSlackThread(permalink: string): Promise<SlackThreadView | null> {
+  const { result } = await runClaude(
+    `Use the Slack connector to read the Slack message at ${permalink}: its reactions and all thread replies. ` +
+    'Respond with ONLY a JSON object, no prose: {"reviewers": [display names of people who said they will review, are reviewing, or reacted with eyes], ' +
+    '"reactions": [{"emoji": "eyes", "users": ["Name"]}], "replies": [{"user": "Name", "text": "..."}]}',
+    opts(),
+  )
+  return parseThread(result)
 }

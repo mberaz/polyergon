@@ -12,7 +12,7 @@ import type { SkillInfo } from '@/lib/skillsReader'
 import { OrgsDialog } from './OrgsDialog'
 import { SETTINGS_CHANGED_EVENT } from '@/hooks/useDesktopNotifications'
 import type { Pipeline } from '@/lib/pipelines'
-import { PHASE_LABEL } from './AutomateDialog'
+import { pipelineSummary, isRunning } from '@/lib/pipelineView'
 import type { Org } from '@/lib/orgRegistry'
 import type { Meeting } from '@/lib/meetingStore'
 import type { UsageReport, OrgUsage } from '@/lib/usageStore'
@@ -395,7 +395,7 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
           {(
             <button
               onClick={e => { e.stopPropagation(); onAutomate(s.id) }}
-              className={`text-xs flex-shrink-0 ${pipeline && ['waiting-for-session', 'opening-pr', 'in-review', 'working'].includes(pipeline.phase) ? 'text-blue-400' : 'opacity-0 group-hover/live:opacity-100 text-gray-500 hover:text-yellow-300'}`}
+              className={`text-xs flex-shrink-0 ${isRunning(pipeline) ? 'text-blue-400' : 'opacity-0 group-hover/live:opacity-100 text-gray-500 hover:text-yellow-300'}`}
               title="Automate: open a PR, post for review, handle feedback and CI"
             >⚡</button>
           )}
@@ -421,8 +421,8 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
 
         {pipeline && pipeline.phase !== 'stopped' && (
           <button onClick={e => { e.stopPropagation(); onAutomate(s.id) }}
-            className={`mt-1.5 ml-4 text-[11px] px-1.5 py-0.5 rounded ${pipeline.phase === 'ready' || pipeline.phase === 'done' ? 'bg-emerald-500/15 text-emerald-300' : pipeline.phase === 'needs-you' ? 'bg-amber-500/15 text-amber-300' : 'bg-blue-500/15 text-blue-300'}`}>
-            ⚡ {PHASE_LABEL[pipeline.phase]}
+            className={`mt-1.5 ml-4 text-[11px] px-1.5 py-0.5 rounded ${pipeline.phase === 'done' || pipeline.prs.some(t => t.state === 'ready') ? 'bg-emerald-500/15 text-emerald-300' : pipeline.phase === 'needs-you' || pipeline.prs.some(t => t.state === 'needs-you') ? 'bg-amber-500/15 text-amber-300' : 'bg-blue-500/15 text-blue-300'}`}>
+            ⚡ {pipelineSummary(pipeline)}
           </button>
         )}
 

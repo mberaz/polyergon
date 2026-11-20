@@ -12,6 +12,7 @@ import { MeetingsLibrary } from './components/MeetingsLibrary'
 import { AutomateDialog } from './components/AutomateDialog'
 import { SkillsPage } from './components/SkillsPage'
 import { NotesPage } from './components/NotesPage'
+import { CommandPalette, type PaletteItem } from './components/CommandPalette'
 import { useNotes } from '@/hooks/useNotes'
 import { usePipelines } from '@/hooks/usePipelines'
 import { PrDashboard } from './components/PrDashboard'
@@ -36,7 +37,7 @@ export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
   const { permission: notificationPermission, enabled: notificationsOn, requestPermission: requestNotificationPermission, notifyNeedsInput } = useDesktopNotifications()
   const { ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
-  const { pipelines, pipelineError, startPipeline, stopPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
+  const { pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
   // prEntries still feeds the notification-suppression logic; the PRs tab
   // itself now renders the GitHub workload inbox
   const { entries: prEntries } = usePrSessions(ws)
@@ -276,6 +277,33 @@ export default function Home() {
     }
   }, [activeMeeting])
 
+  // ⌘K palette: everything searchable, built when the palette opens
+  const paletteSkills = useRef<{ name: string; description: string }[] | null>(null)
+  useEffect(() => { fetch('/api/skills').then(r => r.json()).then(d => { paletteSkills.current = d.skills ?? [] }).catch(() => {}) }, [skillsVersion])
+  const paletteItems = useCallback((): PaletteItem[] => {
+    const nameOf = (id: string, claudeId: string | null, cwd: string) =>
+      sessionNameOverrides[id] || (claudeId && sessionNameOverrides[claudeId]) || sessions.find(h => h.sessionId === claudeId)?.firstUserMessage || cwd.split('/').at(-1) || 'Session'
+    const liveIds = new Set(liveSessions.map(s => s.claudeSessionId))
+    const day = (t: number | string) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    return [
+      { id: 'new-session', group: 'Actions', label: 'New session', run: () => setShowDialog(true) },
+      { id: 'record', group: 'Actions', label: 'Record a meeting', run: () => setShowRecordDialog(true) },
+      { id: 'recordings', group: 'Actions', label: 'Open recordings', run: () => setView({ mode: 'meetinglib' }) },
+      { id: 'notes', group: 'Actions', label: 'Open notes', run: () => setView({ mode: 'notes', id: null }) },
+      { id: 'skills', group: 'Actions', label: 'Open skills', run: () => setView({ mode: 'skills', name: null }) },
+      { id: 'usage', group: 'Actions', label: 'Open usage', run: () => setView({ mode: 'usagedash' }) },
+      { id: 'prs', group: 'Actions', label: 'Open PR dashboard', run: () => setView({ mode: 'prdash' }) },
+      ...liveSessions.map(s => ({ id: s.id, group: 'Live sessions', label: nameOf(s.id, s.claudeSessionId, s.cwd).slice(0, 90), hint: s.status, run: () => handleAttachLive(s.id) })),
+      ...sessions.filter(h => !h.headless && !liveIds.has(h.sessionId)).map(h => ({
+        id: h.sessionId, group: 'History', label: (sessionNameOverrides[h.sessionId] || h.firstUserMessage || h.cwd?.split('/').at(-1) || 'Session').slice(0, 90),
+        hint: h.lastTimestamp ? day(h.lastTimestamp) : undefined, run: () => handleHistoryClick(h.sessionId, h.cwd, h.orgId),
+      })),
+      ...meetings.map(m => ({ id: m.id, group: 'Meetings', label: m.title, hint: day(m.startedAt), run: () => setView({ mode: 'meeting', meetingId: m.id }) })),
+      ...notes.map(n => ({ id: n.id, group: 'Notes', label: n.text.split('\n').find(l => l.trim())?.trim().slice(0, 90) || 'Untitled', hint: day(n.createdAt), run: () => setView({ mode: 'notes', id: n.id }) })),
+      ...(paletteSkills.current ?? []).map(sk => ({ id: sk.name, group: 'Skills', label: sk.name, hint: sk.description.slice(0, 60), run: () => setView({ mode: 'skills', name: sk.name }) })),
+    ]
+  }, [liveSessions, sessions, meetings, notes, sessionNameOverrides]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const viewedMeeting = view.mode === 'meeting' ? meetings.find(m => m.id === view.meetingId) ?? null : null
 
   return (
@@ -437,6 +465,8 @@ export default function Home() {
         )}
       </div>
 
+      <CommandPalette items={paletteItems} />
+
       {automateFor && (() => {
         const s = liveSessions.find(x => x.id === automateFor)
         const name = (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session'
@@ -447,6 +477,7 @@ export default function Home() {
             error={pipelineError?.liveId === automateFor ? pipelineError.message : null}
             onStart={config => startPipeline(automateFor, config)}
             onStop={stopPipeline}
+            onAddPr={(id, url) => addPipelinePr(id, automateFor, url)}
             onClose={() => setAutomateFor(null)}
           />
         )

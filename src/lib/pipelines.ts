@@ -6,29 +6,60 @@ import { randomUUID } from 'crypto'
 import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
 import { writeToSession, onAnyStatusChange, onAnyPrUrlChange } from './ptyManager'
-import { summarizeChecks } from './ghPrStatus'
-import { postToSlack, type SlackChannel } from './slackBridge'
+import { summarizeChecks, isValidPrUrl } from './ghPrStatus'
+import { postToSlack, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
 import type { PrCheckStatus } from './prTypes'
 
 const execFileAsync = promisify(execFile)
 
-// Session automations ("⚡ Automate" on a card). One template for now, "Ship it":
-//   coding → open PR → post to Slack → loop { address review feedback | fix CI }
-//   → approved + green → tell the user it's ready to merge. Never merges.
+// Session automations ("⚡ Automate" on a card), template "Ship it":
+//   session finishes → open a PR → for EVERY PR the session opens (or you add):
+//   post to Slack → address review feedback / fix CI within limits → tell you
+//   when it's approved and green. Never merges. One session works on one fix at
+//   a time, so requests for different PRs queue.
 
 export type PipelinePhase =
   | 'waiting-for-session' // session still working; act when it goes quiet
   | 'opening-pr'          // asked the session to open a PR; waiting for its URL
-  | 'in-review'           // PR open; watching reviews and CI
-  | 'working'             // asked the session to address feedback / fix CI
-  | 'ready'               // approved + CI green: user merges
-  | 'done'                // merged or closed
-  | 'needs-you'           // a limit was hit or something failed
+  | 'tracking'            // watching one or more PRs
+  | 'done'                // every tracked PR merged or closed
+  | 'needs-you'
   | 'stopped'
+
+export type PrTrackState = 'in-review' | 'working' | 'ready' | 'done' | 'needs-you'
 
 export interface PipelineConfig {
   slackChannel: SlackChannel | null
-  maxRounds: number // review rounds + CI fixes, each
+  maxRounds: number // review rounds + CI fixes, each, per PR
+}
+
+// What the dialog shows about a PR (GitHub) and its review post (Slack)
+export interface PrView {
+  number: number
+  title: string
+  state: string
+  isDraft: boolean
+  reviewDecision: string | null
+  checks: PrCheckStatus
+  requested: string[] // asked to review, not yet reviewed
+  reviews: { login: string; state: string; at: string | null }[] // latest per reviewer
+  fetchedAt: number
+}
+
+export interface SlackView extends Partial<SlackThreadView> {
+  channel: string
+  permalink: string | null
+  checkedAt: number
+}
+
+export interface PrTrack {
+  url: string
+  state: PrTrackState
+  view?: PrView
+  slack?: SlackView
+  seenFeedback: number // review + comment count already handled; -1 = not read yet
+  reviewRounds: number
+  ciFixes: number
 }
 
 export interface Pipeline {
@@ -37,10 +68,8 @@ export interface Pipeline {
   template: 'ship-it'
   config: PipelineConfig
   phase: PipelinePhase
-  prUrl: string | null
-  reviewRounds: number
-  ciFixes: number
-  seenFeedback: number // review + comment count already handled
+  prs: PrTrack[]
+  workingOn: string | null // PR url the session is fixing right now
   actedAt: number // when we last sent the session work
   log: { t: number; text: string }[]
   createdAt: number
@@ -52,7 +81,9 @@ export type PipelineEvent = { type: 'pipelines'; items: Pipeline[]; notify?: { t
 const FILE = join(DATA_DIR, 'pipelines.json')
 const POLL_MS = 2 * 60_000
 const SETTLE_MS = 20_000 // a session must be quiet this long after we sent it work
-const ACTIVE: PipelinePhase[] = ['waiting-for-session', 'opening-pr', 'in-review', 'working']
+const SLACK_CHECK_MS = 10 * 60_000
+import { ACTIVE_PHASES } from './pipelineView'
+const OPEN_TRACK: PrTrackState[] = ['in-review', 'working', 'ready']
 
 const PROMPTS = {
   openPr: 'Your work looks finished. Commit it, push the branch, and open a pull request with a clear title and description. Print the PR URL when done.',
@@ -60,18 +91,26 @@ const PROMPTS = {
   ci: (url: string) => `CI is failing on ${url}. Find the failing checks with gh, fix the cause, and push.`,
 }
 
-interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrCheckStatus; feedback: number; title: string }
+import { shortPr } from './pipelineView'
 
-// Review + comment count from people other than the PR author.
+interface PrSnapshot { state: string; reviewDecision: string | null; checks: PrCheckStatus; feedback: number; title: string; view: PrView }
+
 async function prSnapshot(url: string): Promise<PrSnapshot | null> {
   try {
     const env = { ...process.env }
     delete env.GITHUB_TOKEN; delete env.GH_TOKEN
-    const { stdout } = await execFileAsync('gh', ['pr', 'view', url, '--json', 'state,reviewDecision,statusCheckRollup,author,reviews,comments,title'], { timeout: 15000, env })
+    const { stdout } = await execFileAsync('gh', ['pr', 'view', url, '--json', 'number,state,isDraft,reviewDecision,statusCheckRollup,author,reviews,latestReviews,reviewRequests,comments,title'], { timeout: 15000, env })
     const j = JSON.parse(stdout)
     const author = j.author?.login
     const others = (xs: { author?: { login?: string } }[] = []) => xs.filter(x => x.author?.login && x.author.login !== author).length
-    return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks: summarizeChecks(j.statusCheckRollup ?? []), feedback: others(j.reviews) + others(j.comments), title: j.title ?? '' }
+    const checks = summarizeChecks(j.statusCheckRollup ?? [])
+    const reviews = (j.latestReviews ?? [])
+      .filter((r: { author?: { login?: string } }) => r.author?.login && r.author.login !== author)
+      .map((r: { author: { login: string }; state: string; submittedAt?: string }) => ({ login: r.author.login, state: r.state, at: r.submittedAt ?? null }))
+    const reviewed = new Set(reviews.map((r: { login: string }) => r.login))
+    const requested = (j.reviewRequests ?? []).map((r: { login?: string; name?: string; slug?: string }) => r.login ?? r.name ?? r.slug ?? '').filter((x: string) => x && !reviewed.has(x))
+    const view: PrView = { number: j.number, title: j.title ?? '', state: j.state, isDraft: !!j.isDraft, reviewDecision: j.reviewDecision ?? null, checks, requested, reviews, fetchedAt: Date.now() }
+    return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks, feedback: others(j.reviews) + others(j.comments), title: j.title ?? '', view }
   } catch { return null }
 }
 
@@ -84,11 +123,15 @@ class PipelineEngine {
   start() {
     if (this.started) return
     this.started = true
-    try { this.items = JSON.parse(readFileSync(FILE, 'utf-8')) } catch { this.items = [] }
-    onAnyStatusChange(id => this.items.filter(p => p.liveId === id).forEach(p => this.step(p.id)))
-    onAnyPrUrlChange(id => this.items.filter(p => p.liveId === id).forEach(p => this.step(p.id)))
-    setInterval(() => this.items.filter(p => ACTIVE.includes(p.phase)).forEach(p => this.step(p.id, true)), POLL_MS)
-    this.items.filter(p => ACTIVE.includes(p.phase)).forEach(p => this.step(p.id, true))
+    try { this.items = JSON.parse(readFileSync(FILE, 'utf-8')).filter((p: Pipeline) => Array.isArray(p.prs)) } catch { this.items = [] }
+    onAnyStatusChange(id => this.forSession(id, p => this.step(p.id)))
+    onAnyPrUrlChange(id => this.forSession(id, p => this.step(p.id)))
+    setInterval(() => this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => this.step(p.id, true)), POLL_MS)
+    this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => this.step(p.id, true))
+  }
+
+  private forSession(liveId: string, fn: (p: Pipeline) => void) {
+    this.items.filter(p => p.liveId === liveId && ACTIVE_PHASES.includes(p.phase)).forEach(fn)
   }
 
   on(fn: (ev: PipelineEvent) => void) { this.listeners.add(fn); return () => { this.listeners.delete(fn) } }
@@ -102,33 +145,56 @@ class PipelineEngine {
 
   private update(p: Pipeline, patch: Partial<Pipeline>, logText?: string, notify?: PipelineEvent['notify']) {
     Object.assign(p, patch, { updatedAt: Date.now() })
-    if (logText) p.log = [...p.log, { t: Date.now(), text: logText }].slice(-50)
+    if (logText) p.log = [...p.log, { t: Date.now(), text: logText }].slice(-80)
     this.save(notify)
+  }
+
+  private patchTrack(p: Pipeline, t: PrTrack, patch: Partial<PrTrack>, logText?: string, notify?: PipelineEvent['notify']) {
+    Object.assign(t, patch)
+    this.update(p, {}, logText, notify)
   }
 
   create(liveId: string, config: PipelineConfig): Pipeline | { error: string } {
     const s = liveSessionStore.get(liveId)
     if (!s) return { error: 'Session not found' }
     if (s.backend === 'copilot') return { error: 'Automations support Claude sessions only for now' }
-    if (this.items.some(p => p.liveId === liveId && ACTIVE.includes(p.phase))) return { error: 'This session already has a running automation' }
+    if (this.items.some(p => p.liveId === liveId && ACTIVE_PHASES.includes(p.phase))) return { error: 'This session already has a running automation' }
     const p: Pipeline = {
       id: randomUUID(), liveId, template: 'ship-it',
       config: { slackChannel: config.slackChannel, maxRounds: Math.min(10, Math.max(1, Math.round(config.maxRounds) || 3)) },
-      phase: s.prUrl ? 'in-review' : 'waiting-for-session', prUrl: s.prUrl ?? null,
-      reviewRounds: 0, ciFixes: 0, seenFeedback: -1, actedAt: 0,
-      log: [{ t: Date.now(), text: s.prUrl ? `Started. Watching existing PR ${s.prUrl}` : 'Started. Waiting for the session to finish its current work' }],
+      phase: 'waiting-for-session', prs: [], workingOn: null, actedAt: 0,
+      log: [{ t: Date.now(), text: 'Started' }],
       createdAt: Date.now(), updatedAt: Date.now(),
     }
-    // Keep only the latest few finished runs per session
-    this.items = [...this.items.filter(x => x.liveId !== liveId || ACTIVE.includes(x.phase)).slice(-50), p]
+    this.items = [...this.items.filter(x => x.liveId !== liveId || ACTIVE_PHASES.includes(x.phase)).slice(-50), p]
+    if (s.prUrl) this.addTrack(p, s.prUrl, 'Found existing PR')
     this.save()
     this.step(p.id, true)
     return p
   }
 
+  // Track another PR on a running automation (from the dialog).
+  addPr(id: string, url: string): { error: string } | null {
+    const p = this.items.find(x => x.id === id)
+    if (!p || !ACTIVE_PHASES.includes(p.phase)) return { error: 'Automation is not running' }
+    if (!isValidPrUrl(url)) return { error: 'Not a GitHub pull request URL' }
+    this.addTrack(p, url, 'You added')
+    this.step(p.id, true)
+    return null
+  }
+
+  private addTrack(p: Pipeline, url: string, why: string) {
+    if (p.prs.some(t => t.url === url)) return
+    const t: PrTrack = { url, state: 'in-review', seenFeedback: -1, reviewRounds: 0, ciFixes: 0 }
+    p.prs = [...p.prs, t]
+    p.phase = 'tracking'
+    this.update(p, {}, `${why} ${shortPr(url)}`)
+    this.announce(p, t)
+  }
+
   stop(id: string) {
     const p = this.items.find(x => x.id === id)
-    if (p && ACTIVE.includes(p.phase)) this.update(p, { phase: 'stopped' }, 'Stopped by you')
+    if (p && ACTIVE_PHASES.includes(p.phase)) this.update(p, { phase: 'stopped', workingOn: null }, 'Stopped by you')
   }
 
   // Advances one pipeline. Serialized per pipeline; safe to call often.
@@ -143,66 +209,105 @@ class PipelineEngine {
 
   private async advance(id: string, poll: boolean) {
     const p = this.items.find(x => x.id === id)
-    if (!p || !ACTIVE.includes(p.phase)) return
+    if (!p || !ACTIVE_PHASES.includes(p.phase)) return
     const s = liveSessionStore.get(p.liveId)
     if (!s) { this.update(p, { phase: 'needs-you' }, 'Session is gone'); return }
     const quiet = s.status === 'waiting' && Date.now() - p.actedAt > SETTLE_MS
-    const send = (text: string, phase: PipelinePhase, patch: Partial<Pipeline>, logText: string) => {
+    const send = (text: string, logText: string, patch: Partial<Pipeline> = {}) => {
       writeToSession(p.liveId, text + '\r')
-      this.update(p, { ...patch, phase, actedAt: Date.now() }, logText)
+      this.update(p, { ...patch, actedAt: Date.now() }, logText)
     }
+
+    // Any PR link the session printed becomes a tracked PR
+    if (s.prUrl && !p.prs.some(t => t.url === s.prUrl)) this.addTrack(p, s.prUrl, p.prs.length ? 'New PR' : 'PR opened')
 
     if (p.phase === 'waiting-for-session') {
-      if (s.prUrl) { this.update(p, { phase: 'in-review', prUrl: s.prUrl }, `PR found: ${s.prUrl}`); return this.announce(p) }
-      if (quiet) send(PROMPTS.openPr, 'opening-pr', {}, 'Asked the session to commit, push and open a PR')
+      if (quiet) send(PROMPTS.openPr, 'Asked the session to commit, push and open a PR', { phase: 'opening-pr' })
       return
     }
-
     if (p.phase === 'opening-pr') {
-      if (s.prUrl) { this.update(p, { phase: 'in-review', prUrl: s.prUrl }, `PR opened: ${s.prUrl}`); return this.announce(p) }
       if (quiet && Date.now() - p.actedAt > 10 * 60_000) this.update(p, { phase: 'needs-you' }, 'The session finished but no PR link appeared', { title: 'Automation needs you', body: 'No PR was opened' })
       return
     }
 
-    if (p.phase === 'working' && !quiet) return // session still on it
-    const justBack = p.phase === 'working'
-    if (justBack) this.update(p, { phase: 'in-review' }, 'Session finished; back to watching the PR')
+    // tracking
+    const busyOn = p.workingOn ? p.prs.find(t => t.url === p.workingOn) : null
+    if (busyOn && !quiet) return // session still on it
+    let refresh = poll
+    if (busyOn) {
+      this.patchTrack(p, busyOn, { state: 'in-review' }, `Session finished work on ${shortPr(busyOn.url)}`)
+      this.update(p, { workingOn: null })
+      refresh = true
+    }
+    if (!refresh) return
 
-    // in-review: only hit GitHub on the poll tick or right after work finished
-    if (!poll && !justBack) return
-    const url = p.prUrl ?? s.prUrl
-    if (!url) return
-    const pr = await prSnapshot(url)
-    if (!pr) return
-    if (p.seenFeedback < 0) { this.update(p, { seenFeedback: pr.feedback }); return }
-    if (pr.state === 'MERGED' || pr.state === 'CLOSED') {
-      this.update(p, { phase: 'done' }, `PR ${pr.state.toLowerCase()}`, { title: `PR ${pr.state.toLowerCase()}`, body: pr.title }); return
+    // Refresh every open PR, then pick at most one thing for the session to do
+    let action: { track: PrTrack; kind: 'review' | 'ci'; feedback: number } | null = null
+    for (const t of p.prs.filter(t => OPEN_TRACK.includes(t.state))) {
+      const pr = await prSnapshot(t.url)
+      if (!pr) continue
+      this.patchTrack(p, t, { view: pr.view })
+      this.refreshSlack(p, t)
+      if (pr.state === 'MERGED' || pr.state === 'CLOSED') {
+        this.patchTrack(p, t, { state: 'done' }, `${shortPr(t.url)} ${pr.state.toLowerCase()}`, { title: `PR ${pr.state.toLowerCase()}`, body: pr.title })
+        continue
+      }
+      if (t.seenFeedback < 0) { this.patchTrack(p, t, { seenFeedback: pr.feedback }); continue }
+      const max = p.config.maxRounds
+      if (pr.feedback > t.seenFeedback) {
+        if (t.reviewRounds >= max) { this.patchTrack(p, t, { state: 'needs-you', seenFeedback: pr.feedback }, `${shortPr(t.url)}: review round limit (${max}) reached`, { title: 'Automation needs you', body: `More review feedback on ${pr.title}` }); continue }
+        action ??= { track: t, kind: 'review', feedback: pr.feedback }
+        continue
+      }
+      if (pr.checks === 'failing') {
+        if (t.ciFixes >= max) { this.patchTrack(p, t, { state: 'needs-you' }, `${shortPr(t.url)}: CI fix limit (${max}) reached`, { title: 'Automation needs you', body: `CI still failing on ${pr.title}` }); continue }
+        action ??= { track: t, kind: 'ci', feedback: pr.feedback }
+        continue
+      }
+      if (pr.reviewDecision === 'APPROVED' && pr.checks !== 'pending' && t.state !== 'ready') {
+        this.patchTrack(p, t, { state: 'ready' }, `${shortPr(t.url)} approved and CI is green. Ready for you to merge`, { title: 'Ready to merge', body: pr.title })
+      } else if (t.state === 'ready' && pr.reviewDecision !== 'APPROVED') {
+        this.patchTrack(p, t, { state: 'in-review' }, `${shortPr(t.url)} is no longer approved`)
+      }
     }
-    if (!quiet) return
-    const max = p.config.maxRounds
-    if (pr.feedback > p.seenFeedback) {
-      if (p.reviewRounds >= max) { this.update(p, { phase: 'needs-you', seenFeedback: pr.feedback }, `Review round limit (${max}) reached`, { title: 'Automation needs you', body: `More review feedback on ${pr.title}` }); return }
-      return send(PROMPTS.review(url), 'working', { reviewRounds: p.reviewRounds + 1, seenFeedback: pr.feedback }, `New review feedback; asked the session to address it (round ${p.reviewRounds + 1}/${max})`)
+
+    if (action && quiet && !p.workingOn) {
+      const { track: t, kind, feedback } = action
+      const max = p.config.maxRounds
+      if (kind === 'review') {
+        this.patchTrack(p, t, { state: 'working', reviewRounds: t.reviewRounds + 1, seenFeedback: feedback })
+        send(PROMPTS.review(t.url), `New review feedback on ${shortPr(t.url)}; asked the session to address it (round ${t.reviewRounds}/${max})`, { workingOn: t.url })
+      } else {
+        this.patchTrack(p, t, { state: 'working', ciFixes: t.ciFixes + 1 })
+        send(PROMPTS.ci(t.url), `CI failing on ${shortPr(t.url)}; asked the session to fix it (${t.ciFixes}/${max})`, { workingOn: t.url })
+      }
     }
-    if (pr.checks === 'failing') {
-      if (p.ciFixes >= max) { this.update(p, { phase: 'needs-you' }, `CI fix limit (${max}) reached`, { title: 'Automation needs you', body: `CI still failing on ${pr.title}` }); return }
-      return send(PROMPTS.ci(url), 'working', { ciFixes: p.ciFixes + 1 }, `CI failing; asked the session to fix it (${p.ciFixes + 1}/${max})`)
-    }
-    if (pr.reviewDecision === 'APPROVED' && pr.checks !== 'pending') {
-      this.update(p, { phase: 'ready' }, 'Approved and CI is green. Ready for you to merge', { title: 'Ready to merge', body: pr.title })
+
+    if (p.prs.length && p.prs.every(t => t.state === 'done')) this.update(p, { phase: 'done' }, 'All PRs are merged or closed', { title: 'Automation finished', body: `${p.prs.length} PR(s) done` })
+  }
+
+  private async announce(p: Pipeline, t: PrTrack) {
+    const ch = p.config.slackChannel
+    if (!ch) return
+    const pr = await prSnapshot(t.url)
+    if (pr) this.patchTrack(p, t, { view: pr.view })
+    try {
+      const { permalink } = await postToSlack(ch, `:eyes: Ready for review: *${pr?.title ?? 'PR'}*\n${t.url}`)
+      this.patchTrack(p, t, { slack: { channel: ch.name, permalink, checkedAt: Date.now() } }, `Posted ${shortPr(t.url)} to #${ch.name}`)
+    } catch (e) {
+      this.update(p, {}, `Slack post for ${shortPr(t.url)} failed: ${(e as Error).message}`)
     }
   }
 
-  private async announce(p: Pipeline) {
-    const ch = p.config.slackChannel
-    if (!ch || !p.prUrl) return
-    const pr = await prSnapshot(p.prUrl)
+  // Who's reviewing, from the Slack post's thread and reactions (every 10 min).
+  private async refreshSlack(p: Pipeline, t: PrTrack) {
+    if (!t.slack?.permalink || Date.now() - t.slack.checkedAt < SLACK_CHECK_MS) return
+    const slack = { ...t.slack, checkedAt: Date.now() }
+    this.patchTrack(p, t, { slack }) // claim the slot before the slow call
     try {
-      await postToSlack(ch, `:eyes: Ready for review: *${pr?.title ?? 'PR'}*\n${p.prUrl}`)
-      this.update(p, {}, `Posted to #${ch.name}`)
-    } catch (e) {
-      this.update(p, {}, `Slack post failed: ${(e as Error).message}`)
-    }
+      const view = await readSlackThread(slack.permalink!)
+      if (view) this.patchTrack(p, t, { slack: { ...slack, ...view } })
+    } catch { /* next round */ }
   }
 }
 

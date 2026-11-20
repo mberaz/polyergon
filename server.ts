@@ -348,6 +348,9 @@ app.prepare().then(async () => {
         const ch = cfg.slackChannel?.name ? { id: String(cfg.slackChannel.id ?? '').replace(/[^A-Z0-9]/gi, ''), name: cfg.slackChannel.name.replace(/^#/, '').slice(0, 80) } : null
         const result = pipelineEngine.create(msg.liveId as string, { slackChannel: ch, maxRounds: Number(cfg.maxRounds) || 3 })
         if ('error' in result) send({ type: 'pipeline-error', liveId: msg.liveId, message: result.error })
+      } else if (msg.type === 'pipeline-add-pr') {
+        const err = pipelineEngine.addPr(msg.id as string, String(msg.url ?? '').trim())
+        if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
       } else if (msg.type === 'pipeline-stop') {
         pipelineEngine.stop(msg.id as string)
       } else if (msg.type === 'meeting-resume') {
