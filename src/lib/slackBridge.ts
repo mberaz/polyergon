@@ -147,19 +147,42 @@ export async function fetchMentions(days = 7): Promise<SlackMention[]> {
   return parseMentions(result)
 }
 
-// Step 2: which of these are still open (I haven't replied after it or reacted ✅).
-export async function openOnly(permalinks: string[]): Promise<Set<string>> {
-  if (!permalinks.length) return new Set()
+// Who "me" is in Slack, looked up once and cached (the checks below need it).
+const ME_FILE = join(DATA_DIR, 'slack-me.json')
+export async function slackMe(): Promise<{ id: string; name: string }> {
+  try { return JSON.parse(readFileSync(ME_FILE, 'utf-8')) } catch { /* look it up */ }
   const { result } = await runClaude(
-    'Use the Slack connector. For each Slack message below, check whether I (the signed-in user) already answered it: ' +
-    'I replied in its thread, or replied in the same DM after it, or added a ✅ / white_check_mark reaction. ' +
-    'Respond with ONLY a JSON array of the permalinks that are still unanswered, no prose.\n\n' + permalinks.join('\n'),
-    { ...opts('claude-sonnet-5-5'), timeoutMs: 420_000 },
+    'Use the Slack connector to look up the profile of the signed-in Slack user (me). Respond with ONLY JSON: {"id": "U…", "name": "display name"}',
+    opts(),
   )
-  const start = result.indexOf('['), end = result.lastIndexOf(']')
-  if (start === -1 || end <= start) throw new Error('Could not read which messages are answered')
-  const arr = JSON.parse(result.slice(start, end + 1))
-  return new Set((Array.isArray(arr) ? arr : []).filter((x: unknown): x is string => typeof x === 'string'))
+  const m = result.match(/\{[\s\S]*\}/)
+  const me = m ? JSON.parse(m[0]) : null
+  if (!me?.id) throw new Error('Could not find your Slack user')
+  writeFileSync(ME_FILE, JSON.stringify(me))
+  return me
+}
+
+export function parseAnswered(raw: string): { answered: boolean; evidence: string | null } {
+  const m = raw.match(/\{[\s\S]*\}/)
+  if (!m) throw new Error('Unreadable answer check')
+  const j = JSON.parse(m[0])
+  const evidence = typeof j.evidence === 'string' && j.evidence.trim() ? j.evidence.trim() : null
+  // Only trust "answered" when it comes with the actual reply as proof
+  return { answered: j.answered === true && (!!evidence || j.reacted === true), evidence }
+}
+
+// Step 2, one message at a time: did I answer it? Requires proof (my reply text).
+export async function isAnswered(m: SlackMention, me: { id: string; name: string }): Promise<boolean> {
+  const where = m.isDm
+    ? 'This is a direct message: read the messages in that same DM conversation that come AFTER it (not just thread replies).'
+    : 'Read its thread replies, and also the next messages in the channel in case I answered there.'
+  const { result } = await runClaude(
+    `Use the Slack connector. I am Slack user ${me.id} (${me.name}). Look at the Slack message at ${m.permalink}. ${where} ` +
+    `Decide whether I (${me.id}) already answered it after it was posted, or reacted to it with ✅ / white_check_mark. ` +
+    'Respond with ONLY JSON: {"answered": true or false, "reacted": true or false, "evidence": "the exact text of my reply, or empty"}',
+    { ...opts(), timeoutMs: 120_000 },
+  )
+  return parseAnswered(result).answered
 }
 
 export async function replyInThread(permalink: string, text: string): Promise<void> {

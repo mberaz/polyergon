@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { DATA_DIR } from './dataDir'
-import { fetchMentions, openOnly, draftReply, type SlackMention } from './slackBridge'
+import { fetchMentions, isAnswered, slackMe, draftReply, type SlackMention } from './slackBridge'
 
 // Cached inbox + the items you marked done (hidden even if Slack still lists them).
 type Stage = 'idle' | 'searching' | 'checking' | 'suggesting'
@@ -47,9 +47,19 @@ export async function refreshInbox(): Promise<void> {
     const known = new Map(read().items.filter(i => i.checked).map(i => [i.permalink, i]))
     write({ ...read(), items: found.map(m => known.get(m.permalink) ?? m), fetchedAt: Date.now() })
     setProgress({ stage: 'checking' })
-    // Re-check all of them: you may have answered in Slack since last time
-    const open = await openOnly(found.map(m => m.permalink))
-    write({ ...read(), items: read().items.filter(i => open.has(i.permalink)).map(i => ({ ...i, checked: true })), fetchedAt: Date.now() })
+    // Re-check every card (you may have answered since), 4 at a time; answered
+    // ones disappear as each check lands. A failed check keeps the card.
+    const me = await slackMe()
+    const queue = [...found]
+    const checker = async () => {
+      for (let m = queue.shift(); m; m = queue.shift()) {
+        let answered = false
+        try { answered = await isAnswered(m, me) } catch { /* keep it */ }
+        const f = read()
+        write({ ...f, items: answered ? f.items.filter(i => i.permalink !== m!.permalink) : f.items.map(i => (i.permalink === m!.permalink ? { ...i, checked: true } : i)) })
+      }
+    }
+    await Promise.all([checker(), checker(), checker(), checker()])
     // Step 3: a suggested reply per card, 4 at a time, saved as each one lands
     setProgress({ stage: 'suggesting' })
     const todo = read().items.filter(i => !i.suggestion)
