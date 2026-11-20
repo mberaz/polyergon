@@ -13,6 +13,7 @@ import { spawnSession, writeToSession, resizeSession, killSession, onOutput, onS
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
+import { pipelineEngine } from './src/lib/pipelines'
 import { meetingStore, type ContextKind } from './src/lib/meetingStore'
 import { sessionNameStore } from './src/lib/sessionNameStore'
 import { firstUserMessageSync } from './src/lib/sessionStore'
@@ -98,6 +99,12 @@ app.prepare().then(async () => {
 
   // Meeting events go to every connected client — a meeting isn't "attached"
   // like a terminal session; any open tab shows its state.
+  pipelineEngine.start()
+  pipelineEngine.on((ev) => {
+    const msg = JSON.stringify(ev)
+    wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg) })
+  })
+
   meetingManager.on((ev) => {
     const msg = JSON.stringify(ev)
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg) })
@@ -129,6 +136,7 @@ app.prepare().then(async () => {
     // Lets the client track every session's status (not just the attached
     // one), so background-session completion can be surfaced in the sidebar
     // and trigger alerts/notifications regardless of what's currently open.
+    send({ type: 'pipelines', items: pipelineEngine.list() })
     const cleanupAnyStatus = onAnyStatusChange((id, status) => send({ type: 'sessionStatus', id, status }))
     const cleanupAnyPrUrl = onAnyPrUrlChange((id, prUrl) => send({ type: 'sessionPrUrl', id, prUrl }))
     const cleanupAnyRcUrl = onAnyRcUrlChange((id, rcUrl) => send({ type: 'sessionRcUrl', id, rcUrl }))
@@ -316,6 +324,13 @@ app.prepare().then(async () => {
         if ('error' in result) send({ type: 'meeting-error', meetingId: null, message: result.error })
         else send({ type: 'meeting-started', meeting: result })
 
+      } else if (msg.type === 'pipeline-start') {
+        const cfg = (msg.config ?? {}) as { slackChannel?: { id?: string; name?: string } | null; maxRounds?: number }
+        const ch = cfg.slackChannel?.name ? { id: String(cfg.slackChannel.id ?? '').replace(/[^A-Z0-9]/gi, ''), name: cfg.slackChannel.name.replace(/^#/, '').slice(0, 80) } : null
+        const result = pipelineEngine.create(msg.liveId as string, { slackChannel: ch, maxRounds: Number(cfg.maxRounds) || 3 })
+        if ('error' in result) send({ type: 'pipeline-error', liveId: msg.liveId, message: result.error })
+      } else if (msg.type === 'pipeline-stop') {
+        pipelineEngine.stop(msg.id as string)
       } else if (msg.type === 'meeting-resume') {
         const result = meetingManager.resume(msg.meetingId as string)
         if ('error' in result) send({ type: 'meeting-error', meetingId: msg.meetingId ?? null, message: result.error })

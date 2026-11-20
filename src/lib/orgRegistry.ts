@@ -36,10 +36,12 @@ export class OrgRegistry {
     this.load()
   }
 
+  // Re-read on every access: the custom server and Next's API routes hold
+  // separate module copies, so an edit made through the API must reach both.
   private load() {
     try {
       const saved: Org[] = JSON.parse(readFileSync(this.persistFile, 'utf-8'))
-      for (const org of saved) this.orgs.set(org.id, org)
+      this.orgs = new Map(saved.map(org => [org.id, org]))
     } catch {}
     if (!this.orgs.has(DEFAULT_ORG_ID)) {
       this.orgs.set(DEFAULT_ORG_ID, { id: DEFAULT_ORG_ID, name: 'Default', configDir: null })
@@ -48,6 +50,7 @@ export class OrgRegistry {
   }
 
   list(): Org[] {
+    this.load()
     return Array.from(this.orgs.values())
   }
 
@@ -66,20 +69,40 @@ export class OrgRegistry {
   }
 
   get(id: string): Org | undefined {
+    this.load()
     return this.orgs.get(id)
   }
 
   add(name: string, configDir: string, model?: string | null): Org {
+    this.load()
     const org: Org = { id: randomUUID(), name, configDir, model: model ?? null }
     this.orgs.set(org.id, org)
     this.persist()
     return org
   }
 
+  update(id: string, patch: Partial<Pick<Org, 'name' | 'configDir' | 'model' | 'githubOrgs'>>): Org | undefined {
+    const org = this.get(id)
+    if (!org) return undefined
+    const next = { ...org, ...patch, id }
+    if (id === DEFAULT_ORG_ID) next.configDir = org.configDir // Default keeps the CLI's own folder
+    this.orgs.set(id, next)
+    this.persist()
+    return next
+  }
+
+  // Sessions and meetings of a removed org keep their orgId; the UI shows them under All.
+  remove(id: string): boolean {
+    if (id === DEFAULT_ORG_ID || !this.get(id)) return false
+    this.orgs.delete(id)
+    this.persist()
+    return true
+  }
+
   private persist() {
     try {
       if (!existsSync(this.persistDir)) mkdirSync(this.persistDir, { recursive: true })
-      writeFileSync(this.persistFile, JSON.stringify(this.list()))
+      writeFileSync(this.persistFile, JSON.stringify(Array.from(this.orgs.values())))
     } catch {}
   }
 }

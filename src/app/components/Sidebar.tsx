@@ -11,6 +11,10 @@ import type { Note } from '@/lib/notesStore'
 import { findDueReminder } from '@/lib/reminders'
 import type { SkillInfo } from '@/lib/skillsReader'
 import { SkillDialog } from './SkillDialog'
+import { OrgsDialog } from './OrgsDialog'
+import { MarketplaceDialog } from './MarketplaceDialog'
+import type { Pipeline } from '@/lib/pipelines'
+import { PHASE_LABEL } from './AutomateDialog'
 import type { Org } from '@/lib/orgRegistry'
 import type { Meeting } from '@/lib/meetingStore'
 import type { UsageReport, OrgUsage } from '@/lib/usageStore'
@@ -71,6 +75,9 @@ interface Props {
   onSelectMeeting: (id: string) => void
   onRecordMeeting: () => void
   onOpenMeetingLibrary: () => void
+  pipelines: Pipeline[]
+  onOrgsChanged: () => void
+  onAutomate: (liveId: string) => void
   usage: UsageReport | null
   onOpenUsage: () => void
 }
@@ -273,7 +280,9 @@ function getLiveSessionTitle(s: LiveSessionInfo, sessionNames: Record<string, st
     ?? s.cwd
 }
 
-function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, contextTokens, onAttachLive, onKillLive, onDeleteLive, onResume, onCompact, onSetRemote, onRename }: {
+function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, contextTokens, pipeline, onAutomate, onAttachLive, onKillLive, onDeleteLive, onResume, onCompact, onSetRemote, onRename }: {
+  pipeline: Pipeline | null
+  onAutomate: (id: string) => void
   s: LiveSessionInfo
   isActive: boolean
   sessionNames: Record<string, string>
@@ -374,6 +383,13 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
               title="Rename"
             >✎</button>
           )}
+          {(
+            <button
+              onClick={e => { e.stopPropagation(); onAutomate(s.id) }}
+              className={`text-xs flex-shrink-0 ${pipeline && ['waiting-for-session', 'opening-pr', 'in-review', 'working'].includes(pipeline.phase) ? 'text-blue-400' : 'opacity-0 group-hover/live:opacity-100 text-gray-500 hover:text-yellow-300'}`}
+              title="Automate: open a PR, post for review, handle feedback and CI"
+            >⚡</button>
+          )}
           {s.rc && s.rcUrl ? (
             <a
               href={s.rcUrl}
@@ -393,6 +409,13 @@ function LiveSessionCard({ s, isActive, sessionNames, historySessions, cost, con
             >📱</button>
           )}
         </div>
+
+        {pipeline && pipeline.phase !== 'stopped' && (
+          <button onClick={e => { e.stopPropagation(); onAutomate(s.id) }}
+            className={`mt-1.5 ml-4 text-[11px] px-1.5 py-0.5 rounded ${pipeline.phase === 'ready' || pipeline.phase === 'done' ? 'bg-emerald-500/15 text-emerald-300' : pipeline.phase === 'needs-you' ? 'bg-amber-500/15 text-amber-300' : 'bg-blue-500/15 text-blue-300'}`}>
+            ⚡ {PHASE_LABEL[pipeline.phase]}
+          </button>
+        )}
 
         {/* Meta row: status text · folder · time · cost · org */}
         <div className="flex items-center gap-1.5 mt-1.5 pl-4 text-[11px] min-w-0">
@@ -532,7 +555,7 @@ function FolderIcon({ open }: { open: boolean }) {
   )
 }
 
-export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, usage, onOpenUsage }: Props) {
+export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onAutomate, usage, onOpenUsage }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   // Search text is remembered per org, so switching orgs and back restores
   // whatever you'd typed in each
@@ -574,6 +597,8 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
   const [tab, setTab] = useState<'live' | 'history' | 'prs' | 'notes' | 'meetings' | 'usage' | 'skills'>('live')
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [skillsLoaded, setSkillsLoaded] = useState(false)
+  const [showOrgs, setShowOrgs] = useState(false)
+  const [showMarket, setShowMarket] = useState(false)
   const [skillDialog, setSkillDialog] = useState<{ editing: string | null } | null>(null)
   // Lazy-load skills the first time the Skills tab is opened.
   useEffect(() => {
@@ -769,8 +794,10 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
         </div>
         {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
 
-        {/* Org switcher — scopes every tab below to one org */}
-        {orgs.length > 1 && (
+        {showOrgs && <OrgsDialog orgs={orgs} onClose={() => setShowOrgs(false)} onChanged={onOrgsChanged} />}
+
+        {/* Org switcher — scopes every tab below to one org. Always shown so orgs can be added. */}
+        {(
           <div className="flex gap-1 mt-3 bg-gray-900 rounded-lg p-1">
             <button
               onClick={() => onSwitchOrg('all')}
@@ -788,6 +815,8 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
                 }`}
               >{o.name}</button>
             ))}
+            <button onClick={() => setShowOrgs(true)} title="Add or edit orgs"
+              className="px-2 py-1 rounded-md text-xs text-gray-500 hover:text-white hover:bg-gray-800 flex-shrink-0">＋</button>
           </div>
         )}
 
@@ -982,6 +1011,8 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
                       cost={s.claudeSessionId ? usage?.sessions[s.claudeSessionId]?.costUSD : undefined}
                       contextTokens={s.claudeSessionId ? usage?.sessions[s.claudeSessionId]?.contextTokens : undefined}
                       onCompact={onCompact}
+                      pipeline={[...pipelines].reverse().find(p => p.liveId === s.id) ?? null}
+                      onAutomate={onAutomate}
                       onSetRemote={onSetRemote}
                       onAttachLive={onAttachLive}
                       onKillLive={onKillLive}
@@ -1370,9 +1401,12 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
                 )
                 return (
                   <>
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex flex-col gap-2 mb-2">
+                      <span className="flex gap-1.5 [&>button]:flex-1">
+                        <button onClick={() => setShowMarket(true)} className="text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1">Marketplace</button>
+                        <button onClick={() => setSkillDialog({ editing: null })} className="text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1">+ New skill</button>
+                      </span>
                       <p className="text-[11px] text-gray-600">{shown.length} skill{shown.length === 1 ? '' : 's'}{q ? ` matching “${search}”` : ' installed'}</p>
-                      <button onClick={() => setSkillDialog({ editing: null })} className="text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1">+ New skill</button>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       {shown.map(sk => (
@@ -1398,6 +1432,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
           }
         </div>
       )}
+      {showMarket && <MarketplaceDialog onClose={() => setShowMarket(false)} onInstalled={() => setSkillsLoaded(false)} />}
       {skillDialog && (
         <SkillDialog editing={skillDialog.editing} onClose={() => setSkillDialog(null)} onSaved={() => setSkillsLoaded(false)} />
       )}

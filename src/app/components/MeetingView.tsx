@@ -84,6 +84,7 @@ function ContextPanel({ items, isLive, onAdd, sessionOptions, meetingOptions }: 
 }) {
   const [kind, setKind] = useState<ContextKind>('link')
   const [value, setValue] = useState('')
+  const [pickText, setPickText] = useState('')
   const input = 'w-full bg-gray-900 text-white rounded-lg px-2.5 py-1.5 text-xs outline-none border border-gray-800 focus:border-blue-600 placeholder-gray-600'
   const options = kind === 'session' ? sessionOptions : meetingOptions
 
@@ -91,6 +92,7 @@ function ContextPanel({ items, isLive, onAdd, sessionOptions, meetingOptions }: 
     if (!value.trim()) return
     onAdd(kind, value)
     setValue('')
+    setPickText('')
   }
 
   return (
@@ -113,7 +115,7 @@ function ContextPanel({ items, isLive, onAdd, sessionOptions, meetingOptions }: 
         <div className="space-y-1.5">
           <div className="flex flex-wrap gap-1">
             {CONTEXT_TABS.map(t => (
-              <button key={t.kind} onClick={() => { setKind(t.kind); setValue('') }}
+              <button key={t.kind} onClick={() => { setKind(t.kind); setValue(''); setPickText('') }}
                 className={`px-2 py-0.5 rounded text-[11px] border ${kind === t.kind ? 'bg-gray-700 border-gray-500 text-gray-100' : 'border-gray-800 text-gray-500 hover:text-gray-300'}`}>{t.label}</button>
             ))}
           </div>
@@ -126,10 +128,13 @@ function ContextPanel({ items, isLive, onAdd, sessionOptions, meetingOptions }: 
               placeholder="URL, file path, or Slack / Notion / Drive link" className={input} />
           )}
           {(kind === 'session' || kind === 'meeting') && (
-            <select value={value} onChange={e => setValue(e.target.value)} className={input}>
-              <option value="">{options.length ? `Pick a ${kind === 'session' ? 'session' : 'meeting'}…` : 'None available'}</option>
-              {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-            </select>
+            <>
+              <input list={`ctx-${kind}`} value={pickText} onChange={e => { setPickText(e.target.value); setValue(options.find(o => o.label === e.target.value)?.id ?? '') }}
+                onKeyDown={e => { if (e.key === 'Enter') add() }}
+                placeholder={options.length ? `Type to find a ${kind === 'session' ? 'session' : 'meeting'}…` : 'None available'} className={input} />
+              <datalist id={`ctx-${kind}`}>{options.map(o => <option key={o.id} value={o.label} />)}</datalist>
+              {pickText && !value && <p className="text-[11px] text-gray-500">Pick one of the suggestions.</p>}
+            </>
           )}
           <button onClick={add} disabled={!value.trim()} className="w-full text-xs rounded-md bg-gray-800 hover:bg-gray-700 border border-gray-700 py-1 disabled:opacity-40">+ Add context</button>
         </div>

@@ -23,5 +23,5 @@ export function useOrgs() {
     return org
   }, [])
 
-  return { orgs, addOrg }
+  return { orgs, addOrg, refreshOrgs: fetchOrgs }
 }

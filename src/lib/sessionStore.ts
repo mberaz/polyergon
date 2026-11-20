@@ -19,6 +19,8 @@ export interface SessionMetadata {
   messageCount: number
   lastTimestamp: string | null
   firstUserMessage: string | null
+  // Started by `claude -p` (Polyergon's meeting assistant, Slack lookups…), not a person
+  headless?: boolean
 }
 
 /**
@@ -35,12 +37,14 @@ function extractSessionMetadata(content: string, sessionId: string, mtime: Date)
   let cwd: string | null = null
   let firstUserMessage: string | null = null
   let messageCount = 0
+  let headless = false
 
   const lines = content.split('\n')
   for (const line of lines) {
     if (!line.trim()) continue
     try {
       const entry = JSON.parse(line)
+      if (entry.entrypoint === 'sdk-cli') headless = true
       if (entry.type === 'user' && entry.message?.role === 'user') {
         if (cwd === null && entry.cwd) cwd = entry.cwd
         const text: string = typeof entry.message.content === 'string'
@@ -54,7 +58,7 @@ function extractSessionMetadata(content: string, sessionId: string, mtime: Date)
     } catch { /* skip malformed lines */ }
   }
 
-  return { sessionId, cwd, messageCount, lastTimestamp: mtime.toISOString(), firstUserMessage }
+  return { sessionId, cwd, messageCount, lastTimestamp: mtime.toISOString(), firstUserMessage, headless }
 }
 
 // ---------------------------------------------------------------------------

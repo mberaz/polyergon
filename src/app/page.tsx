@@ -9,6 +9,8 @@ import { NewSessionDialog } from './components/NewSessionDialog'
 import { RecordMeetingDialog } from './components/RecordMeetingDialog'
 import { MeetingView } from './components/MeetingView'
 import { MeetingsLibrary } from './components/MeetingsLibrary'
+import { AutomateDialog } from './components/AutomateDialog'
+import { usePipelines } from '@/hooks/usePipelines'
 import { PrDashboard } from './components/PrDashboard'
 import { UsageDashboard } from './components/UsageDashboard'
 import { useSessions } from '@/hooks/useSessions'
@@ -31,11 +33,12 @@ export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
   const { permission: notificationPermission, enabled: notificationsOn, requestPermission: requestNotificationPermission, notifyNeedsInput } = useDesktopNotifications()
   const { ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
+  const { pipelines, pipelineError, startPipeline, stopPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
   // prEntries still feeds the notification-suppression logic; the PRs tab
   // itself now renders the GitHub workload inbox
   const { entries: prEntries } = usePrSessions(ws)
   const { inbox, loading: inboxLoading, refreshing: inboxRefreshing, refresh: refreshInbox } = usePrInbox(ws)
-  const { orgs, addOrg } = useOrgs()
+  const { orgs, addOrg, refreshOrgs } = useOrgs()
   const { meetings, live: meetingLive, activeMeeting, startMeeting, resumeMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings } = useMeetings(ws)
   const { usage } = useUsage()
   const { limits } = useLimits()
@@ -74,6 +77,7 @@ export default function Home() {
   // the Sidebar loads persisted names from localStorage itself. Do NOT seed
   // this from localStorage — feeding the whole saved map back through here
   // races the Sidebar's own load and clobbers live renames.
+  const [automateFor, setAutomateFor] = useState<string | null>(null)
   const [hideNotifyBanner, setHideNotifyBanner] = useState(false)
   const [sessionNameOverrides, setSessionNameOverrides] = useState<Record<string, string>>({})
   // Per-session alert bookkeeping (not just the currently-viewed session) —
@@ -302,6 +306,9 @@ export default function Home() {
           onSelectMeeting={(id) => setView({ mode: 'meeting', meetingId: id })}
           onRecordMeeting={() => setShowRecordDialog(true)}
           onOpenMeetingLibrary={() => setView({ mode: 'meetinglib' })}
+          pipelines={pipelines}
+          onOrgsChanged={refreshOrgs}
+          onAutomate={setAutomateFor}
           usage={usage}
           onOpenUsage={() => setView({ mode: 'usagedash' })}
         />
@@ -373,14 +380,15 @@ export default function Home() {
             onAsk={askMeeting}
             onAddContext={addMeetingContext}
             onBack={() => setView({ mode: 'meetinglib' })}
-            sessionOptions={[...sessions].sort((a, b) => (b.lastTimestamp ?? '').localeCompare(a.lastTimestamp ?? '')).map(h => {
+            sessionOptions={sessions.filter(h => !h.headless).sort((a, b) => (b.lastTimestamp ?? '').localeCompare(a.lastTimestamp ?? '')).map(h => {
               const live = liveSessions.find(s => s.claudeSessionId === h.sessionId)
               const name = (live && sessionNameOverrides[live.id]) || sessionNameOverrides[h.sessionId] || h.firstUserMessage || h.cwd?.split('/').at(-1) || 'Session'
               const short = name.length > 60 ? name.slice(0, 60) + '…' : name
               const date = h.lastTimestamp ? new Date(h.lastTimestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
-              return { id: h.sessionId, label: `${short}${date ? ` · ${date}` : ''}` }
+              // Unique label (datalist matches by text): add a short id
+              return { id: h.sessionId, label: `${short}${date ? ` · ${date}` : ''} · ${h.sessionId.slice(0, 4)}` }
             })}
-            meetingOptions={meetings.filter(m => m.status !== 'recording').map(m => ({ id: m.id, label: `${m.title} · ${new Date(m.startedAt).toLocaleDateString()}` }))}
+            meetingOptions={meetings.filter(m => m.status !== 'recording').map(m => ({ id: m.id, label: `${m.title} · ${new Date(m.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${m.id.slice(0, 4)}` }))}
           />
         )}
 
@@ -408,6 +416,21 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {automateFor && (() => {
+        const s = liveSessions.find(x => x.id === automateFor)
+        const name = (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session'
+        return (
+          <AutomateDialog
+            sessionName={name}
+            pipeline={[...pipelines].reverse().find(p => p.liveId === automateFor) ?? null}
+            error={pipelineError?.liveId === automateFor ? pipelineError.message : null}
+            onStart={config => startPipeline(automateFor, config)}
+            onStop={stopPipeline}
+            onClose={() => setAutomateFor(null)}
+          />
+        )
+      })()}
 
       {showRecordDialog && (
         <RecordMeetingDialog
