@@ -133,8 +133,9 @@ export function useTerminal() {
   // name (optional) labels the session in the Claude mobile app / claude.ai
   // Remote Control list via `--remote-control <name>`. backend/model choose the
   // agent CLI and model; omitted → server falls back to claude + org default.
-  const createSession = useCallback((cwd: string, orgId?: string, name?: string, backend?: string, model?: string) => {
-    wsRef.current?.send(JSON.stringify({ type: 'create', cwd, orgId, name, backend, model }))
+  // prompt: sent by the server once the session reaches its input prompt
+  const createSession = useCallback((cwd: string, orgId?: string, name?: string, backend?: string, model?: string, prompt?: string) => {
+    wsRef.current?.send(JSON.stringify({ type: 'create', cwd, orgId, name, backend, model, prompt }))
   }, [])
 
   const resumeSession = useCallback((cwd: string, claudeSessionId: string, orgId?: string, name?: string, backend?: string, model?: string) => {

@@ -9,7 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { isAllowedRequest } from './src/lib/requestGuard'
 import { v4 as uuid } from 'uuid'
 import { liveSessionStore, LiveSessionStore } from './src/lib/liveSessionStore'
-import { spawnSession, writeToSession, submitLine, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onAnyPrUrlChange, onAnyRcUrlChange, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
+import { spawnSession, writeToSession, submitLine, sendWhenReady, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onAnyPrUrlChange, onAnyRcUrlChange, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
@@ -212,6 +212,8 @@ app.prepare().then(async () => {
         spawnSession(id, cwd, undefined, org?.configDir ?? null, model, rcName, backend, rc)
         send({ type: 'created', id, cwd, gitRoot, orgId })
         attachToSession(id)
+        // First prompt (e.g. "cr <url>", "/mcp"): sent only once Claude is at its input prompt
+        if (typeof msg.prompt === 'string' && msg.prompt.trim()) sendWhenReady(id, msg.prompt.slice(0, 20000))
 
       } else if (msg.type === 'resume') {
         let cwd = (msg.cwd as string) || process.env.HOME!

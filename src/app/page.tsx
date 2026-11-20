@@ -89,7 +89,6 @@ export default function Home() {
     try { localStorage.setItem('claude-active-org', id) } catch {}
   }
   const draggingRef = useRef(false)
-  const pendingPromptRef = useRef<string | null>(null)
   const pendingNameRef = useRef<string>('')
   // Only carries names set at creation time this session (via pendingNameRef);
   // the Sidebar loads persisted names from localStorage itself. Do NOT seed
@@ -211,15 +210,6 @@ export default function Home() {
       setSessionNameOverrides(prev => ({ ...prev, [activeSessionId]: name }))
     }
 
-    if (!pendingPromptRef.current) return
-    const prompt = pendingPromptRef.current
-    pendingPromptRef.current = null
-    // Wait for Claude to finish startup before sending input.
-    // PTY uses \r (carriage return) for Enter, not \n.
-    const t = setTimeout(() => {
-      wsRef.current?.send(JSON.stringify({ type: 'input', data: prompt + '\r' }))
-    }, 1500)
-    return () => clearTimeout(t)
   }, [activeSessionId])
 
   function handleNewSession(cwd: string, name: string, orgId: string, backend: string, model: string) {
@@ -276,31 +266,29 @@ export default function Home() {
   // review skill on the PR (gh works from any cwd, so General is fine)
   // Slack inbox → a new session that works the request and drafts a reply
   function handleSlackAgent(m: SlackMention) {
-    pendingPromptRef.current =
+    const prompt =
       `Someone needs me on Slack. ${m.isDm ? `Direct message from ${m.author}` : `${m.author} in #${m.channel}`}: ${m.permalink} . ` +
       'Read the message and its whole thread with the Slack connector, figure out what they need, and look into it (code, docs, data) as far as you can. ' +
       'Then show me a draft reply. Do not post anything to Slack until I approve it.'
     const name = `Slack: ${m.author}${m.isDm ? '' : ` #${m.channel}`}`.slice(0, 60)
     pendingNameRef.current = name
-    createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, name)
+    createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, name, undefined, undefined, prompt)
   }
 
   // "Connect Slack" from a Slack error: a NEW session in this org running /mcp (your click)
   useEffect(() => {
     const open = () => {
-      pendingPromptRef.current = '/mcp'
       pendingNameRef.current = 'Connect Slack'
-      createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, 'Connect Slack')
+      createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, 'Connect Slack', undefined, undefined, '/mcp')
     }
     window.addEventListener(CONNECT_SLACK_EVENT, open)
     return () => window.removeEventListener(CONNECT_SLACK_EVENT, open)
   }, [activeOrgId, createSession])
 
   function handleReviewWithClaude(url: string) {
-    pendingPromptRef.current = `cr ${url}`
     const crName = `CR ${url.match(/([\w.-]+)\/pull\/(\d+)/)?.[0] ?? ''}`.trim()
     pendingNameRef.current = crName
-    createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, crName)
+    createSession('general', activeOrgId === 'all' ? undefined : activeOrgId, crName, undefined, undefined, `cr ${url}`)
   }
 
   // Jump into the meeting view once the server confirms the start we requested

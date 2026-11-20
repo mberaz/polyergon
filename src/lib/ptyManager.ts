@@ -306,6 +306,27 @@ export function writeToSession(id: string, data: string) {
   ptyProcesses.get(id)?.write(data)
 }
 
+// Startup screens that take keystrokes but are NOT the input prompt (folder
+// trust, login, theme, etc.). Typing a prompt into them answers them wrongly.
+export const STARTUP_DIALOG_RE = /trust this folder|Quick safety check|Enter to confirm|Do you trust|Select login method|Choose the text style|Press Enter to continue/i
+
+export function onScreenDialog(id: string): boolean {
+  const h = headlessTerms.get(id)
+  return !!h && STARTUP_DIALOG_RE.test(bottomRows(h.term, 25))
+}
+
+// Sends `text` as the session's first prompt once it sits at the real input
+// prompt; while a startup dialog is showing it waits for you to answer it.
+export function sendWhenReady(id: string, text: string, timeoutMs = 10 * 60_000) {
+  const started = Date.now()
+  const tick = () => {
+    if (!ptyProcesses.has(id) || Date.now() - started > timeoutMs) return
+    if (liveSessionStore.get(id)?.status === 'waiting' && !onScreenDialog(id)) { submitLine(id, text); return }
+    setTimeout(tick, 1000)
+  }
+  setTimeout(tick, 1500)
+}
+
 // Types a line into the agent's prompt and submits it. Enter goes separately:
 // sent in the same write, the TUI treats it as part of a paste and doesn't submit.
 export function submitLine(id: string, text: string) {
