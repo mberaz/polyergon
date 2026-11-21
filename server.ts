@@ -479,6 +479,10 @@ app.prepare().then(async () => {
         // The one place an automation's message reaches a session: your click
         const err = pipelineEngine.act(msg.id as string, (msg.prUrl as string) || null)
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
+      } else if (msg.type === 'pipeline-find-prs') {
+        pipelineEngine.findPrsNow(msg.id as string).then(r => send({ type: 'pipeline-found-prs', id: msg.id, ...r }))
+      } else if (msg.type === 'pipeline-mark-ready') {
+        pipelineEngine.markReady(msg.id as string, String(msg.url ?? '')).then(err => { if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error }) })
       } else if (msg.type === 'pipeline-remove-pr') {
         const err = pipelineEngine.removePr(msg.id as string, String(msg.url ?? ''), msg.reopen === true)
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })

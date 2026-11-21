@@ -121,7 +121,7 @@ function LiveStatus({ t, p, auto, sessionBusy }: { t: PrTrack; p: Pipeline; auto
   )
 }
 
-function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTell, onRemove }: { t: PrTrack; p: Pipeline; auto: AutoSteps; sessionBusy: boolean; onSend: () => void; onDismiss: () => void; onSetReview: (r: PrReview) => void; onTell: (text: string) => void; onRemove: () => void }) {
+function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTell, onRemove, onMarkReady }: { t: PrTrack; p: Pipeline; auto: AutoSteps; sessionBusy: boolean; onSend: () => void; onDismiss: () => void; onSetReview: (r: PrReview) => void; onTell: (text: string) => void; onRemove: () => void; onMarkReady: () => void }) {
   const [closing, setClosing] = useState(false)
   const [tell, setTell] = useState('')
   const [told, setTold] = useState(false)
@@ -163,6 +163,12 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
         {!editReview && <button onClick={() => setEditReview(true)} className="text-blue-400 hover:text-blue-300">Change</button>}
       </div>}
       <LiveStatus t={t} p={p} auto={auto} sessionBusy={sessionBusy} />
+      {v?.isDraft && t.state !== 'done' && (
+        <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+          <span>It&apos;s a draft on GitHub{v.reviewDecision === 'APPROVED' ? ', and it\'s already approved' : ''}.</span>
+          <button onClick={onMarkReady} className="px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white">Mark ready for review</button>
+        </div>
+      )}
       {closing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setClosing(false)}>
           <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} className="w-[420px] max-w-[92vw] rounded-xl border border-gray-700 bg-gray-900 p-5 shadow-xl">
@@ -226,7 +232,7 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
   )
 }
 
-export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onTell, onSetPostMerge, onRemovePr, sessionBusy = false, onAct, onDismiss, onSetAuto }: {
+export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onTell, onSetPostMerge, onRemovePr, onFindPrs, found, onMarkReady, sessionBusy = false, onAct, onDismiss, onSetAuto }: {
   sessionName: string
   pipeline: Pipeline | null
   error: string | null
@@ -239,6 +245,9 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   onTell: (id: string, url: string, text: string) => void
   onSetPostMerge: (id: string, on: boolean, checks: string) => void
   onRemovePr: (id: string, url: string, reopen?: boolean) => void
+  onFindPrs: (id: string) => void
+  found?: { id: string; text: string } | null
+  onMarkReady: (id: string, url: string) => void
   sessionBusy?: boolean
   onAct: (id: string, prUrl: string | null) => void
   onDismiss: (id: string, prUrl: string | null) => void
@@ -294,7 +303,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
         {/* PRs */}
         <div className="space-y-5 min-w-0">
           {pipeline?.suggestion && <SuggestionBox s={pipeline.suggestion} onSend={() => onAct(pipeline.id, null)} onDismiss={() => onDismiss(pipeline.id, null)} />}
-          {pipeline?.prs.filter(t => !t.closed).map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} sessionBusy={sessionBusy} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} onTell={text => onTell(pipeline.id, t.url, text)} onRemove={() => onRemovePr(pipeline.id, t.url)} />)}
+          {pipeline?.prs.filter(t => !t.closed).map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} sessionBusy={sessionBusy} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} onTell={text => onTell(pipeline.id, t.url, text)} onRemove={() => onRemovePr(pipeline.id, t.url)} onMarkReady={() => onMarkReady(pipeline.id, t.url)} />)}
           {pipeline && pipeline.prs.some(t => t.closed) && (
             <div className="space-y-1.5">
               {pipeline.prs.filter(t => t.closed).map(t => <FinishedRow key={t.url} t={t} onReopen={() => onRemovePr(pipeline.id, t.url, true)} />)}
@@ -302,6 +311,11 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
           )}
           {running && pipeline && (
             <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <button onClick={() => onFindPrs(pipeline.id)} title="Look through the session for PRs it opened (new ones, and ones merged since this started)"
+                  className="text-xs px-3 py-1.5 rounded-lg border border-gray-700 hover:bg-gray-800">↻ Find PRs</button>
+                {found?.id === pipeline.id && <span className={`text-xs ${found.text === 'Looking…' ? 'text-blue-300 animate-pulse' : 'text-gray-400'}`}>{found.text}</span>}
+              </div>
               <div className="flex gap-2">
                 <input value={prUrl} onChange={e => setPrUrl(e.target.value)} placeholder="Track another PR: https://github.com/org/repo/pull/123" className={input} />
                 <button onClick={() => { onAddPr(pipeline.id, prUrl, newReview ?? undefined); setPrUrl(''); setNewReview(null) }} disabled={!prUrl.trim()} className="text-sm px-4 rounded-lg border border-gray-700 hover:bg-gray-800 disabled:opacity-40 flex-shrink-0">Add PR</button>

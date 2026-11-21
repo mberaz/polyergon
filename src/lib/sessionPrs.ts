@@ -40,6 +40,25 @@ export async function openAndMine(urls: string[]): Promise<string[]> {
   return open.filter((u): u is string => !!u)
 }
 
+// Your PRs the session mentions: open ones, plus ones merged after `mergedSince` (ms).
+export async function prsOfSession(claudeSessionId: string, mergedSince: number): Promise<{ open: string[]; merged: string[] }> {
+  const file = transcriptOf(claudeSessionId)
+  const login = await myLogin()
+  if (!file || !login) return { open: [], merged: [] }
+  const urls = (await prUrlsIn(file)).slice(-60)
+  const rows = await Promise.all(urls.map(u => gh(['pr', 'view', u, '--json', 'state,author,mergedAt', '-q', '.state + " " + .author.login + " " + (.mergedAt // "")'])
+    .then(o => ({ u, o })).catch(() => null)))
+  const open: string[] = [], merged: string[] = []
+  for (const r of rows) {
+    if (!r) continue
+    const [state, author, mergedAt] = r.o.split(' ')
+    if (author !== login) continue
+    if (state === 'OPEN') open.push(r.u)
+    else if (state === 'MERGED' && Date.parse(mergedAt) >= mergedSince) merged.push(r.u)
+  }
+  return { open, merged }
+}
+
 // The open PRs a session worked on that you authored.
 export async function openPrsOfSession(claudeSessionId: string): Promise<string[]> {
   const file = transcriptOf(claudeSessionId)

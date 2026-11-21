@@ -23,6 +23,8 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
         setPipelines(msg.items as Pipeline[])
         const n = msg.notify as { title: string; body: string } | undefined
         if (n) notifyRef.current(n.title, n.body)
+      } else if (msg.type === 'pipeline-found-prs') {
+        setFound({ id: msg.id as string, text: msg.error ? String(msg.error) : `Found ${msg.added} new open PR${msg.added === 1 ? '' : 's'}${msg.merged ? ` and ${msg.merged} already merged` : ''}` })
       } else if (msg.type === 'pipeline-error') {
         setError({ liveId: msg.liveId as string, message: msg.message as string })
       }
@@ -31,6 +33,15 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
     return () => ws.removeEventListener('message', onMessage)
   }, [ws])
 
+  const [found, setFound] = useState<{ id: string; text: string } | null>(null)
+  const findPrs = useCallback((id: string) => {
+    setFound({ id, text: 'Looking…' })
+    wsRef.current?.send(JSON.stringify({ type: 'pipeline-find-prs', id }))
+  }, [])
+  const markReady = useCallback((id: string, liveId: string, url: string) => {
+    setError(null)
+    wsRef.current?.send(JSON.stringify({ type: 'pipeline-mark-ready', id, liveId, url }))
+  }, [])
   const startPipeline = useCallback((liveId: string, config: PipelineConfig) => {
     setError(null)
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-start', liveId, config }))
@@ -71,5 +82,5 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-remove', id }))
   }, [])
 
-  return { removePipelinePr, setPipelinePostMerge, instructPipeline, removePipeline, setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline }
+  return { found, findPrs, markReady, removePipelinePr, setPipelinePostMerge, instructPipeline, removePipeline, setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline }
 }

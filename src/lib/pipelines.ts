@@ -9,7 +9,7 @@ import { submitLine, sendWhenReady, onAnyStatusChange, onAnyPrUrlChange } from '
 import { summarizeChecks, isValidPrUrl } from './ghPrStatus'
 import { postToSlack, dmOnSlack, DM_TARGET, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
 import type { PrCheckStatus } from './prTypes'
-import { openPrsOfSession, newPrUrls, openAndMine } from './sessionPrs'
+import { openPrsOfSession, newPrUrls, openAndMine, prsOfSession } from './sessionPrs'
 
 const execFileAsync = promisify(execFile)
 
@@ -274,6 +274,38 @@ class PipelineEngine {
     // Found, not chosen: no Slack post until you pick this PR's channel (Change)
     for (const u of urls) if (!p.prs.some(t => t.url === u)) { this.newPr(p, u); added = true }
     if (added) this.step(p.id, true)
+  }
+
+  // Your "Find PRs" click: open PRs get panels; ones merged since the automation
+  // started show as finished lines. Returns what it found.
+  async findPrsNow(id: string): Promise<{ added: number; merged: number } | { error: string }> {
+    const p = this.items.find(x => x.id === id)
+    const sid = p && liveSessionStore.get(p.liveId)?.claudeSessionId
+    if (!p || !sid) return { error: 'Session not found' }
+    const { open, merged } = await prsOfSession(sid, p.createdAt).catch(() => ({ open: [] as string[], merged: [] as string[] }))
+    let added = 0, done = 0
+    for (const u of open) if (!p.prs.some(t => t.url === u)) { this.newPr(p, u); added++ }
+    for (const u of merged) if (!p.prs.some(t => t.url === u)) {
+      p.prs = [...p.prs, { url: u, state: 'done', closed: true, seenFeedback: 0, reviewRounds: 0, ciFixes: 0, review: { channel: null, reviewers: [] } }]
+      done++
+    }
+    this.update(p, {}, `Looked for PRs: ${added} new open, ${done} already merged`)
+    if (added) this.step(p.id, true)
+    return { added, merged: done }
+  }
+
+  // A draft you're happy with: mark it ready for review on GitHub (then it's announced).
+  async markReady(id: string, url: string): Promise<{ error: string } | null> {
+    const p = this.items.find(x => x.id === id)
+    const t = p?.prs.find(x => x.url === url)
+    if (!p || !t) return { error: 'PR not found' }
+    const env = { ...process.env }; delete env.GITHUB_TOKEN; delete env.GH_TOKEN
+    try { await execFileAsync('gh', ['pr', 'ready', url], { timeout: 30000, env }) } catch (e) {
+      return { error: String((e as { stderr?: string }).stderr || (e as Error).message).trim().split('\n').at(-1) ?? 'gh pr ready failed' }
+    }
+    this.update(p, {}, `Marked ${shortPr(url)} ready for review`)
+    this.step(p.id, true)
+    return null
   }
 
   private forSession(liveId: string, fn: (p: Pipeline) => void) {

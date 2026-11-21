@@ -20,7 +20,8 @@ const dmed: string[] = []
 jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? session : undefined) } }))
 jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writes.push(t), sendWhenReady: (_id: string, t: string) => writes.push(t), onAnyStatusChange: () => () => {}, onAnyPrUrlChange: () => () => {} }))
 let transcriptPrs: string[] = []
-jest.mock('../sessionPrs', () => ({ openPrsOfSession: async () => foundPrs, newPrUrls: (_s: string, o: number) => { const urls = transcriptPrs; transcriptPrs = []; return { urls, offset: o + 1 } }, openAndMine: async (u: string[]) => u.filter(x => !x.includes('someone-else')) }))
+let sessionFound = { open: [] as string[], merged: [] as string[] }
+jest.mock('../sessionPrs', () => ({ prsOfSession: async () => sessionFound, openPrsOfSession: async () => foundPrs, newPrUrls: (_s: string, o: number) => { const urls = transcriptPrs; transcriptPrs = []; return { urls, offset: o + 1 } }, openAndMine: async (u: string[]) => u.filter(x => !x.includes('someone-else')) }))
 jest.mock('../slackBridge', () => ({ postToSlack: async (c: { name: string }, t: string) => { posts.push(t); postedTo.push(c.name); return { permalink: null } }, readSlackThread: async () => null, DM_TARGET: /^@?[\p{L}\p{N} ._'-]{1,60}( \([UW][A-Z0-9]{5,}\))?$/u, dmOnSlack: async (who: string) => { dmed.push(who); return { permalink: null } } }))
 jest.mock('child_process', () => ({ execFile: (cmd: string, a: string[], _o: object, cb: (e: Error | null, r?: { stdout: string }) => void) => {
   if (cmd === 'git') return a.includes('--porcelain') ? cb(null, { stdout: dirty ? ' M file.ts' : '' }) : cb(new Error('no upstream'))
@@ -354,4 +355,20 @@ test('a PR link written to the transcript is picked up on the next look, not 10 
   expect(p.prs.map((t: { url: string }) => t.url)).toContain(N)
   expect(p.prs.map((t: { url: string }) => t.url)).not.toContain(O) // not yours
   pipelineEngine.stop(p.id)
+})
+
+test('Find PRs: new open ones get panels, ones merged since start become finished lines', async () => {
+  const O = 'https://github.com/o/labeling/pull/34', M = 'https://github.com/o/labeling/pull/33'
+  prs[O] = base(34)
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  dirty = false; session.prUrl = null
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false, postMerge: false } })
+  await flush()
+  sessionFound = { open: [O], merged: [M] }
+  expect(await pipelineEngine.findPrsNow(p.id)).toEqual({ added: 1, merged: 1 })
+  expect(p.prs.find((t: { url: string }) => t.url === M)).toMatchObject({ state: 'done', closed: true })
+  expect(p.prs.find((t: { url: string }) => t.url === O)).toMatchObject({ review: { channel: null, reviewers: [] } })
+  expect(await pipelineEngine.findPrsNow(p.id)).toEqual({ added: 0, merged: 0 }) // no duplicates
+  pipelineEngine.stop(p.id)
+  sessionFound = { open: [], merged: [] }
 })
