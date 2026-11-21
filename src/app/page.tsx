@@ -33,6 +33,7 @@ import { UsageDashboard } from './components/UsageDashboard'
 import { useSessions } from '@/hooks/useSessions'
 import { useDesktopNotifications } from '@/hooks/useDesktopNotifications'
 import { useTerminal } from '@/hooks/useTerminal'
+import { HistoryPanel } from './components/HistoryPanel'
 import { usePrSessions } from '@/hooks/usePrSessions'
 import { usePrInbox } from '@/hooks/usePrInbox'
 import { useOrgs } from '@/hooks/useOrgs'
@@ -50,6 +51,7 @@ export default function Home() {
   const { sessions, loading, deleteSession, refresh: refreshSessions } = useSessions()
   const { permission: notificationPermission, enabled: notificationsOn, requestPermission: requestNotificationPermission, notifyNeedsInput } = useDesktopNotifications()
   const { removeWorktree, sendToLive, ws, liveSessions, activeSessionId, lastCreatedId, sessionError, setSessionError, attachSession, createSession, resumeSession, resumeAllSessions, killLiveSession, compactSession, setRemote } = useTerminal()
+  const [reading, setReading] = useState(false)
   // Usage-limit and stall alerts from the server
   useEffect(() => {
     if (!ws) return
@@ -438,6 +440,11 @@ export default function Home() {
         )}
 
         <Terminal visible={view.mode === 'live'} ws={ws} />
+        {view.mode === 'live' && activeSessionId && (reading
+          ? <HistoryPanel sessionId={liveSessions.find(s => s.id === activeSessionId)?.claudeSessionId ?? null}
+              onSend={text => sendToLive(activeSessionId, text)} onClose={() => setReading(false)} />
+          : <button onClick={() => setReading(true)} title="Show the conversation as text. Use it for Hebrew and other right-to-left languages, which the terminal can't lay out."
+              className="absolute top-2 right-4 z-10 text-xs px-2.5 py-1 rounded border border-gray-700 bg-gray-900/90 text-gray-300 hover:bg-gray-800">Read</button>)}
 
         {view.mode === 'usagedash' && usage && (
           <UsageDashboard

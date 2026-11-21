@@ -3,39 +3,33 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '@/lib/sessionStore'
 
 interface Props {
-  sessionId: string
-  cwd: string | null
+  sessionId: string | null // Claude's session id (transcript); null until Claude creates it
   onSend: (prompt: string) => void
+  onClose: () => void
 }
 
-export function HistoryPanel({ sessionId, cwd, onSend }: Props) {
+// Reading view of a live session. The terminal (xterm.js) can't lay out
+// right-to-left text, so Hebrew/Arabic come out scrambled there. Here each
+// paragraph gets dir="auto", so the browser orders it correctly.
+export function HistoryPanel({ sessionId, onSend, onClose }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [loading, setLoading] = useState(true)
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    setLoading(true)
-    setMessages([])
-    fetch(`/api/sessions/${sessionId}`)
-      .then(r => r.json())
-      .then(data => {
-        setMessages(data.messages ?? [])
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    if (!sessionId) return
+    let stop = false
+    const load = () => fetch(`/api/sessions/${sessionId}`).then(r => r.json())
+      .then(d => { if (!stop) setMessages(m => JSON.stringify(m) === JSON.stringify(d.messages ?? []) ? m : d.messages ?? []) })
+      .catch(() => {})
+    load()
+    const t = setInterval(load, 3000) // ponytail: polling; switch to a transcript watch if it gets heavy
+    return () => { stop = true; clearInterval(t) }
   }, [sessionId])
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'instant' })
-  }, [messages])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'instant' }) }, [messages])
 
-  useEffect(() => {
-    if (!loading) inputRef.current?.focus()
-  }, [loading])
-
-  function handleSend() {
+  function send() {
     const prompt = input.trim()
     if (!prompt) return
     setInput('')
@@ -43,24 +37,21 @@ export function HistoryPanel({ sessionId, cwd, onSend }: Props) {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden">
-      <div className="px-4 py-2 border-b border-gray-800 flex-shrink-0">
-        <p className="text-xs text-gray-500 truncate">{cwd ?? sessionId}</p>
+    <div className="absolute inset-0 z-10 flex flex-col bg-gray-950">
+      <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-3 flex-shrink-0">
+        <p className="text-xs text-gray-500">Reading view · last 30 messages, updates live</p>
+        <button onClick={onClose} className="ml-auto text-xs px-2.5 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800">Back to terminal</button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-        {loading && <p className="text-gray-500 text-sm">Loading...</p>}
+        {!sessionId && <p className="text-gray-500 text-sm">Send a first message in the terminal, then the conversation shows here.</p>}
         {messages.map((m, i) => (
           <div key={i} className={m.role === 'user' ? 'flex justify-end' : ''}>
-            {m.role === 'user' ? (
-              <div className="max-w-[72%] bg-blue-600 rounded-2xl rounded-br-sm px-4 py-2">
-                <p className="text-sm text-white whitespace-pre-wrap break-words">{m.content}</p>
-              </div>
-            ) : (
-              <div className="max-w-[90%]">
-                <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed font-mono break-words">{m.content}</p>
-              </div>
-            )}
+            <div className={m.role === 'user' ? 'max-w-[72%] bg-blue-600 rounded-2xl px-4 py-2' : 'max-w-[90%]'}>
+              {m.content.split(/\n{2,}/).map((para, j) => (
+                <p key={j} dir="auto" className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${m.role === 'user' ? 'text-white' : 'text-gray-200'} ${j ? 'mt-2' : ''}`}>{para}</p>
+              ))}
+            </div>
           </div>
         ))}
         <div ref={bottomRef} />
@@ -68,18 +59,13 @@ export function HistoryPanel({ sessionId, cwd, onSend }: Props) {
 
       <div className="border-t border-gray-800 px-4 py-3 flex-shrink-0">
         <textarea
-          ref={inputRef}
+          dir="auto"
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handleSend()
-            }
-          }}
-          placeholder="Continue this session… (Enter to send)"
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+          placeholder="Write to the session… (Enter to send)"
           rows={2}
-          className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none resize-none placeholder-gray-600 font-mono"
+          className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none resize-none placeholder-gray-600"
         />
       </div>
     </div>
