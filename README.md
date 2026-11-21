@@ -58,11 +58,19 @@ Record a call and get a live transcript (local Whisper, OpenAI or Azure), runnin
 
 ## Install
 
+On a Mac, the installer sets up Node if needed, starts Polyergon at login, and opens it:
+
+```bash
+curl -fsSL https://polyergon.ai/install.sh | bash
+```
+
+Run it again to update. Or, with Node 20+:
+
 ```bash
 npx polyergon
 ```
 
-That's it. Or install it once and run `polyergon`:
+Or install it once and run `polyergon`:
 
 ```bash
 npm install -g polyergon

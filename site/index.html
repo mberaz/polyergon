@@ -294,12 +294,16 @@
         <h2>One command</h2>
         <p class="lead">macOS today. Linux should work for sessions.</p>
         <ul class="req">
-          <li>Node.js 20 or newer</li>
+          <li>Mac installer: nothing else needed. It sets up Node for you.</li>
+          <li>With npx: Node.js 20 or newer</li>
           <li>Claude Code or GitHub Copilot CLI, logged in</li>
           <li><code>gh</code> for PRs and Ship it (optional)</li>
         </ul>
       </div>
       <div>
+        <p class="tip" style="margin:0 2px 8px"><b>Mac installer</b> (recommended): installs, starts at login, opens Polyergon.</p>
+        <pre class="cmd"><span class="p">$</span> curl -fsSL https://polyergon.ai/install.sh | bash<button type="button" class="copy" data-copy="curl -fsSL https://polyergon.ai/install.sh | bash" aria-label="Copy command"><i class="ph ph-copy"></i></button></pre>
+        <p class="tip" style="margin:16px 2px 8px"><b>Or with npx</b>, if you have Node:</p>
         <pre class="cmd"><span class="p">$</span> npx polyergon <span class="c"># opens Polyergon in its own window</span><button type="button" class="copy" data-copy="npx polyergon" aria-label="Copy command"><i class="ph ph-copy"></i></button></pre>
         <p class="tip">Then install it as an app: <b>Settings → App → Install Polyergon</b>. You get a Dock icon, and notifications come from Polyergon.</p>
       </div>
