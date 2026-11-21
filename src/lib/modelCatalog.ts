@@ -3,6 +3,8 @@ import { promisify } from 'util'
 import { createHash } from 'crypto'
 import type { BackendId } from './backends'
 import { orgRegistry } from './orgRegistry'
+import { claudeAuthEnv } from './claudeAuth'
+import { DEFAULT_MODEL_ID } from './backends'
 
 const execFileAsync = promisify(execFile)
 const MODELS_URL = 'https://api.anthropic.com/v1/models?limit=1000'
@@ -72,17 +74,17 @@ async function fetchOpencodeModels(): Promise<ModelInfo[]> {
 }
 
 async function fetchClaudeModels(configDir: string | null): Promise<ModelInfo[]> {
-  const token = await readToken(configDir)
-  if (!token) throw new Error('No login found for this org')
+  // API-key mode (Settings → Claude sign-in) uses the key; otherwise the org's login token.
+  const apiKey = claudeAuthEnv().ANTHROPIC_API_KEY
+  const token = apiKey ? null : await readToken(configDir)
+  if (!apiKey && !token) throw new Error('No login found for this org')
   const res = await fetch(MODELS_URL, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'oauth-2025-04-20',
-    },
+    headers: apiKey
+      ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
+      : { Authorization: `Bearer ${token}`, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'oauth-2025-04-20' },
     signal: AbortSignal.timeout(15_000),
   })
-  if (res.status === 401) throw new Error('Token expired — open a Claude session in this org to refresh it')
+  if (res.status === 401) throw new Error(apiKey ? 'API key rejected. Check it in Settings' : 'Token expired — open a Claude session in this org to refresh it')
   if (!res.ok) throw new Error(`Models endpoint returned ${res.status}`)
   const d = await res.json() as { data?: { id: string; display_name?: string }[] }
   return (d.data ?? []).map(m => ({ id: m.id, displayName: m.display_name ?? m.id }))
@@ -93,7 +95,7 @@ const cache = new Map<string, CacheEntry>()
 
 // Keyed by backend + org so each org's own entitlements are reflected.
 export async function getModels(backend: BackendId, orgId: string, force = false): Promise<ModelInfo[]> {
-  const key = `${backend}:${orgId}`
+  const key = `${backend}:${orgId}:${backend === 'claude' && claudeAuthEnv().ANTHROPIC_API_KEY ? 'key' : 'login'}`
   const hit = cache.get(key)
   if (!force && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.models
 
@@ -108,6 +110,8 @@ export async function getModels(backend: BackendId, orgId: string, force = false
   } catch (e) {
     // Serve stale on failure rather than an empty dropdown.
     if (hit) return hit.models
+    // Claude: still offer the CLI's own default so New Session can start.
+    if (backend === 'claude') return [{ id: DEFAULT_MODEL_ID, displayName: `Default (${e instanceof Error ? e.message : 'models unavailable'})` }]
     throw e
   }
 }
