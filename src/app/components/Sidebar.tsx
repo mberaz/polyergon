@@ -18,7 +18,8 @@ import type { Meeting } from '@/lib/meetingStore'
 import type { UsageReport, OrgUsage } from '@/lib/usageStore'
 import { notificationsEnabled } from '@/hooks/useDesktopNotifications'
 
-// One meaning per color: blue = working, amber = needs you, gray = idle. Green is kept for done/ready.
+// Session status: blue = working, green dot + label = needs you, gray = idle.
+// Only the dot and label are green; borders and badges stay neutral so the list isn't all green.
 const STATUS_BORDER: Record<SessionStatus, string> = {
   thinking: 'border-l-blue-400',
   waiting:  'border-l-gray-700',
@@ -27,7 +28,7 @@ const STATUS_BORDER: Record<SessionStatus, string> = {
 
 const STATUS_DOT: Record<SessionStatus, string> = {
   thinking: 'border-2 border-blue-400 border-t-transparent animate-spin motion-reduce:animate-none',
-  waiting:  'bg-amber-400',
+  waiting:  'bg-emerald-400',
   idle:     'bg-gray-600',
 }
 
@@ -39,7 +40,7 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
 
 const STATUS_TEXT: Record<SessionStatus, string> = {
   thinking: 'text-blue-300',
-  waiting:  'text-amber-300',
+  waiting:  'text-emerald-300',
   idle:     'text-gray-500',
 }
 

@@ -143,7 +143,7 @@ export function TaskBoard({ orgId, folders, liveSessions, pipelines, demoTasks, 
                         <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">{t.cwd === 'general' ? 'chat' : t.cwd.split('/').at(-1)}</span>
                         {s?.worktree && <span className="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300">⑂ {s.worktree.branch.replace(/^polyergon\//, '')}</span>}
                         {s?.status === 'thinking' && col !== 'done' && <span className="flex items-center gap-1 text-blue-300"><span className="w-2.5 h-2.5 rounded-full border-2 border-blue-300 border-t-transparent animate-spin motion-reduce:animate-none" />working</span>}
-                        {col === 'review' && (s ? <span className="text-amber-300">waiting for you</span> : <span className="text-gray-500">session closed</span>)}
+                        {col === 'review' && (s ? <span className="text-emerald-300">waiting for you</span> : <span className="text-gray-500">session closed</span>)}
                         {pipe && isRunning(pipe) && <button onClick={() => s && onAutomate(s.id)} className="text-blue-300 hover:underline" title="Open the full pipeline">⚡ Ship it</button>}
                         {!pipe?.prs.length && prs.map(u => <a key={u} href={u} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">{shortPr(u)}</a>)}
                       </div>
