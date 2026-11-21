@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7
+
+- **Upgrade from Settings:** Settings → App → Updates shows when a newer version is out. Mac installer copies upgrade with one click and restart on their own.
+- **Meetings on any Mac:** the audio test and recording find that Mac's own microphone (it was hardcoded to "MacBook Pro Microphone", which failed with "Input/output error" elsewhere). Without BlackHole, your microphone alone is recorded, and the test shows which devices it used.
+- **Download for Mac:** a double-click installer on polyergon.ai. The installer now installs the latest GitHub release, so new versions are available right away.
+
 ## 0.1.6
 
 - **Ship it, one panel per PR:** every PR a session opens shows up within about 15 seconds, each with its own review setup: a Slack channel, **DMs** to people you pick from your workspace, and GitHub reviewers. Nothing is posted until you choose.

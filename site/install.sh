@@ -2,7 +2,7 @@
 # Polyergon installer for macOS:  curl -fsSL https://polyergon.ai/install.sh | bash
 # Installs Node (if needed) and Polyergon under ~/.polyergon, starts it at login,
 # and opens it. No sudo. Run it again to update.
-# Install a specific build: POLYERGON_PKG=<npm spec or tarball URL> (default polyergon@latest)
+# Install a specific build: POLYERGON_PKG=<npm spec or tarball URL> (default: latest GitHub release)
 # Uninstall: launchctl bootout gui/$(id -u)/ai.polyergon; rm -rf ~/.polyergon ~/Library/LaunchAgents/ai.polyergon.plist
 set -euo pipefail
 
@@ -40,9 +40,12 @@ fi
 NPM="$(dirname "$NODE")/npm"
 say "Using Node $("$NODE" -v)"
 
-say "Installing Polyergon (latest)"
+# Latest GitHub release (available the moment it's cut; npm lags), else npm
+PKG="${POLYERGON_PKG:-$(curl -fsSL https://api.github.com/repos/polyergon/polyergon/releases/latest 2>/dev/null | grep -o 'https://github.com/[^"]*\.tgz' | head -1)}"
+PKG="${PKG:-polyergon@latest}"
+say "Installing Polyergon ($(basename "$PKG" .tgz))"
 mkdir -p "$BASE/app"
-PATH="$(dirname "$NODE"):$PATH" "$NPM" install --prefix "$BASE/app" --no-fund --no-audit --loglevel=error "${POLYERGON_PKG:-polyergon@latest}" >/dev/null
+PATH="$(dirname "$NODE"):$PATH" "$NPM" install --prefix "$BASE/app" --no-fund --no-audit --loglevel=error "$PKG" >/dev/null
 BIN="$BASE/app/node_modules/polyergon/bin/polyergon.js"
 [ -f "$BIN" ] || die "Install failed: $BIN is missing"
 
