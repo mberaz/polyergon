@@ -266,7 +266,7 @@ app.prepare().then(async () => {
           // Opening the PR waits for you ("Your review" column); fixes run on their own; merge asks.
           const task = updateTask(msg.taskId, { liveId: id })
           if (task?.ship && gitRoot && backend === 'claude') {
-            pipelineEngine.create(id, { slackChannel: task.slackChannel ?? null, maxRounds: 3, auto: { openPr: false, review: true, ci: true, merge: false, postMerge: false } })
+            pipelineEngine.create(id, { slackChannel: task.slackChannel ?? null, maxRounds: 3, auto: { openPr: false, review: true, ci: true, ready: true, merge: false, postMerge: false } })
           }
         }
         send({ type: 'created', id, cwd, gitRoot, orgId })

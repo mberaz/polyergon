@@ -16,14 +16,16 @@ const STEPS = [
 
 // A proposed message for the session. Only your click sends it.
 export function SuggestionBox({ s, onSend, onDismiss }: { s: Suggestion; onSend: () => void; onDismiss: () => void }) {
-  const title = s.kind === 'open-pr' ? 'Ready to open a PR?' : s.kind === 'review' ? 'New review feedback' : s.kind === 'merge' ? 'Approved and green: ready to merge' : s.kind === 'post-merge' ? 'Merged: run post-merge checks?' : 'CI is failing'
+  const title = s.kind === 'open-pr' ? 'Ready to open a PR?' : s.kind === 'review' ? 'New review feedback' : s.kind === 'merge' ? 'Approved and green: ready to merge' : s.kind === 'ready' ? 'Draft with green CI: mark it ready for review?' : s.kind === 'post-merge' ? 'Merged: run post-merge checks?' : 'CI is failing'
   return (
     <div className="mt-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-2.5">
       <p className="text-xs font-medium text-amber-200">{title}</p>
-      <p className="text-[11px] text-gray-400 mt-1">Suggested message for the session:</p>
-      <p className="text-xs text-gray-200 mt-0.5 italic">&ldquo;{s.text}&rdquo;</p>
+      {s.kind === 'ready'
+        ? <p className="text-[11px] text-gray-400 mt-1">Polyergon marks it ready on GitHub, and your review requests go out.</p>
+        : <><p className="text-[11px] text-gray-400 mt-1">Suggested message for the session:</p>
+          <p className="text-xs text-gray-200 mt-0.5 italic">&ldquo;{s.text}&rdquo;</p></>}
       <div className="flex gap-2 mt-2">
-        <button onClick={onSend} className="text-xs px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white">{s.kind === 'merge' ? 'Merge' : 'Send to session'}</button>
+        <button onClick={onSend} className="text-xs px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white">{s.kind === 'merge' ? 'Merge' : s.kind === 'ready' ? 'Mark ready' : 'Send to session'}</button>
         <button onClick={onDismiss} className="text-xs px-2 py-1 rounded-md text-gray-400 hover:text-white">Dismiss</button>
       </div>
     </div>
@@ -107,6 +109,7 @@ export const AUTO_ROWS: [keyof AutoSteps, string, string][] = [
   ['openPr', 'Open the PR', 'When the session has code to ship, ask it to commit, push and open a PR'],
   ['review', 'Fix review comments', 'When reviewers comment, ask the session to address them, push and reply'],
   ['ci', 'Fix failing CI', 'When CI fails, ask the session to fix it and push'],
+  ['ready', 'Mark draft ready', 'When a draft PR\'s CI is green, take it out of draft so it goes to review (and your review requests go out)'],
   ['merge', 'Merge when approved', 'When approved and CI is green, ask the session to merge (tried once automatically)'],
   ['postMerge', 'Post-merge checks', 'After a PR merges, ask the session to check CI on main, the deploy and logs. It only checks; production changes still ask you'],
 ]

@@ -74,7 +74,7 @@ export interface SlackView extends Partial<SlackThreadView> {
 }
 
 // A message the automation proposes; sent only when you click Send
-export interface Suggestion { kind: 'open-pr' | 'review' | 'ci' | 'merge' | 'post-merge'; text: string; at: number }
+export interface Suggestion { kind: 'open-pr' | 'review' | 'ci' | 'ready' | 'merge' | 'post-merge'; text: string; at: number }
 
 export interface PrTrack {
   url: string
@@ -85,6 +85,7 @@ export interface PrTrack {
   seenFeedback: number // review + comment count already handled; -1 = not read yet
   seenUnresolved?: number // unresolved-thread count we already asked the session about
   copilotRequestedFor?: string // head commit we last asked Copilot to re-review
+  readyAskedFor?: string // head commit we last offered 'mark ready' for (a draft)
   reviewRounds: number
   ciFixes: number
   mergeAttempts?: number
@@ -124,11 +125,11 @@ const QUIET_MS = 15_000 // session must stay 'waiting' this long before we type 
 import { ACTIVE_PHASES, stepOf } from './pipelineView'
 const OPEN_TRACK: PrTrackState[] = ['in-review', 'working', 'ready']
 
-const STEP_NAME: Record<keyof AutoSteps, string> = { openPr: 'open the PR', review: 'fix review comments', ci: 'fix CI', merge: 'merge', postMerge: 'post-merge checks' }
+const STEP_NAME: Record<keyof AutoSteps, string> = { openPr: 'open the PR', review: 'fix review comments', ci: 'fix CI', ready: 'mark the draft ready', merge: 'merge', postMerge: 'post-merge checks' }
 export const autoOf = (p: { config: PipelineConfig }): AutoSteps => ({ ...DEFAULT_AUTO, ...p.config.auto })
 const cleanAuto = (a?: Partial<AutoSteps>): AutoSteps => {
   const m = { ...DEFAULT_AUTO, ...a }
-  return { openPr: m.openPr === true, review: m.review === true, ci: m.ci === true, merge: m.merge === true, postMerge: m.postMerge === true }
+  return { openPr: m.openPr === true, review: m.review === true, ci: m.ci === true, ready: m.ready === true, merge: m.merge === true, postMerge: m.postMerge === true }
 }
 
 const PROMPTS = {
@@ -427,6 +428,11 @@ class PipelineEngine {
     const t = prUrl ? p.prs.find(x => x.url === prUrl) : null
     const sug = prUrl ? t?.suggestion : p.suggestion
     if (!sug) return { error: 'Nothing to send' }
+    if (sug.kind === 'ready' && t) { // done on GitHub, not by the session
+      this.patchTrack(p, t, { suggestion: null })
+      void this.markReady(p.id, t.url)
+      return null
+    }
     submitLine(p.liveId, sug.text)
     if (t) {
       if (sug.kind === 'review') t.reviewRounds++
@@ -593,6 +599,11 @@ class PipelineEngine {
           suggest(t, 'review', PROMPTS.review(t.url), `New review feedback on ${shortPr(t.url)}`, 'New review feedback', `${pr.title}: click Send to ask the session to address it`)
         }
         continue
+      }
+      // A green draft: offer (or, on Auto, do) "mark ready for review", once per commit
+      if (pr.isDraft && pr.checks === 'passing' && !t.suggestion && pr.headOid && t.readyAskedFor !== pr.headOid) {
+        this.patchTrack(p, t, { readyAskedFor: pr.headOid })
+        suggest(t, 'ready', 'Mark it ready for review on GitHub', `${shortPr(t.url)} is a draft with green CI`, 'Draft is green', `${pr.title}: mark it ready for review?`)
       }
       if (pr.checks === 'failing') {
         if (!wasFailing && !t.suggestion) suggest(t, 'ci', PROMPTS.ci(t.url), `CI failing on ${shortPr(t.url)}`, 'CI failing', `${pr.title}: click Send to ask the session to fix it`)

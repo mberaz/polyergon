@@ -1,8 +1,8 @@
 // Which steps run on their own (true) vs wait for your click (false)
-export interface AutoSteps { openPr: boolean; review: boolean; ci: boolean; merge: boolean; postMerge: boolean }
-export const DEFAULT_AUTO: AutoSteps = { openPr: true, review: true, ci: true, merge: false, postMerge: true }
+export interface AutoSteps { openPr: boolean; review: boolean; ci: boolean; ready: boolean; merge: boolean; postMerge: boolean }
+export const DEFAULT_AUTO: AutoSteps = { openPr: true, review: true, ci: true, ready: true, merge: false, postMerge: true }
 // Which step a suggestion belongs to
-export const stepOf = (kind: 'open-pr' | 'review' | 'ci' | 'merge' | 'post-merge'): keyof AutoSteps => kind === 'open-pr' ? 'openPr' : kind === 'post-merge' ? 'postMerge' : kind
+export const stepOf = (kind: 'open-pr' | 'review' | 'ci' | 'ready' | 'merge' | 'post-merge'): keyof AutoSteps => kind === 'open-pr' ? 'openPr' : kind === 'post-merge' ? 'postMerge' : kind
 
 // Browser-safe helpers for showing automations (no Node imports here).
 import type { Pipeline, PipelinePhase, PrTrackState, PrTrack } from './pipelines'

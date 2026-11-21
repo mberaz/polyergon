@@ -16,7 +16,7 @@ const m = (min: number) => now - min * 60_000
 
 const pipeline: Pipeline = {
   id: 'demo', liveId: 'demo', template: 'ship-it',
-  config: { slackChannel: { id: 'C0', name: 'ledger-reviews' }, maxRounds: 3, auto: { openPr: true, review: true, ci: true, merge: false, postMerge: false } },
+  config: { slackChannel: { id: 'C0', name: 'ledger-reviews' }, maxRounds: 3, auto: { openPr: true, review: true, ci: true, ready: true, merge: false, postMerge: false } },
   phase: 'tracking', workingOn: null, actedAt: m(9), createdAt: m(120), updatedAt: m(1),
   prs: [
     {

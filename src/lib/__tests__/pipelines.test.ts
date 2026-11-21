@@ -372,3 +372,20 @@ test('Find PRs: new open ones get panels, ones merged since start become finishe
   pipelineEngine.stop(p.id)
   sessionFound = { open: [], merged: [] }
 })
+
+test('a green draft is marked ready on Auto (once per commit), and then sent for review', async () => {
+  const D = 'https://github.com/o/discovery/pull/9501'
+  prs[D] = { ...base(9501), isDraft: true, reviewRequests: [], statusCheckRollup: [{ status: 'COMPLETED', conclusion: 'SUCCESS' }] }
+  threads = []; gqlReviews = []
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  dirty = false; session.prUrl = null
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, ready: true, merge: false, postMerge: false } })
+  await flush(); pipelineEngine.addPr(p.id, D, { channel: { id: 'C5', name: 'disc' }, reviewers: [] }); await flush(); await flush()
+  posts.length = 0; postedTo.length = 0
+  later(); await pipelineEngine.step(p.id, true); await flush(); await flush()
+  expect(p.log.some((l: { text: string }) => l.text.startsWith('Marked o/discovery#9501 ready'))).toBe(true)
+  prs[D].isDraft = false // GitHub now says ready
+  later(); await pipelineEngine.step(p.id, true); await flush(); await flush(); await flush()
+  expect(postedTo).toEqual(['disc'])
+  pipelineEngine.stop(p.id)
+})
