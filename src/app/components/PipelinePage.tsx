@@ -71,7 +71,7 @@ function Panel({ title, children, right }: { title: string; children: React.Reac
 }
 
 // A PR you closed: one green line. Click to bring it back.
-function FinishedRow({ t, onReopen }: { t: PrTrack; onReopen: () => void }) {
+export function FinishedRow({ t, onReopen }: { t: PrTrack; onReopen: () => void }) {
   const [asking, setAsking] = useState(false)
   return (
     <>

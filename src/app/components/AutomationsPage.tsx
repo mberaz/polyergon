@@ -6,6 +6,7 @@ import { isRunning, pipelineSummary } from '@/lib/pipelineView'
 import { PrCard } from './AutomateDialog'
 import { Combobox, type ComboOption } from './Combobox'
 import { ExistingAutomations } from './ExistingAutomations'
+import { FinishedRow } from './PipelinePage'
 
 // Which sections you collapsed, remembered in this browser.
 function useCollapsed(): [Set<string>, (k: string) => void] {
@@ -105,7 +106,7 @@ function WatchAudit({ log }: { log: WatchLog[] }) {
   )
 }
 
-export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen, onStop, onRemove, onNewWatcher, onEditWatcher, watcherCmd, showMacLoops }: {
+export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen, onStop, onRemove, onReopenPr, onNewWatcher, onEditWatcher, watcherCmd, showMacLoops }: {
   showMacLoops: boolean // the Mac's launchd loops run with ~/.claude (Default)
   pipelines: Pipeline[]
   watchers: SlackWatcher[]
@@ -114,6 +115,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
   onOpen: (liveId: string) => void
   onStop: (id: string) => void
   onRemove: (id: string) => void
+  onReopenPr: (id: string, liveId: string, url: string) => void
   onNewWatcher: () => void
   onEditWatcher: (w: SlackWatcher) => void
   watcherCmd: (type: string, body?: object) => void
@@ -241,6 +243,9 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
             {collapsed.has(p.id) ? null : p.prs.length > 0
               ? <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))' }}>{p.prs.filter(t => !t.closed).map(t => <PrCard key={t.url} t={t} slackSet={!!(t.review ? t.review.channel : p.config.slackChannel)} max={p.config.maxRounds} />)}</div>
               : <p className="text-xs text-gray-500">{p.log.at(-1)?.text}</p>}
+            {!collapsed.has(p.id) && p.prs.some(t => t.closed) && (
+              <div className="mt-3 space-y-1.5">{p.prs.filter(t => t.closed).map(t => <FinishedRow key={t.url} t={t} onReopen={() => onReopenPr(p.id, p.liveId, t.url)} />)}</div>
+            )}
           </section>
         ))}
       </div>

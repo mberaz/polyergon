@@ -503,6 +503,7 @@ export default function Home() {
             onOpen={id => setAutomateFor(id)}
             onStop={stopPipeline}
             onRemove={removePipeline}
+            onReopenPr={(id, liveId, url) => removePipelinePr(id, liveId, url, true)}
           />
         )}
 
