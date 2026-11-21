@@ -446,6 +446,9 @@ app.prepare().then(async () => {
       } else if (msg.type === 'watcher-delegate') {
         const err = slackWatchers.delegate(msg.id as string, msg.permalink as string)
         if (err) send({ type: 'watcher-error', message: err.error })
+      } else if (msg.type === 'watcher-instruct') {
+        const err = slackWatchers.instruct(msg.id as string, String(msg.text ?? ''))
+        if (err) send({ type: 'watcher-error', message: err.error })
       } else if (msg.type === 'watcher-redraft') {
         slackWatchers.redraft(msg.id as string, msg.permalink as string, msg.hint as string | undefined)
       } else if (msg.type === 'pipeline-act') {

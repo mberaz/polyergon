@@ -171,6 +171,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
                   {w.status === 'running' && <button onClick={() => watcherCmd('watcher-stop', { id: w.id })} className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-red-400 hover:bg-red-950/40">Stop</button>}
                 </span>
               </div>
+              <TellBox linked={!!w.liveId} onSend={text => watcherCmd('watcher-instruct', { id: w.id, text })} />
               {ctxOpen === w.id && <ContextEditor key={w.id} knowledge={w.knowledge ?? ''} instructions={w.instructions ?? ''}
                 onSave={(knowledge, instructions) => { watcherCmd('watcher-update', { id: w.id, patch: { knowledge, instructions } }); setCtxOpen(null) }}
                 onCancel={() => setCtxOpen(null)} />}
@@ -230,6 +231,24 @@ function ContextEditor({ knowledge, instructions, onSave, onCancel }: { knowledg
         <button onClick={onCancel} className="text-xs px-2.5 py-1 text-gray-400 hover:text-white">Cancel</button>
         <button onClick={() => onSave(k, i)} className="text-xs px-3 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white">Save</button>
       </div>
+    </div>
+  )
+}
+
+// One-off instruction for the watcher's linked session ("reply to Koren with the deploy status").
+function TellBox({ linked, onSend }: { linked: boolean; onSend: (text: string) => void }) {
+  const [text, setText] = useState('')
+  const [sent, setSent] = useState(false)
+  const send = () => { if (!text.trim() || !linked) return; onSend(text.trim()); setText(''); setSent(true); setTimeout(() => setSent(false), 3000) }
+  return (
+    <div className="mt-3">
+      <div className="flex gap-2">
+        <input dir="auto" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send() }} disabled={!linked}
+          placeholder={linked ? 'Tell it what to do now, e.g. answer Koren with the deploy status' : 'Link a session (🧠 menu) to give it instructions'}
+          className="flex-1 bg-gray-950 border border-gray-800 rounded-md px-3 py-1.5 text-sm text-gray-100 outline-none focus:border-blue-500 placeholder-gray-500 disabled:opacity-60" />
+        <button onClick={send} disabled={!linked || !text.trim()} className="text-xs px-3 rounded-md bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">Send</button>
+      </div>
+      {sent && <p className="text-[11px] text-emerald-400 mt-1">Sent to the session. Follow it there or in the activity log.</p>}
     </div>
   )
 }

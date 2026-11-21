@@ -212,6 +212,22 @@ class SlackWatcherEngine {
     return null
   }
 
+  // Your one-off instruction about this channel ("answer Koren with the deploy status"),
+  // done by the linked session with the Slack connector.
+  instruct(id: string, text: string): { error: string } | null {
+    const w = this.items.find(x => x.id === id)
+    if (!w) return { error: 'Not found' }
+    if (!w.liveId || !liveSessionStore.get(w.liveId)) return { error: 'Link a session to this watcher first (the 🧠 menu on the card)' }
+    const t = text.trim().slice(0, 4000)
+    if (!t) return { error: 'Write what it should do' }
+    sendWhenReady(w.liveId,
+      `About the Slack channel #${w.channel.name} (id ${w.channel.id}), the owner asks: ${t.replace(/\s+/g, ' ')} ` +
+      '— Use the Slack connector to read what you need and do it. Post in Slack only if that is what the owner asked for. ' +
+      'Report only what you verified; if you could not do something, say so plainly.')
+    this.log(w, 'You told the session what to do', undefined, { detail: t })
+    return null
+  }
+
   dismiss(id: string, permalink: string) {
     const w = this.items.find(x => x.id === id)
     const it = w?.items.find(i => i.permalink === permalink)

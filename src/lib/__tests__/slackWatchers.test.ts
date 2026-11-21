@@ -47,3 +47,14 @@ test('auto mode with a linked session hands NEEDS_OWNER requests to the session'
   expect(typed[0]).toContain('reply in that Slack thread')
   expect(slackWatchers.delegate(w.id, it.permalink)).toEqual({ error: 'Already handed off' })
 })
+
+test('your instruction goes to the linked session; without one it errors', () => {
+  const linked = slackWatchers.create({ channel: { id: 'C1', name: 'deployment' }, liveId: 'L1', mode: 'approve', intervalMin: 5, orgId: 'o' })
+  const before = typed.length
+  expect(slackWatchers.instruct(linked.id, 'answer Koren with the deploy status')).toBeNull()
+  expect(typed.slice(before)).toHaveLength(1)
+  expect(typed.at(-1)).toContain('#deployment')
+  expect(typed.at(-1)).toContain('answer Koren with the deploy status')
+  const unlinked = slackWatchers.create({ channel: { id: 'C2', name: 'other' }, liveId: null, mode: 'approve', intervalMin: 5, orgId: 'o' })
+  expect(slackWatchers.instruct(unlinked.id, 'x')).toEqual({ error: expect.stringContaining('Link a session') })
+})
