@@ -84,6 +84,12 @@ const anyRcUrlListeners = new Set<AnyRcUrlListener>()
 const RC_URL_RE = /https:\/\/claude\.ai\/code\/session_[A-Za-z0-9]+/
 const ptyProcesses = new Map<string, pty.IPty>()
 const thinkingTimers = new Map<string, ReturnType<typeof setTimeout>>()
+// "Waiting" must hold for WAITING_SETTLE_MS with no sign of work. Claude Code redraws
+// its screen every second (spinner): between erase and redraw the frame shows the ❯
+// prompt without the busy footer, which used to flip cards to "waiting" mid-turn.
+const WAITING_SETTLE_MS = 1500
+const waitingTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const lastBusyAt = new Map<string, number>()
 // Small rolling ANSI-stripped tail per session, scanned for a PR URL as
 // output streams through — no extra file I/O beyond what's already flowing.
 const prScanBuffers = new Map<string, string>()
@@ -264,24 +270,34 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
       if (!headlessTerms.has(id)) return
       // Copilot's status lives in the footer below the cursor, so read the
       // screen bottom for it; Claude's lives in the lines around the cursor.
-      const status = backend.id !== 'claude'
+      const readStatus = () => backend.id !== 'claude'
         ? detectStatus(bottomRows(headlessTerm, 3), backend.id)
         // Claude's footer (below the prompt) says "esc to interrupt" while busy
         : detectStatus(bufferTail(headlessTerm) + '\n' + bottomRows(headlessTerm, 3))
+      const status = readStatus()
       const session = liveSessionStore.get(id)
       if (!session) return
 
+      if (status === 'thinking') lastBusyAt.set(id, Date.now())
+
       if (status === 'waiting') {
-        // Cancel any pending thinking transition — waiting wins immediately
-        const t = thinkingTimers.get(id)
-        if (t) { clearTimeout(t); thinkingTimers.delete(id) }
-        if (session.status !== 'waiting') {
+        if (session.status === 'waiting' || waitingTimers.has(id)) return
+        const settle = (delay: number) => waitingTimers.set(id, setTimeout(() => {
+          waitingTimers.delete(id)
+          const s = liveSessionStore.get(id)
+          if (!s || s.status === 'waiting' || !headlessTerms.has(id)) return
+          if (readStatus() !== 'waiting') return // busy again; the next waiting frame re-arms
+          // A busy frame came in meanwhile: check again once it's WAITING_SETTLE_MS old
+          const sinceBusy = Date.now() - (lastBusyAt.get(id) ?? 0)
+          if (sinceBusy < WAITING_SETTLE_MS) { settle(WAITING_SETTLE_MS - sinceBusy); return }
+          const t = thinkingTimers.get(id)
+          if (t) { clearTimeout(t); thinkingTimers.delete(id) }
           liveSessionStore.setStatus(id, 'waiting')
           emitStatus(id, 'waiting')
-        }
+        }, delay))
+        settle(WAITING_SETTLE_MS)
       } else if (status === 'thinking' && session.status !== 'thinking') {
-        // Debounce: trailing chunks after the ❯ prompt often lack ❯, don't
-        // let them immediately clobber a 'waiting' state we just set.
+        // Debounce: a lone busy-looking frame shouldn't wake an idle/waiting card
         if (!thinkingTimers.has(id)) {
           thinkingTimers.set(id, setTimeout(() => {
             thinkingTimers.delete(id)
@@ -303,6 +319,8 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
     if (ptyProcesses.get(id) !== proc) return
     const t = thinkingTimers.get(id)
     if (t) { clearTimeout(t); thinkingTimers.delete(id) }
+    const wt = waitingTimers.get(id)
+    if (wt) { clearTimeout(wt); waitingTimers.delete(id) }
     liveSessionStore.setStatus(id, 'idle')
     emitStatus(id, 'idle')
     ptyProcesses.delete(id)
