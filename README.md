@@ -52,7 +52,7 @@ Separate **orgs** (Claude login or API key, Slack, skills per org), skills and p
 
 ## Install
 
-On a Mac, the installer sets up Node if needed, starts Polyergon at login, and opens it:
+On a Mac, **[download the installer](https://polyergon.ai/download/Polyergon-Installer.zip)** (unzip, double-click; the first time, allow it in System Settings → Privacy & Security → Open Anyway), or run the same installer in Terminal. It sets up Node if needed, starts Polyergon at login, and opens it:
 
 ```bash
 curl -fsSL https://polyergon.ai/install.sh | bash

@@ -145,6 +145,9 @@
   @media (max-width: 560px) { .ex { grid-template-columns: 1fr; } }
 
   /* Install */
+  .dl { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; padding: 12px 20px; }
+  .steps { margin: 14px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .steps b { color: var(--text); font-weight: 500; }
   .install { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); padding: 48px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 48px; align-items: center; }
   pre.cmd { position: relative; padding-right: 56px; }
   .copy { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); background: none; border: 1px solid var(--line); border-radius: 8px; color: var(--text); opacity: .6; cursor: pointer; width: 34px; height: 34px; display: grid; place-items: center; font-size: 16px; }
@@ -218,8 +221,8 @@
       <h1 class="rise">Ship faster with every Claude Code session on <em>one screen.</em></h1>
       <p class="rise" style="--i:1">Run ten sessions at once without losing track. Polyergon shows which one needs you, moves their PRs through review and CI on its own, and keeps Slack from stalling you. You decide; your sessions keep moving.</p>
       <div class="ctas rise" style="--i:2">
-        <a class="btn btn-primary" href="https://github.com/polyergon/polyergon"><i class="ph-bold ph-github-logo"></i>Get it on GitHub</a>
-        <a class="btn btn-ghost" href="#ship-it">How it works</a>
+        <a class="btn btn-primary" href="#install"><i class="ph-bold ph-download-simple"></i>Download for Mac</a>
+        <a class="btn btn-ghost" href="https://github.com/polyergon/polyergon"><i class="ph-bold ph-github-logo"></i>GitHub</a>
       </div>
     </div>
     <div class="shot rise" style="--i:3">
@@ -367,17 +370,23 @@
   <section id="install" class="wrap">
     <div class="install reveal">
       <div>
-        <h2>One command</h2>
+        <h2>Install in a minute</h2>
         <p class="lead">macOS today. Linux should work for sessions.</p>
         <ul class="req">
-          <li>Mac installer: nothing else needed. It sets up Node for you.</li>
+          <li>Mac installer: nothing else needed. It sets up Node for you, no admin password.</li>
           <li>With npx: Node.js 20 or newer</li>
           <li>Claude Code or GitHub Copilot CLI, logged in</li>
           <li><code>gh</code> for PRs and Ship it (optional)</li>
         </ul>
       </div>
       <div>
-        <p class="tip" style="margin:0 2px 8px"><b>Mac installer</b> (recommended): installs, starts at login, opens Polyergon.</p>
+        <a class="btn btn-primary dl" href="download/Polyergon-Installer.zip" download><i class="ph-bold ph-download-simple"></i> Download for Mac</a>
+        <ol class="steps">
+          <li>Unzip and double-click <b>Polyergon Installer</b>.</li>
+          <li>The first time, macOS says it can't verify the app. Open <b>System Settings → Privacy &amp; Security</b>, scroll down, click <b>Open Anyway</b>, then open the installer again.</li>
+          <li>Click <b>Install</b>. Polyergon opens when it's ready, and starts when you log in.</li>
+        </ol>
+        <p class="tip" style="margin:16px 2px 8px"><b>Or in Terminal</b>, same installer, no warning:</p>
         <pre class="cmd"><span class="p">$</span> curl -fsSL https://polyergon.ai/install.sh | bash<button type="button" class="copy" data-copy="curl -fsSL https://polyergon.ai/install.sh | bash" aria-label="Copy command"><i class="ph ph-copy"></i></button></pre>
         <p class="tip" style="margin:16px 2px 8px"><b>Or with npx</b>, if you have Node:</p>
         <pre class="cmd"><span class="p">$</span> npx polyergon <span class="c"># opens Polyergon in its own window</span><button type="button" class="copy" data-copy="npx polyergon" aria-label="Copy command"><i class="ph ph-copy"></i></button></pre>
