@@ -3,6 +3,7 @@ import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
+import { sendWhenReady } from './ptyManager'
 import { orgRegistry } from './orgRegistry'
 import { newChannelRequests, draftChannelReply, NEEDS_OWNER, replyInThread, timeFromPermalink, type SlackChannel } from './slackBridge'
 
@@ -16,7 +17,7 @@ export interface WatchItem {
   author: string
   text: string
   time: string
-  state: 'drafting' | 'pending' | 'sending' | 'sent' | 'dismissed' | 'failed'
+  state: 'drafting' | 'pending' | 'sending' | 'sent' | 'dismissed' | 'failed' | 'delegated'
   draft: string | null
   error?: string
 }
@@ -158,7 +159,9 @@ class SlackWatcherEngine {
       it.draft = needsYou ? raw.slice(NEEDS_OWNER.length).trim() : raw
       // Auto-answer only messages posted after you started the watcher; older backlog waits for your approval
       const backlog = !(Date.parse(timeFromPermalink(it.permalink) || '') >= w.createdAt) // unknown time counts as backlog
-      if (w.mode === 'auto' && !backlog && !needsYou) {
+      if (w.mode === 'auto' && !backlog && needsYou && w.liveId) {
+        this.delegate(w.id, it.permalink, true)
+      } else if (w.mode === 'auto' && !backlog && !needsYou) {
         await replyInThread(it.permalink, it.draft, w.orgId)
         it.state = 'sent'
         this.log(w, `Answered ${it.author} automatically`, undefined, { detail: it.draft, link: it.permalink })
@@ -189,6 +192,24 @@ class SlackWatcherEngine {
       this.log(w, `You sent a reply to ${it.author}`, undefined, { detail: body, link: permalink })
       return null
     } catch (e) { it.state = before; this.save(); return { error: (e as Error).message } }
+  }
+
+  // Hand the request to the linked session: it does the work (runs the checks)
+  // and posts the real result in the thread itself.
+  delegate(id: string, permalink: string, auto = false): { error: string } | null {
+    const w = this.items.find(x => x.id === id)
+    const it = w?.items.find(i => i.permalink === permalink)
+    if (!w || !it) return { error: 'Not found' }
+    if (!w.liveId || !liveSessionStore.get(w.liveId)) return { error: 'Link a session to this watcher first' }
+    if (it.state === 'delegated' || it.state === 'sending') return { error: 'Already handed off' }
+    const text = it.text.replace(/\s+/g, ' ').slice(0, 1500)
+    sendWhenReady(w.liveId,
+      `Slack request in #${w.channel.name} from ${it.author} (${it.permalink}): "${text}". ` +
+      'Do the work needed to answer it (run the checks, read the code or logs). Then reply in that Slack thread with the Slack connector, with the actual results. ' +
+      'Report only what you verified; if something failed or you could not check it, say so plainly. Do not promise to do it later.')
+    it.state = 'delegated'
+    this.log(w, `${auto ? 'Needed real work: sent' : 'You sent'} ${it.author}'s request to the session`, undefined, { detail: it.text, link: it.permalink })
+    return null
   }
 
   dismiss(id: string, permalink: string) {

@@ -7,7 +7,9 @@ process.env.POLYERGON_DATA_DIR = mkdtempSync(join(tmpdir(), 'watch-'))
 const posted: string[] = []
 let draft = ''
 jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
-jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: () => undefined } }))
+const typed: string[] = []
+jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? { claudeSessionId: 'c1', cwd: '/r', orgId: 'o' } : undefined) } }))
+jest.mock('../ptyManager', () => ({ sendWhenReady: (_id: string, t: string) => typed.push(t) }))
 jest.mock('../orgRegistry', () => ({ orgRegistry: { get: () => undefined } }))
 jest.mock('../slackBridge', () => ({
   NEEDS_OWNER: 'NEEDS_OWNER:',
@@ -33,4 +35,15 @@ test('auto mode posts real answers but keeps NEEDS_OWNER drafts for you', async 
   const it = slackWatchers.list()[0].items[0]
   expect(it.state).toBe('pending')
   expect(it.draft).toBe("I'll check and post results.")
+})
+
+test('auto mode with a linked session hands NEEDS_OWNER requests to the session', async () => {
+  const w = slackWatchers.create({ channel: { id: 'C1', name: 'deployment' }, liveId: 'L1', mode: 'auto', intervalMin: 5, orgId: 'o' })
+  draft = "NEEDS_OWNER: I'll check the rollout."
+  await slackWatchers.run(w.id)
+  const it = slackWatchers.list().find((x: { id: string }) => x.id === w.id).items[0]
+  expect(it.state).toBe('delegated')
+  expect(typed).toHaveLength(1)
+  expect(typed[0]).toContain('reply in that Slack thread')
+  expect(slackWatchers.delegate(w.id, it.permalink)).toEqual({ error: 'Already handed off' })
 })
