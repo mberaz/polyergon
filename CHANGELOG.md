@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.9
+
+- **Meetings record in the Polyergon window.** macOS gives background apps a silent microphone, so recordings from the Mac installer came out empty. Audio now comes from the browser, which already has microphone permission (plus BlackHole, if installed). Keep the window open while recording; you're warned if audio stops.
+- **Help in Settings:** Report a bug (with your versions filled in), guides, and Suggest a feature.
+
 ## 0.1.8
 
 - **Meetings:** fixes "Input/output error" with newer ffmpeg, which adds a "[uid:…]" tag to device names. If macOS blocks the microphone, the message says what to allow.

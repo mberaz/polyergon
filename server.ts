@@ -520,8 +520,8 @@ app.prepare().then(async () => {
         if (typeof msg.meetingId === 'string' && kinds.includes(msg.kind as string) && typeof msg.value === 'string' && msg.value.trim() && msg.value.length <= 500_000) {
           meetingManager.addContext(msg.meetingId, msg.kind as ContextKind, msg.value)
         }
-      } else if (msg.type === 'meeting-mic-test') {
-        meetingManager.micTest().then(result => send({ type: 'meeting-mic-test-result', ...result }))
+      } else if (msg.type === 'meeting-audio') {
+        if (typeof msg.data === 'string') meetingManager.addAudio(msg.meetingId as string, msg.data)
 
       } else if (msg.type === 'send-to-live') {
         // User clicked "Ask session" on a Slack card: queue the text for when the session is idle

@@ -33,7 +33,7 @@ export function RecordMeetingDialog({ orgs, defaultOrgId, onStart, onCancel, onM
         <h2 className="text-white font-semibold mb-1 flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Record Meeting
         </h2>
-        <p className="text-xs text-gray-500 mb-4">Captures meeting audio (via BlackHole) + your mic. Set your Mac&apos;s sound output to &quot;Claude Playback&quot; first so you hear the meeting while it records.</p>
+        <p className="text-xs text-gray-500 mb-4">Records in this window: your microphone, plus the other side of the call if BlackHole is installed. Keep Polyergon open while it records.</p>
 
         <input
           type="text"

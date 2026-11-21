@@ -1,10 +1,12 @@
 import { meetingStore, Meeting, MeetingNotes, TranscriptSegment, ContextItem, ContextKind } from './meetingStore'
 import { resolveContext } from './meetingContext'
 import { randomUUID } from 'crypto'
-import { startCapture, micTest, CaptureHandle } from './audioCapture'
+import type { CaptureHandle } from './audioCapture'
+import { mkdirSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { transcribeChunk } from './transcriber'
 import { MeetingAssistant } from './meetingAssistant'
-import { getTranscriptionConfig, getAudioDevices } from './meetingConfig'
+import { getTranscriptionConfig } from './meetingConfig'
 import { localWhisperProblem } from './localWhisper'
 import { orgRegistry, DEFAULT_ORG_ID } from './orgRegistry'
 
@@ -34,10 +36,21 @@ interface ActiveMeeting {
   chunkQueue: string[]
   transcribing: boolean
   restarted: boolean
+  lastAudioAt: number
+  warnedNoAudio?: boolean
   notesTimer: ReturnType<typeof setInterval>
   // Transcript chars already sent to the assistant — deltas only from here on
   sentTranscriptChars: number
   transcriptText: string
+}
+
+function wavHeader(dataLen: number, rate: number): Buffer {
+  const h = Buffer.alloc(44)
+  h.write('RIFF', 0); h.writeUInt32LE(36 + dataLen, 4); h.write('WAVE', 8)
+  h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22)
+  h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34)
+  h.write('data', 36); h.writeUInt32LE(dataLen, 40)
+  return h
 }
 
 class MeetingManager {
@@ -57,16 +70,23 @@ class MeetingManager {
     return Array.from(this.active.values()).map(a => a.meeting)
   }
 
-  micTest(): Promise<{ level: number } | { error: string }> {
-    const d = getAudioDevices()
-    return 'error' in d ? Promise.resolve(d) : micTest(d)
+  // Audio recorded in the browser: 16 kHz mono 16-bit PCM, about 10s per chunk.
+  addAudio(meetingId: string, base64Pcm: string) {
+    const a = this.active.get(meetingId)
+    if (!a) return
+    const pcm = Buffer.from(base64Pcm, 'base64')
+    if (!pcm.length || pcm.length > 4 * 1024 * 1024) return
+    const dir = join(meetingStore.dir(meetingId), 'audio')
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, `b${Date.now()}.wav`)
+    writeFileSync(file, Buffer.concat([wavHeader(pcm.length, 16000), pcm]))
+    a.lastAudioAt = Date.now()
+    this.enqueueChunk(meetingId, file)
   }
 
   start(title: string, orgId: string): Meeting | { error: string } {
     const notReady = transcriptionProblem()
     if (notReady) return { error: notReady }
-    const d = getAudioDevices()
-    if ('error' in d) return d
     return this.begin(meetingStore.create(title, orgId || DEFAULT_ORG_ID))
   }
 
@@ -79,8 +99,6 @@ class MeetingManager {
     if (!existing) return { error: 'Meeting not found' }
     if (this.active.has(meetingId) || existing.status === 'recording') return { error: 'Meeting is already recording' }
     if (this.active.size > 0) return { error: 'Another meeting is recording. Stop it first.' }
-    const d = getAudioDevices()
-    if ('error' in d) return d
     const meeting = meetingStore.update(meetingId, { status: 'recording', endedAt: null }) ?? existing
     return this.begin(meeting)
   }
@@ -108,32 +126,13 @@ class MeetingManager {
       restarted: false,
       sentTranscriptChars: priorText.length,
       transcriptText: priorText,
-      capture: this.spawnCapture(meeting.id),
+      capture: { stop: async () => {} }, // the browser records and sends chunks (addAudio)
+      lastAudioAt: Date.now(),
       notesTimer: setInterval(() => this.notesTick(meeting.id), NOTES_TICK_MS),
     }
     this.active.set(meeting.id, active)
     this.emit({ type: 'meeting-status', meeting })
     return meeting
-  }
-
-  private spawnCapture(meetingId: string): CaptureHandle {
-    const d = getAudioDevices()
-    return startCapture(meetingStore.dir(meetingId), 'error' in d ? { mic: 'default', system: null } : d, {
-      onChunk: (filePath) => this.enqueueChunk(meetingId, filePath),
-      onExit: (code, stderrTail) => {
-        const a = this.active.get(meetingId)
-        if (!a) return
-        // One automatic restart; a second death surfaces to the user
-        if (!a.restarted) {
-          a.restarted = true
-          a.capture = this.spawnCapture(meetingId)
-          this.emit({ type: 'meeting-error', meetingId, message: 'Audio capture restarted after an unexpected exit' })
-        } else {
-          this.emit({ type: 'meeting-error', meetingId, message: `Audio capture died (ffmpeg exit ${code}): ${stderrTail.split('\n').at(-1) ?? ''}` })
-          this.stop(meetingId).catch(() => {})
-        }
-      },
-    })
   }
 
   private enqueueChunk(meetingId: string, filePath: string) {
@@ -179,6 +178,11 @@ class MeetingManager {
   private async notesTick(meetingId: string) {
     const a = this.active.get(meetingId)
     if (!a) return
+    // Audio comes from the Polyergon window: closed window = no audio
+    if (Date.now() - a.lastAudioAt > 60_000 && !a.warnedNoAudio) {
+      a.warnedNoAudio = true
+      this.emit({ type: 'meeting-error', meetingId, message: 'No audio for a minute. Recording happens in the Polyergon window: keep it open, or stop and continue the meeting there.' })
+    } else if (Date.now() - a.lastAudioAt < 60_000) a.warnedNoAudio = false
     const delta = a.transcriptText.slice(a.sentTranscriptChars)
     if (!delta.trim()) return // nobody said anything new — skip the call
     a.sentTranscriptChars = a.transcriptText.length

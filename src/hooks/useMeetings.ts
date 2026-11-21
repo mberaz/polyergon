@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Meeting, MeetingNotes, TranscriptSegment, ContextItem, ContextKind } from '@/lib/meetingStore'
+import { startRecorder, testAudio, type Recorder } from '@/lib/browserRecorder'
 
 export interface MeetingSuggestion { id: string; text: string; t: number }
 export interface MeetingQA { question: string; answer: string | null; t: number }
@@ -24,6 +25,9 @@ export function useMeetings(ws: WebSocket | null) {
   const [live, setLive] = useState<Record<string, MeetingLive>>({})
   const wsRef = useRef(ws)
   wsRef.current = ws
+  // The browser records the meeting this window started; survives view changes
+  const recorder = useRef<{ meetingId: string; rec: Recorder } | null>(null)
+  const wantRecording = useRef(false)
 
   const fetchMeetings = useCallback(() => {
     return fetch('/api/meetings').then(r => r.json()).then(setMeetings).catch(() => {})
@@ -43,6 +47,20 @@ export function useMeetings(ws: WebSocket | null) {
       let msg: { type: string; [k: string]: unknown }
       try { msg = JSON.parse(event.data as string) } catch { return }
 
+      if (msg.type === 'meeting-started' && wantRecording.current) {
+        wantRecording.current = false
+        const id = (msg.meeting as Meeting).id
+        startRecorder(data => wsRef.current?.send(JSON.stringify({ type: 'meeting-audio', meetingId: id, data })))
+          .then(rec => { recorder.current = { meetingId: id, rec } })
+          .catch(e => {
+            wsRef.current?.send(JSON.stringify({ type: 'meeting-stop', meetingId: id }))
+            const name = (e as { name?: string }).name
+            updateLive(id, l => ({ ...l, lastError: name === 'NotAllowedError' ? 'The browser blocked the microphone. Allow it for this site (address bar mic icon) and continue the meeting.' : `Could not start recording: ${(e as Error).message}` }))
+          })
+      }
+      if (msg.type === 'meeting-status' && recorder.current?.meetingId === (msg.meeting as Meeting).id && (msg.meeting as Meeting).status !== 'recording') {
+        const r = recorder.current; recorder.current = null; r.rec.stop() // stopped elsewhere
+      }
       if (msg.type === 'meeting-started' || msg.type === 'meeting-status') {
         const meeting = msg.meeting as Meeting
         setMeetings(prev => {
@@ -79,14 +97,18 @@ export function useMeetings(ws: WebSocket | null) {
   }, [ws, fetchMeetings])
 
   const startMeeting = useCallback((title: string, orgId: string) => {
+    wantRecording.current = true
     wsRef.current?.send(JSON.stringify({ type: 'meeting-start', title, orgId }))
   }, [])
 
   const resumeMeeting = useCallback((meetingId: string) => {
+    wantRecording.current = true
     wsRef.current?.send(JSON.stringify({ type: 'meeting-resume', meetingId }))
   }, [])
 
-  const stopMeeting = useCallback((meetingId: string) => {
+  const stopMeeting = useCallback(async (meetingId: string) => {
+    const r = recorder.current
+    if (r?.meetingId === meetingId) { recorder.current = null; await r.rec.stop() } // sends the last chunk first
     wsRef.current?.send(JSON.stringify({ type: 'meeting-stop', meetingId }))
   }, [])
 
@@ -103,28 +125,7 @@ export function useMeetings(ws: WebSocket | null) {
   }, [])
 
   // One-shot request/response over the WS for the pre-meeting mic check
-  const micTest = useCallback((): Promise<{ level?: number; error?: string; devices?: { mic: string; system: string | null } }> => {
-    return new Promise((resolve) => {
-      const socket = wsRef.current
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
-        resolve({ error: 'Not connected' })
-        return
-      }
-      const timer = setTimeout(() => { socket.removeEventListener('message', handler); resolve({ error: 'Mic test timed out' }) }, 15000)
-      function handler(event: MessageEvent) {
-        try {
-          const msg = JSON.parse(event.data as string)
-          if (msg.type === 'meeting-mic-test-result') {
-            clearTimeout(timer)
-            socket!.removeEventListener('message', handler)
-            resolve(msg)
-          }
-        } catch {}
-      }
-      socket.addEventListener('message', handler)
-      socket.send(JSON.stringify({ type: 'meeting-mic-test' }))
-    })
-  }, [])
+  const micTest = useCallback(() => testAudio(), [])
 
   const activeMeeting = meetings.find(m => m.status === 'recording') ?? null
 
