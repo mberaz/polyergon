@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.6
+
+- **Ship it, one panel per PR:** every PR a session opens shows up within about 15 seconds, each with its own review setup: a Slack channel, **DMs** to people you pick from your workspace, and GitHub reviewers. Nothing is posted until you choose.
+- **Ship it, clearer status:** a live line per PR (Claude is working on it now, queued, waiting for you, watching). Drafts show as drafts and are sent for review only once marked ready. Reviewers who only commented, or that GitHub added on its own, no longer block "ready to merge".
+- **Ship it, new controls:** a **Tell Claude** box per PR, optional **post-merge checks** (CI on main, deploy, logs, plus your own instructions), and closing a finished PR into a green "finished" line you can bring back. Finished automations can be closed too.
+- **Slack watcher:** hand-offs resume a stopped session instead of getting lost, and cards show working, needs you, or done.
+- **Chat view:** shows Claude's questions and permission prompts as buttons, and loads fast even on huge conversations.
+- **Drag files into the terminal** to give a session their paths.
+- **Meetings:** choose the spoken language (Hebrew, English and more) so transcripts don't come out in the wrong language.
+- **Automations page:** collapsible sections.
+- **Mac installer:** `curl -fsSL https://polyergon.ai/install.sh | bash`.
+- **Docs:** a full feature list, guides and examples in `docs/`.
+
 ## 0.1.5
 
 - **Chat view:** read a live session as chat messages. Right-to-left languages display correctly.
