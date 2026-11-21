@@ -2,11 +2,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '@/lib/sessionStore'
 import { screenBottom, typeKeys } from './Terminal'
-import { parseScreenQuestion, type ScreenQuestion } from '@/lib/screenQuestion'
+import { parseScreenQuestion, activityLine, type ScreenQuestion } from '@/lib/screenQuestion'
 
 interface Props {
   sessionId: string | null // Claude's session id (transcript); null until Claude creates it
-  waiting: boolean
+  status: 'thinking' | 'waiting' | 'idle' | undefined
   onSend: (prompt: string) => void
   onClose: () => void
 }
@@ -14,7 +14,10 @@ interface Props {
 // Reading view of a live session. The terminal (xterm.js) can't lay out
 // right-to-left text, so Hebrew/Arabic come out scrambled there. Here each
 // paragraph gets dir="auto", so the browser orders it correctly.
-export function HistoryPanel({ sessionId, waiting, onSend, onClose }: Props) {
+export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
+  const waiting = status === 'waiting', thinking = status === 'thinking'
+  const [pending, setPending] = useState<{ text: string; at: number }[]>([]) // sent, not yet in the transcript
+  const [activity, setActivity] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -43,24 +46,42 @@ export function HistoryPanel({ sessionId, waiting, onSend, onClose }: Props) {
     return () => clearInterval(t)
   }, [waiting])
 
+  // Fast while Claude works or a message is on its way; reads only the transcript's end
+  const busy = thinking || pending.length > 0
   useEffect(() => {
     if (!sessionId) return
     let stop = false
     const load = () => fetch(`/api/sessions/${sessionId}`).then(r => r.json())
-      .then(d => { if (!stop) setMessages(m => JSON.stringify(m) === JSON.stringify(d.messages ?? []) ? m : d.messages ?? []) })
+      .then(d => {
+        if (stop) return
+        const msgs: ChatMessage[] = d.messages ?? []
+        setMessages(m => JSON.stringify(m) === JSON.stringify(msgs) ? m : msgs)
+        // a sent message shows up as a user message in the transcript: drop its "sending" copy
+        setPending(p => p.filter(x => !msgs.some(m => m.role === 'user' && m.content.trim().startsWith(x.text.trim().slice(0, 60)))))
+      })
       .catch(() => {})
     load()
-    const t = setInterval(load, 3000) // ponytail: polling; switch to a transcript watch if it gets heavy
+    const t = setInterval(load, busy ? 1000 : 3000)
     return () => { stop = true; clearInterval(t) }
-  }, [sessionId])
+  }, [sessionId, busy])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'instant' }) }, [messages, question])
+  // Live "what is Claude doing" line from the terminal
+  useEffect(() => {
+    if (!thinking) { setActivity(null); return }
+    const read = () => setActivity(activityLine(screenBottom()))
+    read()
+    const t = setInterval(read, 1000)
+    return () => clearInterval(t)
+  }, [thinking])
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'instant' }) }, [messages, question, pending, thinking])
 
   function send() {
     const files = attached.map(p => /[^\w@%+=:,./-]/.test(p) ? `'${p.replace(/'/g, `'\\''`)}'` : p).join(' ')
     const prompt = [input.trim(), files].filter(Boolean).join(' ')
     if (!prompt) return
     setInput(''); setAttached([])
+    setPending(p => [...p, { text: prompt, at: Date.now() }])
     onSend(prompt)
   }
 
@@ -80,7 +101,7 @@ export function HistoryPanel({ sessionId, waiting, onSend, onClose }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-        {!sessionId && <p className="text-gray-500 text-sm">Send a first message in the terminal, then the conversation shows here.</p>}
+        {!messages.length && !pending.length && <p className="text-gray-500 text-sm">{sessionId ? 'Loading the conversation…' : 'New session. Write your first message below.'}</p>}
         {messages.map((m, i) => (
           <div key={i} className={m.role === 'user' ? 'flex justify-end' : ''}>
             <div className={m.role === 'user' ? 'max-w-[72%] bg-blue-600 rounded-2xl px-4 py-2' : 'max-w-[90%]'}>
@@ -90,6 +111,20 @@ export function HistoryPanel({ sessionId, waiting, onSend, onClose }: Props) {
             </div>
           </div>
         ))}
+        {pending.map(p => (
+          <div key={p.at} className="flex justify-end">
+            <div className="max-w-[72%] bg-blue-600/60 rounded-2xl px-4 py-2">
+              <p dir="auto" className="text-sm whitespace-pre-wrap break-words text-white">{p.text}</p>
+              <p className="text-[10px] text-blue-100/70 mt-1">{thinking ? 'Waiting for Claude to finish its current step…' : 'Sending…'}</p>
+            </div>
+          </div>
+        ))}
+        {thinking && (
+          <div className="flex items-center gap-2 text-sm text-blue-200">
+            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+            <span>Claude is working{activity ? `: ${activity}` : '…'}</span>
+          </div>
+        )}
         {question && (
           <div className="border border-emerald-700/60 bg-emerald-950/30 rounded-xl px-4 py-3">
             <p className="text-xs text-emerald-300 mb-2">Claude is asking</p>

@@ -9,7 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { isAllowedRequest } from './src/lib/requestGuard'
 import { v4 as uuid } from 'uuid'
 import { liveSessionStore, LiveSessionStore } from './src/lib/liveSessionStore'
-import { spawnSession, writeToSession, submitLine, sendWhenReady, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onAnyPrUrlChange, onAnyRcUrlChange, onAnySessionId, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
+import { spawnSession, writeToSession, submitLine, sendWhenReady, isRunning, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onAnyPrUrlChange, onAnyRcUrlChange, onAnySessionId, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND, availableBackends, getBackend } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
@@ -518,7 +518,10 @@ app.prepare().then(async () => {
       } else if (msg.type === 'send-to-live') {
         // User clicked "Ask session" on a Slack card: queue the text for when the session is idle
         const text = String(msg.text ?? '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, ' ').trim().slice(0, 20000)
-        if (text && liveSessionStore.get(msg.id as string)) sendWhenReady(msg.id as string, text)
+        if (text && liveSessionStore.get(msg.id as string)) {
+          if (!isRunning(msg.id as string)) slackWatchers.wake(msg.id as string) // stopped session: resume, then send
+          sendWhenReady(msg.id as string, text, 3 * 60 * 60_000)
+        }
 
       } else if (msg.type === 'input') {
         if (currentSessionId) writeToSession(currentSessionId, msg.data as string)
