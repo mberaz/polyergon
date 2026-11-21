@@ -19,13 +19,28 @@ async function subscribe(request, env) {
   const email = String(body?.email ?? '').trim().toLowerCase()
   if (email.length > 254 || !EMAIL.test(email)) return json({ ok: false, error: 'Please enter a valid email.' }, 400)
   const source = body?.source === 'app' ? 'app' : 'site'
-  await env.DB.prepare('INSERT OR IGNORE INTO subscribers (email, source) VALUES (?, ?)').bind(email, source).run()
+  await env.DB.prepare('INSERT OR IGNORE INTO subscribers (email, source, token) VALUES (?, ?, ?)').bind(email, source, crypto.randomUUID()).run()
   return json({ ok: true })
+}
+
+// Link in every email: https://polyergon.ai/unsubscribe?t=<token>
+async function unsubscribe(url, env) {
+  const t = url.searchParams.get('t') || ''
+  if (t) await env.DB.prepare('DELETE FROM subscribers WHERE token = ?').bind(t).run()
+  return new Response('<!doctype html><meta name="viewport" content="width=device-width"><title>Unsubscribed</title><body style="font:16px system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem"><h1>You are unsubscribed</h1><p>You will not get more Polyergon emails. <a href="/">Back to polyergon.ai</a></p>', { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
 
 export default {
   async fetch(request, env) {
-    if (new URL(request.url).pathname === '/api/subscribe') {
+    const url = new URL(request.url)
+    if (url.pathname === '/unsubscribe') {
+      try { return await unsubscribe(url, env) } catch { return new Response('Something went wrong. Try again later.', { status: 500 }) }
+    }
+    if (url.pathname === '/api/subscribe') {
+      if (request.method === 'POST') {
+        const { success } = await env.LIMITER.limit({ key: request.headers.get('cf-connecting-ip') || 'anon' })
+        if (!success) return json({ ok: false, error: 'Too many tries. Wait a minute.' }, 429)
+      }
       try { return await subscribe(request, env) } catch { return json({ ok: false, error: 'Something went wrong. Try again later.' }, 500) }
     }
     return env.ASSETS.fetch(request)

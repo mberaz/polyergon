@@ -1,5 +1,5 @@
 // Deploy: cd site && npx wrangler deploy  (static assets + /api/subscribe on Cloudflare, polyergon.ai + www)
-// Subscribers: npx wrangler d1 execute polyergon-subscribers --remote --command "SELECT * FROM subscribers ORDER BY created_at DESC"
+// Subscribers: npx wrangler d1 execute polyergon-subscribers --remote --command "SELECT email, source, created_at, token FROM subscribers ORDER BY created_at DESC"
 {
   "name": "polyergon",
   "main": "worker.js",
@@ -10,6 +10,9 @@
     { "pattern": "www.polyergon.ai", "custom_domain": true }
   ],
   "assets": { "directory": ".", "binding": "ASSETS" },
+  "ratelimits": [
+    { "name": "LIMITER", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } }
+  ],
   "d1_databases": [
     { "binding": "DB", "database_name": "polyergon-subscribers", "database_id": "ce35bb95-495d-4669-9624-a0434d10e5fb" }
   ]
