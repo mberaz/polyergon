@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.14
+
+- **Chat view works from the first message:** type in a brand-new session, your message shows instantly, a live line says what Claude is doing, and replies appear within a second of being written. Messages to a stopped session resume it first.
+
 ## 0.1.13
 
 - **Drop files into Chat view:** they show as 📎 chips and their paths go in with your message.
