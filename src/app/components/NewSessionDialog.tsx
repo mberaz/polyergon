@@ -189,25 +189,59 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
           type="text"
           value={name}
           onChange={e => setName(e.target.value)}
-          placeholder="Session name (optional)"
+          onKeyDown={e => { if (e.key === 'Enter' && model) start('general') }}
+          placeholder="Session name (optional, Enter = just chat)"
           title="Shown on the session card, in History and in Remote Control. Leave empty and Claude names it from your first message."
           className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-600 mb-4"
           autoFocus
         />
 
-        {/* Org select */}
+        {/* Org + Agent + Model in one row, so the start options stay on screen */}
+        <div className="mb-1 grid grid-cols-3 gap-2">
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Org<Hint text="Which Claude account runs this session. Each org has its own login, billing, skills, Slack and integrations." /></label>
+            <select
+              value={orgId}
+              onChange={e => e.target.value === '__add__' ? setShowAddOrg(true) : setOrgId(e.target.value)}
+              className="w-full bg-gray-800 text-white rounded px-2 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500"
+            >
+              {orgs.map(org => (
+                <option key={org.id} value={org.id}>{org.name}</option>
+              ))}
+              <option value="__add__">+ Register new org…</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Agent<Hint text="The CLI that runs the session: Claude Code, or GitHub Copilot CLI when installed." /></label>
+            <select
+              value={backend}
+              onChange={e => setBackend(e.target.value)}
+              disabled={backends.length < 2}
+              className="w-full bg-gray-800 text-white rounded px-2 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 disabled:opacity-60"
+            >
+              {backends.map(b => (
+                <option key={b.id} value={b.id}>{b.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Model<Hint text="The model the session starts with. You can switch later inside the session with /model." /></label>
+            <select
+              value={model}
+              onChange={e => setModel(e.target.value)}
+              disabled={modelsLoading || models.length === 0}
+              className="w-full bg-gray-800 text-white rounded px-2 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 disabled:opacity-60"
+            >
+              {modelsLoading && <option>Loading…</option>}
+              {!modelsLoading && models.length === 0 && <option value="">{modelsError ?? 'No models'}</option>}
+              {models.map(m => (
+                <option key={m.id} value={m.id}>{m.displayName}</option>
+              ))}
+            </select>
+          </div>
+        </div>
         <div className="mb-3">
-          <label className="text-xs text-gray-500 mb-1 block">Org<Hint text="Which Claude account runs this session. Each org has its own login, billing, skills, Slack and integrations." /></label>
-          <select
-            value={orgId}
-            onChange={e => setOrgId(e.target.value)}
-            className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500"
-          >
-            {orgs.map(org => (
-              <option key={org.id} value={org.id}>{org.name}</option>
-            ))}
-          </select>
-          {showAddOrg ? (
+          {showAddOrg && (
             <div className="mt-2 space-y-2 border border-dashed border-gray-700 rounded p-3">
               <input
                 type="text"
@@ -243,49 +277,11 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
                 >Add org</button>
               </div>
             </div>
-          ) : (
-            <button
-              onClick={() => setShowAddOrg(true)}
-              className="w-full text-left px-3 py-2 mt-2 text-sm text-gray-500 hover:text-gray-300 border border-dashed border-gray-700 rounded hover:border-gray-500 transition-colors"
-            >
-              <span title="Add another Claude account (e.g. a second company) with its own config folder.">+ Register new org…</span>
-            </button>
           )}
         </div>
 
-        {/* Backend + Model */}
-        <div className="mb-3 grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">Agent<Hint text="The CLI that runs the session: Claude Code, or GitHub Copilot CLI when installed." /></label>
-            <select
-              value={backend}
-              onChange={e => setBackend(e.target.value)}
-              disabled={backends.length < 2}
-              className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 disabled:opacity-60"
-            >
-              {backends.map(b => (
-                <option key={b.id} value={b.id}>{b.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">Model<Hint text="The model the session starts with. You can switch later inside the session with /model." /></label>
-            <select
-              value={model}
-              onChange={e => setModel(e.target.value)}
-              disabled={modelsLoading || models.length === 0}
-              className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 disabled:opacity-60"
-            >
-              {modelsLoading && <option>Loading…</option>}
-              {!modelsLoading && models.length === 0 && <option value="">{modelsError ?? 'No models'}</option>}
-              {models.map(m => (
-                <option key={m.id} value={m.id}>{m.displayName}</option>
-              ))}
-            </select>
-          </div>
-        </div>
         {/* Save the current agent+model as the default for future sessions */}
-        <div className="flex items-center gap-2 mb-3 -mt-1">
+        <div className="flex items-center gap-2 mb-3 -mt-2">
           <button
             onClick={setAsDefault}
             title="Pre-select this agent and model every time you open New Session"
