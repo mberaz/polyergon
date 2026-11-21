@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic' // never prerender: reads live local stat
 import { DATA_DIR } from '../../../../lib/dataDir'
 import { NextResponse } from 'next/server'
 import path from 'path'
-import { getSessionMessages } from '@/lib/sessionStore'
+import { getRecentMessages } from '@/lib/sessionStore'
 import { orgRegistry } from '@/lib/orgRegistry'
 
 const TRASH_DIR = path.join(DATA_DIR, 'trash')
@@ -20,16 +20,18 @@ async function* candidatePaths(id: string) {
   }
 }
 
+// Chat view polls every few seconds: remember where each transcript lives
+const pathCache = new Map<string, string>()
+
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const fs = await import('fs')
   try {
+    const cached = pathCache.get(params.id)
+    if (cached && fs.existsSync(cached)) return NextResponse.json({ messages: getRecentMessages(cached) })
     for await (const { filePath } of candidatePaths(params.id)) {
-      try {
-        await fs.promises.access(filePath)
-        const all = await getSessionMessages(filePath)
-        const messages = all.slice(-30)
-        return NextResponse.json({ messages })
-      } catch { /* not in this dir */ }
+      if (!fs.existsSync(filePath)) continue
+      pathCache.set(params.id, filePath)
+      return NextResponse.json({ messages: getRecentMessages(filePath) })
     }
     return NextResponse.json({ messages: [] })
   } catch {

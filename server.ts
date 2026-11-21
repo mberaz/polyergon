@@ -2,7 +2,7 @@ import { createServer } from 'http'
 import { parse } from 'url'
 import path from 'path'
 import os from 'os'
-import { existsSync, statSync, mkdirSync, writeFileSync } from 'fs'
+import { existsSync, statSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs'
 import { getGitRoot } from './src/lib/gitUtils'
 import next from 'next'
 import { WebSocketServer, WebSocket } from 'ws'
@@ -407,6 +407,22 @@ app.prepare().then(async () => {
         writeFileSync(tmpPath, Buffer.from(base64, 'base64'))
         writeToSession(currentSessionId, tmpPath)
         send({ type: 'image-pasted', path: tmpPath })
+
+      } else if (msg.type === 'drop-files') {
+        // Files dropped on the terminal: save copies (original names) and type their paths
+        if (!currentSessionId || !Array.isArray(msg.files)) return
+        const dir = mkdtempSync(path.join(os.tmpdir(), 'polyergon-drop-'))
+        const paths: string[] = []
+        for (const f of (msg.files as { name?: unknown; data?: unknown }[]).slice(0, 20)) {
+          const name = path.basename(String(f.name ?? 'file')).replace(/[\x00-\x1f\x7f]/g, '').slice(0, 200) || 'file'
+          const buf = Buffer.from(String(f.data ?? ''), 'base64')
+          if (buf.length > 25 * 1024 * 1024) continue
+          const p = path.join(dir, name)
+          writeFileSync(p, buf)
+          paths.push(/[^\w@%+=:,./-]/.test(p) ? `'${p.replace(/'/g, `'\\''`)}'` : p)
+        }
+        if (paths.length) writeToSession(currentSessionId, paths.join(' ') + ' ')
+        send({ type: 'files-dropped', paths })
 
       } else if (msg.type === 'meeting-start') {
         const result = meetingManager.start((msg.title as string) ?? '', (msg.orgId as string) ?? DEFAULT_ORG_ID)

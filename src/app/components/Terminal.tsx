@@ -105,6 +105,37 @@ export function Terminal({ visible, ws }: Props) {
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [])
 
+  // Drop files onto the terminal: the server saves a copy and types its path
+  // (a browser can't see the dropped file's real path)
+  const [dragging, setDragging] = useState(false)
+  useEffect(() => {
+    const el = containerRef.current?.parentElement
+    if (!el) return
+    const MAX = 25 * 1024 * 1024
+    const over = (e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); setDragging(true) } }
+    const leave = (e: DragEvent) => { if (!el.contains(e.relatedTarget as Node)) setDragging(false) }
+    const drop = async (e: DragEvent) => {
+      const files = [...(e.dataTransfer?.files ?? [])]
+      setDragging(false)
+      if (!files.length) return
+      e.preventDefault()
+      const ok = files.filter(f => f.size <= MAX)
+      if (ok.length < files.length) alert(`Skipped files over 25 MB: ${files.filter(f => f.size > MAX).map(f => f.name).join(', ')}`)
+      if (!ok.length) return
+      setImageStatus('uploading')
+      const read = (f: File) => new Promise<{ name: string; data: string }>((res, rej) => {
+        const r = new FileReader()
+        r.onload = () => res({ name: f.name, data: String(r.result).split(',')[1] ?? '' })
+        r.onerror = () => rej(r.error)
+        r.readAsDataURL(f)
+      })
+      try { wsRef.current?.send(JSON.stringify({ type: 'drop-files', files: await Promise.all(ok.map(read)) })) } catch { setImageStatus('idle') }
+      xtermRef.current?.focus()
+    }
+    el.addEventListener('dragover', over); el.addEventListener('dragleave', leave); el.addEventListener('drop', drop)
+    return () => { el.removeEventListener('dragover', over); el.removeEventListener('dragleave', leave); el.removeEventListener('drop', drop) }
+  }, [visible])
+
   // Intercept image paste from clipboard
   useEffect(() => {
     const el = containerRef.current
@@ -155,7 +186,7 @@ export function Terminal({ visible, ws }: Props) {
         const somethingElseFocused = active && active !== document.body && !containerRef.current?.contains(active)
         if (!somethingElseFocused) xtermRef.current?.focus()
       }
-      if (msg.type === 'image-pasted') {
+      if (msg.type === 'image-pasted' || msg.type === 'files-dropped') {
         setImageStatus('done')
         setTimeout(() => setImageStatus('idle'), 2000)
       }
@@ -167,17 +198,22 @@ export function Terminal({ visible, ws }: Props) {
   return (
     <div className="absolute inset-0" style={{ visibility: visible ? 'visible' : 'hidden' }}>
       <div ref={containerRef} className="absolute inset-0" />
+      {dragging && (
+        <div className="absolute inset-2 z-20 rounded-xl border-2 border-dashed border-blue-400 bg-blue-950/40 flex items-center justify-center pointer-events-none">
+          <p className="text-sm text-blue-100 bg-gray-900/90 px-4 py-2 rounded-lg">Drop to add the file to the session</p>
+        </div>
+      )}
       {imageStatus !== 'idle' && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-900/95 border border-gray-700 text-sm px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-10 pointer-events-none">
           {imageStatus === 'uploading' ? (
             <>
               <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-              <span className="text-gray-300">Saving image…</span>
+              <span className="text-gray-300">Saving…</span>
             </>
           ) : (
             <>
               <span className="text-green-400">✓</span>
-              <span className="text-gray-300">Image path inserted</span>
+              <span className="text-gray-300">Path inserted</span>
             </>
           )}
         </div>

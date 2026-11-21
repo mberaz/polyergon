@@ -86,6 +86,42 @@ export interface ChatMessage {
   timestamp: string | null
 }
 
+function messageOf(entry: { type?: string; timestamp?: string; message?: { role?: string; content?: unknown } }): ChatMessage | null {
+  if (entry.type === 'user' && entry.message?.role === 'user') {
+    const c = entry.message.content as string | { text?: string }[] | undefined
+    const text = typeof c === 'string' ? c : c?.[0]?.text ?? ''
+    return text ? { role: 'user', content: text, timestamp: entry.timestamp ?? null } : null
+  }
+  if (entry.type === 'assistant' && entry.message?.role === 'assistant') {
+    const parts = (entry.message.content ?? []) as ContentPart[]
+    const text = parts.filter(p => p.type === 'text').map(p => p.text).join('')
+    return text ? { role: 'assistant', content: text, timestamp: entry.timestamp ?? null } : null
+  }
+  return null
+}
+
+// The last `keep` messages, reading only the end of the file (1 MB, doubling
+// up to 32 MB until enough messages are found). For live views of huge transcripts.
+export function getRecentMessages(filePath: string, keep = 30): ChatMessage[] {
+  const size = fs.statSync(filePath).size
+  let win = 1024 * 1024
+  for (;;) {
+    const len = Math.min(size, win)
+    const buf = Buffer.alloc(len)
+    const fd = fs.openSync(filePath, 'r')
+    try { fs.readSync(fd, buf, 0, len, size - len) } finally { fs.closeSync(fd) }
+    const lines = buf.toString('utf-8').split('\n')
+    if (len < size) lines.shift() // first line is cut
+    const msgs: ChatMessage[] = []
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try { const m = messageOf(JSON.parse(line)); if (m) msgs.push(m) } catch { /* partial */ }
+    }
+    if (msgs.length >= keep || len >= size || win >= 32 * 1024 * 1024) return msgs.slice(-keep)
+    win *= 2
+  }
+}
+
 // Streams the transcript line by line and keeps only the last `keepLast`
 // messages. Transcripts reach hundreds of MB (a 209 MB one exists); reading
 // the whole file into a string OOM-killed the server even at an 8 GB heap.
