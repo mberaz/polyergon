@@ -94,10 +94,15 @@ function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview }: { t: PrTrack; p
         <a href={t.url} target="_blank" rel="noreferrer" className="flex-shrink-0 text-xs px-3 py-1 rounded-lg border border-gray-700 hover:bg-gray-800 text-gray-200">Open PR ↗</a>
       </header>
 
-      <div className="mt-3 flex items-center gap-2 flex-wrap text-xs text-gray-400">
+      {!editReview && !review.channel && !review.reviewers.length && !t.slack?.permalink
+        ? <div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2">
+            <p className="text-xs text-amber-300">Not sent for review yet. Choose this PR's Slack channel and reviewers.</p>
+            <button onClick={() => setEditReview(true)} className="ml-auto text-xs px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white whitespace-nowrap">Choose</button>
+          </div>
+        : <div className="mt-3 flex items-center gap-2 flex-wrap text-xs text-gray-400">
         <span>Review in <b className="text-gray-200 font-medium">{review.channel ? `#${review.channel.name}` : 'no Slack channel'}</b>{review.reviewers.length > 0 && <> · reviewers <b className="text-gray-200 font-medium">{review.reviewers.join(', ')}</b></>}</span>
         {!editReview && <button onClick={() => setEditReview(true)} className="text-blue-400 hover:text-blue-300">Change</button>}
-      </div>
+      </div>}
       {editReview && <ReviewEditor initial={review} onSave={r => { onSetReview(r); setEditReview(false) }} onCancel={() => setEditReview(false)} />}
 
       <div className="mt-4"><Track steps={prSteps(t, !!review.channel)} working={t.state === 'working'} /></div>

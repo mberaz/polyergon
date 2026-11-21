@@ -180,9 +180,12 @@ test('starting finds every open PR of the session, not just the latest', async (
   for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
   session.prUrl = B
   foundPrs = [A, B, C]
-  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
+  postedTo.length = 0
+  const p = pipelineEngine.create('L1', { slackChannel: { id: 'C1', name: 'reviews' }, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
   await flush(); await flush()
   expect(p.prs.map((t: { url: string }) => t.url).sort()).toEqual([A, B, C].sort())
+  // Only the session's own PR is posted; found ones wait for you to pick their channel
+  expect(postedTo).toEqual(['reviews'])
   pipelineEngine.stop(p.id)
   foundPrs = []
 })

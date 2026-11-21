@@ -238,7 +238,8 @@ class PipelineEngine {
     const urls = await openPrsOfSession(sid).catch(() => [] as string[])
     if (!ACTIVE_PHASES.includes(p.phase)) return
     let added = false
-    for (const u of urls) if (!p.prs.some(t => t.url === u)) { this.addTrack(p, u, 'Found open PR'); added = true }
+    // Found, not chosen: no Slack post until you pick this PR's channel (Change)
+    for (const u of urls) if (!p.prs.some(t => t.url === u)) { this.addTrack(p, u, 'Found open PR', { channel: null, reviewers: [] }); added = true }
     if (added) this.step(p.id, true)
   }
 
