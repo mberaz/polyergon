@@ -43,6 +43,9 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
     setError(null)
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-pr-review', id, liveId, url, review }))
   }, [])
+  const removePipelinePr = useCallback((id: string, liveId: string, url: string) => {
+    wsRef.current?.send(JSON.stringify({ type: 'pipeline-remove-pr', id, liveId, url }))
+  }, [])
   const setPipelinePostMerge = useCallback((id: string, on: boolean, checks: string) => {
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-post-merge', id, on, checks }))
   }, [])
@@ -68,5 +71,5 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-remove', id }))
   }, [])
 
-  return { setPipelinePostMerge, instructPipeline, removePipeline, setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline }
+  return { removePipelinePr, setPipelinePostMerge, instructPipeline, removePipeline, setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline }
 }

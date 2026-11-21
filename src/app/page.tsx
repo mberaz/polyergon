@@ -68,7 +68,7 @@ export default function Home() {
   const { watchers, watcherError, watcherCmd } = useSlackWatchers(ws, (title, body) => notifyNeedsInput(`👂 ${title}`, body))
   const [showWatcherDialog, setShowWatcherDialog] = useState(false)
   const [editWatcher, setEditWatcher] = useState<SlackWatcher | null>(null)
-  const { setPipelinePostMerge, instructPipeline, removePipeline, setPipelineAuto, pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
+  const { removePipelinePr, setPipelinePostMerge, instructPipeline, removePipeline, setPipelineAuto, pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
   // prEntries still feeds the notification-suppression logic; the PRs tab
   // itself now renders the GitHub workload inbox
   const { entries: prEntries } = usePrSessions(ws)
@@ -545,6 +545,7 @@ export default function Home() {
               onSetPrReview={(id, url, review) => setPrReview(id, lid, url, review)}
               onTell={(id, url, text) => instructPipeline(id, lid, url, text)}
               onSetPostMerge={setPipelinePostMerge}
+              onRemovePr={(id, url) => removePipelinePr(id, lid, url)}
               sessionBusy={liveSessions.find(s => s.id === lid)?.status === 'thinking'}
               onAct={(id, prUrl) => actPipeline(id, lid, prUrl)}
               onDismiss={dismissPipeline}

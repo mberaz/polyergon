@@ -93,7 +93,8 @@ function LiveStatus({ t, p, auto, sessionBusy }: { t: PrTrack; p: Pipeline; auto
   )
 }
 
-function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTell }: { t: PrTrack; p: Pipeline; auto: AutoSteps; sessionBusy: boolean; onSend: () => void; onDismiss: () => void; onSetReview: (r: PrReview) => void; onTell: (text: string) => void }) {
+function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTell, onRemove }: { t: PrTrack; p: Pipeline; auto: AutoSteps; sessionBusy: boolean; onSend: () => void; onDismiss: () => void; onSetReview: (r: PrReview) => void; onTell: (text: string) => void; onRemove: () => void }) {
+  const [closing, setClosing] = useState(false)
   const [tell, setTell] = useState('')
   const [told, setTold] = useState(false)
   const sendTell = () => { if (!tell.trim()) return; onTell(tell.trim()); setTell(''); setTold(true); setTimeout(() => setTold(false), 4000) }
@@ -117,7 +118,8 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
             <span>· CI fixes {t.ciFixes}/{max}</span>
           </p>
         </div>
-        <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium ${cls}`}>{label}</span>
+        <button onClick={() => setClosing(true)} title={t.state === 'done' ? 'Finished with it? Close this PR' : 'Stop tracking this PR'}
+          className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium hover:ring-1 hover:ring-gray-500 ${cls}`}>{label}{t.state === 'done' && ' · Close'}</button>
         <a href={t.url} target="_blank" rel="noreferrer" className="flex-shrink-0 text-xs px-3 py-1 rounded-lg border border-gray-700 hover:bg-gray-800 text-gray-200">Open PR ↗</a>
       </header>
 
@@ -131,6 +133,18 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
         {!editReview && <button onClick={() => setEditReview(true)} className="text-blue-400 hover:text-blue-300">Change</button>}
       </div>}
       <LiveStatus t={t} p={p} auto={auto} sessionBusy={sessionBusy} />
+      {closing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setClosing(false)}>
+          <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} className="w-[420px] max-w-[92vw] rounded-xl border border-gray-700 bg-gray-900 p-5 shadow-xl">
+            <p className="text-sm font-semibold text-gray-100">{t.state === 'done' ? 'Close this PR?' : 'Stop tracking this PR?'}</p>
+            <p className="text-xs text-gray-400 mt-2">{shortPr(t.url)} leaves this automation{t.state === 'done' ? '' : ': no more review or CI fixes for it'}. The PR on GitHub and the session are not touched.</p>
+            <div className="flex justify-end gap-2 mt-4">
+              <button autoFocus onClick={() => setClosing(false)} className="text-xs px-3 py-1.5 rounded-md text-gray-300 hover:bg-gray-800">Keep</button>
+              <button onClick={() => { onRemove(); setClosing(false) }} className="text-xs px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white">{t.state === 'done' ? 'Close it' : 'Stop tracking'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {editReview && <ReviewEditor initial={review} onSave={r => { onSetReview(r); setEditReview(false) }} onCancel={() => setEditReview(false)} />}
       <div className="mt-3 flex gap-2">
         <input dir="auto" value={tell} onChange={e => setTell(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendTell() }}
@@ -182,7 +196,7 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
   )
 }
 
-export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onTell, onSetPostMerge, sessionBusy = false, onAct, onDismiss, onSetAuto }: {
+export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onTell, onSetPostMerge, onRemovePr, sessionBusy = false, onAct, onDismiss, onSetAuto }: {
   sessionName: string
   pipeline: Pipeline | null
   error: string | null
@@ -194,6 +208,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   onSetPrReview: (id: string, url: string, review: PrReview) => void
   onTell: (id: string, url: string, text: string) => void
   onSetPostMerge: (id: string, on: boolean, checks: string) => void
+  onRemovePr: (id: string, url: string) => void
   sessionBusy?: boolean
   onAct: (id: string, prUrl: string | null) => void
   onDismiss: (id: string, prUrl: string | null) => void
@@ -247,7 +262,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
         {/* PRs */}
         <div className="space-y-5 min-w-0">
           {pipeline?.suggestion && <SuggestionBox s={pipeline.suggestion} onSend={() => onAct(pipeline.id, null)} onDismiss={() => onDismiss(pipeline.id, null)} />}
-          {pipeline?.prs.map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} sessionBusy={sessionBusy} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} onTell={text => onTell(pipeline.id, t.url, text)} />)}
+          {pipeline?.prs.map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} sessionBusy={sessionBusy} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} onTell={text => onTell(pipeline.id, t.url, text)} onRemove={() => onRemovePr(pipeline.id, t.url)} />)}
           {running && pipeline && (
             <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-4 space-y-2">
               <div className="flex gap-2">

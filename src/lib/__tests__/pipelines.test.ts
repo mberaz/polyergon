@@ -307,3 +307,15 @@ test('post-merge checks are optional: off, a merged PR is done; on, the session 
   expect(p.prs[0].state).toBe('done')
   expect(p.phase).toBe('done')
 })
+
+test('you can close one PR you are finished with', async () => {
+  const A = 'https://github.com/o/a/pull/1', B = 'https://github.com/o/b/pull/2'
+  prs[A] = base(1); prs[B] = base(2)
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false, postMerge: false } })
+  await flush(); pipelineEngine.addPr(p.id, A); pipelineEngine.addPr(p.id, B); await flush()
+  expect(pipelineEngine.removePr(p.id, A)).toBeNull()
+  expect(p.prs.map((t: { url: string }) => t.url)).toEqual([B])
+  expect(pipelineEngine.removePr(p.id, A)).toEqual({ error: 'PR not found' })
+  pipelineEngine.stop(p.id)
+})

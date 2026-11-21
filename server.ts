@@ -471,6 +471,9 @@ app.prepare().then(async () => {
         // The one place an automation's message reaches a session: your click
         const err = pipelineEngine.act(msg.id as string, (msg.prUrl as string) || null)
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
+      } else if (msg.type === 'pipeline-remove-pr') {
+        const err = pipelineEngine.removePr(msg.id as string, String(msg.url ?? ''))
+        if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
       } else if (msg.type === 'pipeline-post-merge') {
         pipelineEngine.setPostMerge(msg.id as string, msg.on === true, typeof msg.checks === 'string' ? msg.checks : undefined)
       } else if (msg.type === 'pipeline-auto') {

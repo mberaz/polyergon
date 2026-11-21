@@ -387,6 +387,15 @@ class PipelineEngine {
     this.step(p.id)
   }
 
+  // Stop tracking one PR (you're finished with it). The PR itself is untouched.
+  removePr(id: string, url: string): { error: string } | null {
+    const p = this.items.find(x => x.id === id)
+    if (!p?.prs.some(t => t.url === url)) return { error: 'PR not found' }
+    p.prs = p.prs.filter(t => t.url !== url)
+    this.update(p, { workingOn: p.workingOn === url ? null : p.workingOn }, `Closed ${shortPr(url)}: no longer tracked`)
+    return null
+  }
+
   // The optional post-merge step: on/off and what else to verify
   setPostMerge(id: string, on: boolean, checks?: string) {
     const p = this.items.find(x => x.id === id)
