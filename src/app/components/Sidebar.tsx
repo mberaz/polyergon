@@ -869,9 +869,15 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
       <div className="px-3 pt-4 pb-3 border-b border-gray-800/60">
         <div className="flex items-center justify-between">
           <span onClick={onHome} title="Home" className="cursor-pointer text-sm font-bold text-white tracking-tight px-1 hover:text-blue-300">Polyergon<span className="ml-1.5 text-[10px] font-normal text-gray-500" title="Polyergon version">v{process.env.NEXT_PUBLIC_POLYERGON_VERSION}</span>{process.env.NEXT_PUBLIC_POLYERGON_ENV === 'dev' && <span className="ml-2 text-[10px] font-semibold bg-amber-500 text-black rounded px-1.5 py-0.5">DEV</span>}</span>
-          {installPrompt && <button onClick={() => { installPrompt.prompt(); setInstallPrompt(null) }} title="Install Polyergon as an app: its own window and Dock icon, and notifications that come from Polyergon" className="text-xs font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-md px-2.5 py-1">Install app</button>}
           <button onClick={onOpenSettings} title="Settings" className="flex items-center gap-1.5 text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1 transition-colors"><span className="text-sm leading-none">⚙</span>Settings</button>
         </div>
+        {installPrompt && (
+          <button onClick={() => { installPrompt.prompt(); setInstallPrompt(null) }}
+            title="Its own window and Dock icon, and notifications that come from Polyergon"
+            className="w-full mb-2 flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-blue-800/60 bg-blue-950/40 text-xs text-blue-200 hover:bg-blue-900/40">
+            <span aria-hidden>⤓</span> Install Polyergon as an app
+          </button>
+        )}
 
         {showOrgs && <OrgsDialog orgs={orgs} onClose={() => setShowOrgs(false)} onChanged={onOrgsChanged} />}
 
