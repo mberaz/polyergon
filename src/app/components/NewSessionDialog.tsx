@@ -77,6 +77,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
 
   // Only offer backends whose CLI is actually installed (Copilot stays hidden
   // until its binary is on PATH). Pre-select the saved default agent if present.
+  const [noAgent, setNoAgent] = useState(false)
   useEffect(() => {
     const saved = loadDefault()
     setSavedDefault(saved)
@@ -84,6 +85,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
     fetch('/api/backends')
       .then(r => r.json())
       .then((d: { backends?: BackendOption[] }) => {
+        setNoAgent(!d.backends?.length)
         if (d.backends?.length) {
           setBackends(d.backends)
           const pref = saved.backend
@@ -183,6 +185,12 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
       <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-[560px] max-w-[95vw] max-h-[92vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
         <h2 className="text-white font-semibold mb-1">New Session</h2>
         <p className="text-xs text-gray-500 mb-4">Pick how to start. <b className="text-gray-400">Just chat</b> works for most things; pick a folder only when Claude should work on that code.</p>
+
+        {noAgent && (
+          <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-800/60 rounded p-2 mb-4">
+            Claude Code is not installed, so sessions can&apos;t start. In Terminal run <code className="text-amber-200">curl -fsSL https://claude.ai/install.sh | bash</code>, then run <code className="text-amber-200">claude</code> once to sign in.
+          </p>
+        )}
 
         {/* Name field */}
         <input

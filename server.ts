@@ -11,7 +11,7 @@ import { v4 as uuid } from 'uuid'
 import { liveSessionStore, LiveSessionStore } from './src/lib/liveSessionStore'
 import { spawnSession, writeToSession, submitLine, sendWhenReady, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onAnyPrUrlChange, onAnyRcUrlChange, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
-import { DEFAULT_BACKEND } from './src/lib/backends'
+import { DEFAULT_BACKEND, availableBackends, getBackend } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
 import { pipelineEngine, type PipelineConfig } from './src/lib/pipelines'
 import { keepAwake } from './src/lib/keepAwake'
@@ -19,6 +19,15 @@ import { sessionWatch } from './src/lib/sessionWatch'
 import { createWorktree, removeWorktree } from './src/lib/worktrees'
 import { updateTask } from './src/lib/taskStore'
 import type { LiveSession } from './src/lib/liveSessionStore'
+
+// A missing CLI makes every session exit at once and sit "idle": say so instead.
+function missingCli(backendId: unknown): string | null {
+  const b = getBackend((backendId as string) || DEFAULT_BACKEND)
+  if (availableBackends().some(x => x.id === b.id)) return null
+  return b.id === 'claude'
+    ? 'Claude Code is not installed. Install it (curl -fsSL https://claude.ai/install.sh | bash), run `claude` once to sign in, then try again.'
+    : `${b.label} is not installed on this Mac (\`${b.bin}\` not found).`
+}
 
 // What the browser sees of a live session
 const sessionView = (s: LiveSession) => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot ?? getGitRoot(s.cwd), // restored sessions may lack it (cached lookup)
@@ -203,6 +212,8 @@ app.prepare().then(async () => {
         send({ type: 'sessions', sessions: liveSessionStore.list().map(sessionView) })
 
       } else if (msg.type === 'create') {
+        const noCli = missingCli(msg.backend)
+        if (noCli) { send({ type: 'error', message: noCli }); return }
         let cwd = (msg.cwd as string) || process.env.HOME!
         if (cwd === 'general') {
           cwd = path.join(process.env.HOME!, 'General', uuid().slice(0, 8))
@@ -246,6 +257,8 @@ app.prepare().then(async () => {
         if (typeof msg.prompt === 'string' && msg.prompt.trim()) sendWhenReady(id, msg.prompt.slice(0, 20000))
 
       } else if (msg.type === 'resume') {
+        const noCli = missingCli(msg.backend)
+        if (noCli) { send({ type: 'error', message: noCli }); return }
         let cwd = (msg.cwd as string) || process.env.HOME!
         if (cwd === 'general') {
           cwd = path.join(process.env.HOME!, 'General', uuid().slice(0, 8))

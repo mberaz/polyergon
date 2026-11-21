@@ -205,7 +205,8 @@ function isBinaryAvailable(bin: string): boolean {
   } catch {
     ok = false
   }
-  availabilityCache.set(bin, ok)
+  // Cache only hits, so installing a CLI works without restarting Polyergon.
+  if (ok) availabilityCache.set(bin, ok)
   return ok
 }
 
