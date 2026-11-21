@@ -2,7 +2,7 @@
 
 <h1 align="center">Polyergon</h1>
 
-**Run every Claude Code session from one screen.**
+**Boost your velocity: run every Claude Code session from one screen.**
 
 Polyergon is a local app for people who run many Claude Code (or GitHub Copilot CLI) sessions at once. It shows which sessions need you, ships their pull requests, keeps up with Slack, and records meetings. It runs on your machine, and it's open source under the MIT license.
 
