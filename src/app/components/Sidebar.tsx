@@ -650,6 +650,15 @@ function FolderIcon({ open }: { open: boolean }) {
 }
 
 export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onRemoveWorktree, onReview, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenSettings, onOpenBoard, onOpenAutomations, onHome, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
+  // Chrome fires beforeinstallprompt when the app can be installed (and not yet installed).
+  const [installPrompt, setInstallPrompt] = useState<{ prompt: () => void } | null>(null)
+  useEffect(() => {
+    const on = (e: Event) => { e.preventDefault(); setInstallPrompt(e as unknown as { prompt: () => void }) }
+    const done = () => setInstallPrompt(null)
+    window.addEventListener('beforeinstallprompt', on)
+    window.addEventListener('appinstalled', done)
+    return () => { window.removeEventListener('beforeinstallprompt', on); window.removeEventListener('appinstalled', done) }
+  }, [])
   // Search text is remembered per org, so switching orgs and back restores
   // whatever you'd typed in each
   const [searchByOrg, setSearchByOrg] = useState<Record<string, string>>({})
@@ -860,6 +869,7 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
       <div className="px-3 pt-4 pb-3 border-b border-gray-800/60">
         <div className="flex items-center justify-between">
           <span onClick={onHome} title="Home" className="cursor-pointer text-sm font-bold text-white tracking-tight px-1 hover:text-blue-300">Polyergon<span className="ml-1.5 text-[10px] font-normal text-gray-500" title="Polyergon version">v{process.env.NEXT_PUBLIC_POLYERGON_VERSION}</span>{process.env.NEXT_PUBLIC_POLYERGON_ENV === 'dev' && <span className="ml-2 text-[10px] font-semibold bg-amber-500 text-black rounded px-1.5 py-0.5">DEV</span>}</span>
+          {installPrompt && <button onClick={() => { installPrompt.prompt(); setInstallPrompt(null) }} title="Install Polyergon as an app: its own window and Dock icon, and notifications that come from Polyergon" className="text-xs font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-md px-2.5 py-1">Install app</button>}
           <button onClick={onOpenSettings} title="Settings" className="flex items-center gap-1.5 text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md px-2.5 py-1 transition-colors"><span className="text-sm leading-none">⚙</span>Settings</button>
         </div>
 
