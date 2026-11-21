@@ -9,7 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { isAllowedRequest } from './src/lib/requestGuard'
 import { v4 as uuid } from 'uuid'
 import { liveSessionStore, LiveSessionStore } from './src/lib/liveSessionStore'
-import { spawnSession, writeToSession, submitLine, sendWhenReady, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onAnyPrUrlChange, onAnyRcUrlChange, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
+import { spawnSession, writeToSession, submitLine, sendWhenReady, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onAnyPrUrlChange, onAnyRcUrlChange, onAnySessionId, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND, availableBackends, getBackend } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
@@ -188,6 +188,7 @@ app.prepare().then(async () => {
     const cleanupAnyStatus = onAnyStatusChange((id, status) => send({ type: 'sessionStatus', id, status }))
     const cleanupAnyPrUrl = onAnyPrUrlChange((id, prUrl) => send({ type: 'sessionPrUrl', id, prUrl }))
     const cleanupAnyRcUrl = onAnyRcUrlChange((id, rcUrl) => send({ type: 'sessionRcUrl', id, rcUrl }))
+    const cleanupAnySessionId = onAnySessionId((id, claudeSessionId) => send({ type: 'sessionClaudeId', id, claudeSessionId }))
 
     function attachToSession(sessionId: string) {
       cleanupOutput?.()
@@ -498,7 +499,7 @@ app.prepare().then(async () => {
       cleanupStatus?.()
       cleanupAnyStatus()
       cleanupAnyPrUrl()
-      cleanupAnyRcUrl()
+      cleanupAnyRcUrl(); cleanupAnySessionId()
     })
   })
 

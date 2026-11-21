@@ -32,8 +32,10 @@ const Hint = ({ text }: { text: string }) => (
 )
 
 export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onConfirm, onResumeById, onCancel }: Props) {
-  const [custom, setCustom] = useState('')
-  const [showCustom, setShowCustom] = useState(false)
+  const [mode, setMode] = useState<'chat' | 'folder' | 'slack'>('chat')
+  const [firstMsg, setFirstMsg] = useState('')
+  const [query, setQuery] = useState('')
+  const [showMore, setShowMore] = useState(false)
   const [resumeId, setResumeId] = useState('')
   const [showResumeById, setShowResumeById] = useState(false)
   const [name, setName] = useState('')
@@ -66,7 +68,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
       /\/General(\/[^/]+)?$/.test(p) ||               // ~/General and its per-chat scratch dirs
       /\/\.(claude-session-manager|polyergon[^/]*)(\/|$)/.test(p) || // app data + meeting recording dirs
       /^\/private\/(tmp|var\/folders)\//.test(p) ||   // macOS temp dirs
-      p === '/tmp'
+      p === '/tmp' || p === 'general'
     const unique = Array.from(new Set(knownCwds.filter(Boolean))).filter(p => !isInternal(p))
     return unique.sort((a, b) => {
       const ba = a.split('/').at(-1) ?? a
@@ -140,7 +142,6 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
   const isCurrentDefault = savedDefault.backend === backend && savedDefault.model === model && !!model
 
   // Start from Slack: the session first reads the channel / thread / DM for context
-  const [showSlack, setShowSlack] = useState(false)
   const [slackText, setSlackText] = useState('')
   const [slackChannel, setSlackChannel] = useState<SlackChannel | null>(null)
   const [slackLink, setSlackLink] = useState('')
@@ -163,7 +164,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
   const [isolate, setIsolate] = useState(false)
   function start(cwd: string) {
     localStorage.setItem('lastCwd', cwd)
-    onConfirm(cwd, name.trim(), orgId, backend, model, undefined, cwd !== 'general' && isolate)
+    onConfirm(cwd, name.trim(), orgId, backend, model, firstMsg.trim() || undefined, cwd !== 'general' && isolate)
   }
 
   async function submitNewOrg() {
@@ -180,292 +181,168 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
     }
   }
 
+  const q = query.trim()
+  const shown = folders.filter(f => f.toLowerCase().includes(q.toLowerCase()))
+  const typedPath = q.startsWith('/') || q.startsWith('~') ? q.replace(/^~/, '') : ''
+  const folderPick = selectedCwd && selectedCwd !== 'general' ? selectedCwd : ''
+  const canStart = !!model && (mode === 'chat' || (mode === 'folder' && !!(folderPick || typedPath)) || (mode === 'slack' && (linkOk || !!chName)))
+  const startLabel = mode === 'chat' ? 'Start chat'
+    : mode === 'slack' ? 'Start with Slack context'
+    : folderPick || typedPath ? `Start in ${(folderPick || typedPath).split('/').filter(Boolean).at(-1)}` : 'Pick a folder'
+  function go() {
+    if (!canStart) return
+    if (mode === 'chat') start('general')
+    else if (mode === 'slack') startFromSlack()
+    else start(folderPick || typedPath)
+  }
+  const orgName = orgs.find(o => o.id === orgId)?.name ?? 'Default'
+  const backendLabel = backends.find(b => b.id === backend)?.label ?? backend
+  const modelLabel = modelsLoading ? 'loading models…' : models.find(m => m.id === model)?.displayName ?? (modelsError ?? 'no model')
+  const input = 'w-full bg-gray-800 text-white rounded-md px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-500'
+  const enterStarts = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go() } }
+  const TABS = [
+    { id: 'chat', label: 'Chat', hint: 'Questions, research, docs, one-off tasks. Not tied to a project.' },
+    { id: 'folder', label: 'Folder', hint: 'Claude works on the code in a folder: reads, edits and runs commands there.' },
+    { id: 'slack', label: 'Slack', hint: 'Claude reads a channel, thread or DM first, then helps with it.' },
+  ] as const
+
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-[560px] max-w-[95vw] max-h-[92vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
-        <h2 className="text-white font-semibold mb-1">New Session</h2>
-        <p className="text-xs text-gray-500 mb-4">Pick how to start. <b className="text-gray-400">Just chat</b> works for most things; pick a folder only when Claude should work on that code.</p>
-
-        {noAgent && (
-          <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-800/60 rounded p-2 mb-4">
-            Claude Code is not installed, so sessions can&apos;t start. In Terminal run <code className="text-amber-200">curl -fsSL https://claude.ai/install.sh | bash</code>, then run <code className="text-amber-200">claude</code> once to sign in.
-          </p>
-        )}
-
-        {/* Name field */}
-        <input
-          type="text"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && model) start('general') }}
-          placeholder="Session name (optional, Enter = just chat)"
-          title="Shown on the session card, in History and in Remote Control. Leave empty and Claude names it from your first message."
-          className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-600 mb-4"
-          autoFocus
-        />
-
-        {/* Org + Agent + Model in one row, so the start options stay on screen */}
-        <div className="mb-1 grid grid-cols-[1fr_1fr_1.6fr] gap-2">
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">Org<Hint text="Which Claude account runs this session. Each org has its own login, billing, skills, Slack and integrations." /></label>
-            <select
-              value={orgId}
-              onChange={e => e.target.value === '__add__' ? setShowAddOrg(true) : setOrgId(e.target.value)}
-              className="w-full bg-gray-800 text-white rounded px-2 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500"
-            >
-              {orgs.map(org => (
-                <option key={org.id} value={org.id}>{org.name}</option>
-              ))}
-              <option value="__add__">+ Register new org…</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">Agent<Hint text="The CLI that runs the session: Claude Code, or GitHub Copilot CLI when installed." /></label>
-            <select
-              value={backend}
-              onChange={e => setBackend(e.target.value)}
-              disabled={backends.length < 2}
-              className="w-full bg-gray-800 text-white rounded px-2 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 disabled:opacity-60"
-            >
-              {backends.map(b => (
-                <option key={b.id} value={b.id}>{b.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">Model<Hint text="The model the session starts with. You can switch later inside the session with /model." /></label>
-            <select
-              value={model}
-              onChange={e => setModel(e.target.value)}
-              disabled={modelsLoading || models.length === 0}
-              className="w-full bg-gray-800 text-white rounded px-2 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 disabled:opacity-60"
-            >
-              {modelsLoading && <option>Loading…</option>}
-              {!modelsLoading && models.length === 0 && <option value="">{modelsError ?? 'No models'}</option>}
-              {models.map(m => (
-                <option key={m.id} value={m.id}>{m.displayName}</option>
-              ))}
-            </select>
-          </div>
+    <div className="fixed inset-0 bg-black/60 flex items-start justify-center pt-[8vh] z-50" onClick={onCancel} onKeyDown={e => { if (e.key === 'Escape') onCancel() }}>
+      <div className="bg-gray-900 border border-gray-700 rounded-xl w-[560px] max-w-[95vw] max-h-[84vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center px-5 pt-4 pb-3">
+          <h2 className="text-white font-semibold">New session</h2>
+          <button onClick={onCancel} aria-label="Close" className="ml-auto text-gray-500 hover:text-white text-lg leading-none">×</button>
         </div>
-        <div className="mb-3">
-          {showAddOrg && (
-            <div className="mt-2 space-y-2 border border-dashed border-gray-700 rounded p-3">
-              <input
-                type="text"
-                value={newOrgName}
-                onChange={e => setNewOrgName(e.target.value)}
-                placeholder="Org name (e.g. Claude Teams)"
-                className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-600"
-              />
-              <input
-                type="text"
-                value={newOrgConfigDir}
-                onChange={e => setNewOrgConfigDir(e.target.value)}
-                placeholder="/Users/you/.claude-teams"
-                className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none font-mono border border-gray-700 focus:border-blue-500 placeholder-gray-600"
-              />
-              <input
-                type="text"
-                value={newOrgModel}
-                onChange={e => setNewOrgModel(e.target.value)}
-                placeholder="Default model (optional, e.g. claude-opus-4-8)"
-                className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none font-mono border border-gray-700 focus:border-blue-500 placeholder-gray-600"
-              />
-              <p className="text-xs text-gray-500">
-                A folder where this org&apos;s Claude settings and login live (it&apos;s created if missing). After adding, sign in from Settings → Claude sign-in.
-              </p>
-              {addOrgError && <p className="text-xs text-red-400">{addOrgError}</p>}
-              <div className="flex items-center gap-3">
-                <button onClick={() => { setShowAddOrg(false); setAddOrgError(null) }} className="text-xs text-gray-500 hover:text-gray-300">← Back</button>
-                <button
-                  onClick={submitNewOrg}
-                  disabled={!newOrgName.trim() || !newOrgConfigDir.trim().startsWith('/')}
-                  className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded font-medium"
-                >Add org</button>
+
+        <div className="px-5 pb-4 overflow-y-auto space-y-4">
+          {noAgent && (
+            <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-800/60 rounded-md p-2">
+              Claude Code is not installed, so sessions can&apos;t start. In Terminal run <code className="text-amber-200">curl -fsSL https://claude.ai/install.sh | bash</code>, then run <code className="text-amber-200">claude</code> once to sign in.
+            </p>
+          )}
+
+          <div className="grid grid-cols-3 gap-1 p-1 bg-gray-800/70 rounded-lg" role="tablist">
+            {TABS.map(t => (
+              <button key={t.id} role="tab" aria-selected={mode === t.id} onClick={() => setMode(t.id)}
+                className={`py-1.5 text-sm rounded-md transition-colors ${mode === t.id ? 'bg-gray-950 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}>{t.label}</button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 -mt-2">{TABS.find(t => t.id === mode)!.hint}</p>
+
+          {mode === 'folder' && (
+            <div className="space-y-2">
+              <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={enterStarts} autoFocus
+                placeholder="Search your folders, or paste a path" className={input} />
+              <div className="max-h-52 overflow-y-auto rounded-md border border-gray-800">
+                {typedPath && !folders.includes(typedPath) && (
+                  <button onClick={() => setSelectedCwd(typedPath)} className={`w-full text-left px-3 py-2 text-sm border-b border-gray-800 ${folderPick === typedPath ? 'bg-blue-600/20' : 'hover:bg-gray-800'}`}>
+                    Use <span className="font-mono text-gray-200">{typedPath}</span>
+                  </button>
+                )}
+                {shown.map(cwd => (
+                  <button key={cwd} onClick={() => setSelectedCwd(cwd)} onDoubleClick={() => start(cwd)} title={cwd}
+                    className={`w-full text-left px-3 py-2 flex flex-col border-b border-gray-800 last:border-0 transition-colors ${folderPick === cwd ? 'bg-blue-600/20' : 'hover:bg-gray-800'}`}>
+                    <span className="text-sm text-gray-100">{cwd.split('/').at(-1) || cwd}</span>
+                    <span className="text-xs text-gray-500 truncate">{cwd}</span>
+                  </button>
+                ))}
+                {!shown.length && !typedPath && <p className="px-3 py-3 text-xs text-gray-500">No match. Paste the full path, like /Users/you/project.</p>}
               </div>
+              <label className="flex items-start gap-2 text-xs text-gray-400 cursor-pointer"
+                title="Creates a new branch and a separate copy of the repo (git worktree), so parallel sessions in the same repo don't touch each other's files.">
+                <input type="checkbox" checked={isolate} onChange={e => setIsolate(e.target.checked)} className="mt-0.5" />
+                Work on a separate copy (new branch), so other sessions in this repo aren&apos;t affected
+              </label>
             </div>
           )}
-        </div>
 
-        {/* Save the current agent+model as the default for future sessions */}
-        <div className="flex items-center gap-2 mb-3 -mt-2">
-          <button
-            onClick={setAsDefault}
-            title="Pre-select this agent and model every time you open New Session"
-            disabled={!model || isCurrentDefault}
-            className="text-xs text-gray-500 hover:text-blue-400 disabled:hover:text-gray-500 disabled:opacity-50 transition-colors"
-          >
-            {justSaved ? '✓ Saved as default' : isCurrentDefault ? '✓ This is your default' : '☆ Set as default agent & model'}
-          </button>
-        </div>
-        {modelsError && models.length > 0 && (
-          <p className="text-xs text-amber-500/80 -mt-2 mb-3">Showing cached models — {modelsError}</p>
-        )}
-
-        {/* Start options — single click starts immediately */}
-        {!showCustom && (
-          <>
-            {/* Just chat — the friendly, no-project entry point */}
-            <button
-              onClick={() => start('general')}
-              title="Starts in a private scratch folder. Good for questions, research, Slack, docs and one-off tasks."
-              className="w-full text-left px-3 py-2.5 mb-3 flex items-center gap-3 rounded border border-gray-700 hover:bg-gray-800 hover:border-gray-600 transition-colors"
-            >
-              <span className="text-lg leading-none">💬</span>
-              <span className="flex flex-col">
-                <span className="text-sm text-white font-medium">Just chat</span>
-                <span className="text-xs text-gray-500">Ask a question or run a quick task — not tied to a project</span>
-              </span>
-            </button>
-
-            {/* Start from Slack */}
-            {showSlack ? (
-              <div className="mb-3 rounded border border-purple-800/60 bg-purple-950/20 p-3 space-y-2">
-                <p className="text-xs text-gray-300 font-medium">Start from Slack</p>
-                <SlackChannelPicker value={slackText} onChange={(v, c) => { setSlackText(v); setSlackChannel(c); setSlackLink('') }}
-                  className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-600" />
-                <input value={slackLink} onChange={e => { setSlackLink(e.target.value); if (e.target.value) { setSlackText(''); setSlackChannel(null) } }}
-                  placeholder="…or paste a link to a message, thread or DM"
-                  title="In Slack: hover a message → ⋮ → Copy link"
-                  className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-600" />
-                {slackLink && !linkOk && <p className="text-[11px] text-red-400">Paste a Slack link (https://…slack.com/archives/…)</p>}
-                <input value={slackAsk} onChange={e => setSlackAsk(e.target.value)} placeholder="What should Claude do with it? (optional)"
-                  className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-600" />
-                <div className="flex items-center gap-3">
-                  <button onClick={() => setShowSlack(false)} className="text-xs text-gray-500 hover:text-gray-300">← Back</button>
-                  <button onClick={startFromSlack} disabled={!model || !(linkOk || chName)}
-                    className="ml-auto px-3 py-1 text-xs bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded font-medium">Start with this context</button>
-                </div>
-                <p className="text-[11px] text-gray-500">The session reads it first and summarizes. Nothing is posted to Slack.</p>
-              </div>
-            ) : (
-              <button onClick={() => setShowSlack(true)} title="The new session reads a Slack channel, thread or DM first, so it starts with the context"
-                className="w-full text-left px-3 py-2.5 mb-3 flex items-center gap-3 rounded border border-gray-700 hover:bg-gray-800 hover:border-gray-600 transition-colors">
-                <span className="text-lg leading-none">#</span>
-                <span className="flex flex-col">
-                  <span className="text-sm text-white font-medium">Start from Slack</span>
-                  <span className="text-xs text-gray-500">A channel, thread or DM becomes the session&apos;s context</span>
-                </span>
-              </button>
-            )}
-
-            {/* Project folders */}
-            {folders.length > 0 && (
-              <>
-                <label className="flex items-start gap-2 mb-2 text-xs text-gray-300 cursor-pointer"
-                  title="Creates a new branch and a separate copy of the repo for this session (git worktree). Other sessions in the same repo won't touch its files. Remove it from the session card when you're done.">
-                  <input type="checkbox" checked={isolate} onChange={e => setIsolate(e.target.checked)} className="mt-0.5" />
-                  <span>Isolated copy <span className="text-gray-500">· new branch + worktree, so parallel sessions in the same repo don&apos;t collide (git repos only)</span></span>
-                </label>
-                <p className="text-[11px] uppercase tracking-wide text-gray-600 mb-1">Or work in a folder<Hint text="Claude starts inside this folder: it reads and edits its files, runs commands there, and loads the folder's CLAUDE.md. Listed: folders you used before." /></p>
-                <div className="max-h-56 overflow-y-auto rounded border border-gray-700 mb-3">
-                  {folders.map(cwd => {
-                    const basename = cwd.split('/').at(-1) || cwd
-                    return (
-                      <button
-                        key={cwd}
-                        onClick={() => start(cwd)}
-                        title={`Start Claude inside ${cwd}`}
-                        className="w-full text-left px-3 py-2.5 flex flex-col border-b border-gray-800 last:border-0 hover:bg-gray-800 transition-colors"
-                      >
-                        <span className="text-sm text-gray-200 font-medium">{basename}</span>
-                        <span className="text-xs text-gray-500 truncate">{cwd}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-        {/* Custom path */}
-        {showCustom ? (
-          <div className="mb-3">
-            <input
-              type="text"
-              value={custom}
-              onChange={e => setCustom(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && custom.trim()) start(custom.trim())
-                if (e.key === 'Escape') { setShowCustom(false); setCustom('') }
-              }}
-              placeholder="/Users/you/your-project"
-              className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none font-mono border border-gray-700 focus:border-blue-500"
-              autoFocus
-            />
-            <div className="flex items-center gap-3 mt-2">
-              <button
-                onClick={() => { setShowCustom(false); setCustom('') }}
-                className="text-xs text-gray-500 hover:text-gray-300"
-              >← Back</button>
-              <button
-                onClick={() => custom.trim() && start(custom.trim())}
-                disabled={!custom.trim()}
-                className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded font-medium"
-              >Start</button>
+          {mode === 'slack' && (
+            <div className="space-y-2">
+              <SlackChannelPicker value={slackText} onChange={(v, c) => { setSlackText(v); setSlackChannel(c); setSlackLink('') }} className={input} />
+              <input value={slackLink} onChange={e => { setSlackLink(e.target.value); if (e.target.value) { setSlackText(''); setSlackChannel(null) } }}
+                placeholder="…or paste a link to a message, thread or DM" title="In Slack: hover a message → ⋮ → Copy link" className={input} />
+              {slackLink && !linkOk && <p className="text-[11px] text-red-400">Paste a Slack link (https://…slack.com/archives/…)</p>}
+              <textarea value={slackAsk} onChange={e => setSlackAsk(e.target.value)} onKeyDown={enterStarts} rows={2} dir="auto"
+                placeholder="What should Claude do with it? (optional)" className={`${input} resize-none`} />
+              <p className="text-[11px] text-gray-500">The session reads it first and summarizes. Nothing is posted to Slack.</p>
             </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowCustom(true)}
-            title="Type the full path of any folder on this Mac, e.g. a repo you haven't used here yet"
-            className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:text-gray-300 border border-dashed border-gray-700 rounded hover:border-gray-500 transition-colors mb-3"
-          >
-            + Open a different folder…
-          </button>
-        )}
-
-        {/* Resume by ID */}
-        <div className="border-t border-gray-700/50 pt-3">
-          {showResumeById ? (
-            <div>
-              <label className="text-xs text-gray-500 mb-1 block">Session ID</label>
-              <input
-                type="text"
-                value={resumeId}
-                onChange={e => setResumeId(e.target.value.trim())}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && UUID_RE.test(resumeId)) onResumeById(resumeId, name.trim(), orgId, backend, model)
-                  if (e.key === 'Escape') { setShowResumeById(false); setResumeId('') }
-                }}
-                placeholder="6a047330-816f-45a1-86fc-9fba8280f12c"
-                className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none font-mono border border-gray-700 focus:border-blue-500"
-                autoFocus
-              />
-              {resumeId && !UUID_RE.test(resumeId) && (
-                <p className="text-xs text-red-400 mt-1">Paste a valid session UUID</p>
-              )}
-              <div className="flex items-center gap-3 mt-2">
-                <button onClick={() => { setShowResumeById(false); setResumeId('') }} className="text-xs text-gray-500 hover:text-gray-300">← Back</button>
-                <button
-                  onClick={() => onResumeById(resumeId, name.trim(), orgId, backend, model)}
-                  disabled={!UUID_RE.test(resumeId)}
-                  className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded font-medium"
-                >Resume</button>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowResumeById(true)}
-              title="Continue an existing Claude conversation (from the terminal or another app) by pasting its session ID"
-              className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:text-gray-300 border border-dashed border-gray-700 rounded hover:border-gray-500 transition-colors"
-            >
-              ↩ Resume by session ID…
-            </button>
           )}
+
+          {mode !== 'slack' && (
+            <textarea value={firstMsg} onChange={e => setFirstMsg(e.target.value)} onKeyDown={enterStarts} rows={3} dir="auto" autoFocus={mode === 'chat'}
+              placeholder={mode === 'chat' ? 'What do you want to do? (optional, Enter to start)' : 'First message (optional)'} className={`${input} resize-none`} />
+          )}
+
+          <input value={name} onChange={e => setName(e.target.value)} onKeyDown={enterStarts}
+            placeholder="Session name (optional, Claude names it otherwise)" className={input} />
+
+          <div className="rounded-md border border-gray-800">
+            <button onClick={() => setShowMore(v => !v)} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:text-gray-200">
+              <span className="truncate">{orgName} · {backendLabel} · {modelLabel}</span>
+              <span className="ml-auto text-blue-400">{showMore ? 'Done' : 'Change'}</span>
+            </button>
+            {showMore && (
+              <div className="px-3 pb-3 space-y-3 border-t border-gray-800 pt-3">
+                <div className="grid grid-cols-[1fr_1fr_1.6fr] gap-2">
+                  <label className="text-xs text-gray-500">Org<Hint text="Which Claude account runs this session. Each org has its own login, billing, skills, Slack and integrations." />
+                    <select value={orgId} onChange={e => e.target.value === '__add__' ? setShowAddOrg(true) : setOrgId(e.target.value)} className={`${input} mt-1 px-2`}>
+                      {orgs.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}
+                      <option value="__add__">+ Register new org…</option>
+                    </select>
+                  </label>
+                  <label className="text-xs text-gray-500">Agent<Hint text="The CLI that runs the session: Claude Code, or another agent when installed." />
+                    <select value={backend} onChange={e => setBackend(e.target.value)} disabled={backends.length < 2} className={`${input} mt-1 px-2 disabled:opacity-60`}>
+                      {backends.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-xs text-gray-500">Model<Hint text="The model the session starts with. You can switch later inside the session with /model." />
+                    <select value={model} onChange={e => setModel(e.target.value)} disabled={modelsLoading || models.length === 0} className={`${input} mt-1 px-2 disabled:opacity-60`}>
+                      {modelsLoading && <option>Loading…</option>}
+                      {!modelsLoading && models.length === 0 && <option value="">{modelsError ?? 'No models'}</option>}
+                      {models.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <button onClick={setAsDefault} disabled={!model || isCurrentDefault}
+                  className="text-xs text-gray-500 hover:text-blue-400 disabled:hover:text-gray-500 disabled:opacity-60">
+                  {justSaved ? '✓ Saved as default' : isCurrentDefault ? '✓ This is your default' : '☆ Use this agent and model by default'}
+                </button>
+                {showAddOrg && (
+                  <div className="space-y-2 border border-dashed border-gray-700 rounded-md p-3">
+                    <input value={newOrgName} onChange={e => setNewOrgName(e.target.value)} placeholder="Org name (e.g. Claude Teams)" className={input} />
+                    <input value={newOrgConfigDir} onChange={e => setNewOrgConfigDir(e.target.value)} placeholder="/Users/you/.claude-teams" className={`${input} font-mono`} />
+                    <input value={newOrgModel} onChange={e => setNewOrgModel(e.target.value)} placeholder="Default model (optional)" className={`${input} font-mono`} />
+                    <p className="text-xs text-gray-500">A folder where this org&apos;s Claude settings and login live (created if missing). Then sign in from Settings → Claude sign-in.</p>
+                    {addOrgError && <p className="text-xs text-red-400">{addOrgError}</p>}
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => { setShowAddOrg(false); setAddOrgError(null) }} className="text-xs text-gray-500 hover:text-gray-300">Cancel</button>
+                      <button onClick={submitNewOrg} disabled={!newOrgName.trim() || !newOrgConfigDir.trim().startsWith('/')}
+                        className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded font-medium">Add org</button>
+                    </div>
+                  </div>
+                )}
+                {showResumeById ? (
+                  <div className="space-y-2">
+                    <input value={resumeId} onChange={e => setResumeId(e.target.value.trim())} autoFocus
+                      onKeyDown={e => { if (e.key === 'Enter' && UUID_RE.test(resumeId)) onResumeById(resumeId, name.trim(), orgId, backend, model) }}
+                      placeholder="Claude session ID, e.g. 6a047330-816f-45a1-86fc-9fba8280f12c" className={`${input} font-mono`} />
+                    {resumeId && !UUID_RE.test(resumeId) && <p className="text-xs text-red-400">Paste a valid session ID</p>}
+                    <button onClick={() => onResumeById(resumeId, name.trim(), orgId, backend, model)} disabled={!UUID_RE.test(resumeId)}
+                      className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded font-medium">Resume</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowResumeById(true)} title="Continue a Claude conversation started in the terminal or another app"
+                    className="block text-xs text-gray-500 hover:text-gray-300">↩ Resume a conversation by its session ID…</button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="flex justify-end items-center gap-2 mt-4">
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-800">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
-          <button
-            onClick={() => start(selectedCwd || 'general')}
-            disabled={!model}
-            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded font-medium"
-          >
-            Start {selectedCwd && selectedCwd !== 'general' ? `· ${selectedCwd.split('/').at(-1)}` : 'chat'}
-          </button>
+          <button onClick={go} disabled={!canStart}
+            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-md font-medium max-w-[60%] truncate">{startLabel}</button>
         </div>
       </div>
     </div>

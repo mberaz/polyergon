@@ -78,6 +78,11 @@ export function useTerminal() {
             s.id === msg.id ? { ...s, rcUrl: msg.rcUrl } : s
           ))
         }
+        if (msg.type === 'sessionClaudeId') {
+          setLiveSessions(prev => prev.map(s =>
+            s.id === msg.id ? { ...s, claudeSessionId: msg.claudeSessionId } : s
+          ))
+        }
         if (msg.type === 'sessionPrUrl') {
           setLiveSessions(prev => prev.map(s =>
             s.id === msg.id ? { ...s, prUrl: msg.prUrl } : s

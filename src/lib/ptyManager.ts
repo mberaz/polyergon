@@ -61,6 +61,7 @@ async function detectAndStoreSessionId(id: string, cwd: string, spawnTime: numbe
       : backend.detectSessionId?.(cwd, spawnTime) ?? null
     if (uuid) {
       liveSessionStore.setClaudeSessionId(id, uuid)
+      anySessionIdListeners.forEach(fn => fn(id, uuid))
       return
     }
   }
@@ -105,6 +106,13 @@ function emitStatus(id: string, status: 'thinking' | 'waiting' | 'idle') {
 
 function emitRcUrl(id: string, rcUrl: string) {
   anyRcUrlListeners.forEach(fn => fn(id, rcUrl))
+}
+
+// Fires when a new session's conversation id is found, so browsers can update.
+const anySessionIdListeners = new Set<(id: string, claudeSessionId: string) => void>()
+export function onAnySessionId(fn: (id: string, claudeSessionId: string) => void) {
+  anySessionIdListeners.add(fn)
+  return () => anySessionIdListeners.delete(fn)
 }
 
 function emitPrUrl(id: string, prUrl: string) {
