@@ -18,6 +18,7 @@ import { AutomationsPage } from './components/AutomationsPage'
 import { HomePage } from './components/HomePage'
 import { WatcherDialog } from './components/WatcherDialog'
 import { SettingsPage, type SettingsGuard } from './components/SettingsPage'
+import '@/hooks/useInstallPrompt' // start listening for Chrome's install offer at load
 import { PipelinePage } from './components/PipelinePage'
 import { DiffPage } from './components/DiffPage'
 import { TaskBoard } from './components/TaskBoard'

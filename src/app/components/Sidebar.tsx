@@ -650,15 +650,6 @@ function FolderIcon({ open }: { open: boolean }) {
 }
 
 export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historySessions, historyLoading, activeSessionId, selectedHistoryId, sessionNameOverrides, onAttachLive, onKillLive, onDeleteLive, onRemoveWorktree, onReview, onResumeLive, onResumeAll, onCompact, onSetRemote, onNewSession, onSelectHistory, onDeleteSession, inbox, inboxLoading, inboxRefreshing, onRefreshInbox, onOpenPrDashboard, meetings, selectedMeetingId, onSelectMeeting, onRecordMeeting, onOpenMeetingLibrary, pipelines, onOrgsChanged, onRenameLive, notes, setNotes, onOpenNotes, onOpenSkills, onOpenSlack, onOpenSettings, onOpenBoard, onOpenAutomations, onHome, selectedNoteId, selectedSkill, skillsVersion, onAutomate, usage, onOpenUsage }: Props) {
-  // Chrome fires beforeinstallprompt when the app can be installed (and not yet installed).
-  const [installPrompt, setInstallPrompt] = useState<{ prompt: () => void } | null>(null)
-  useEffect(() => {
-    const on = (e: Event) => { e.preventDefault(); setInstallPrompt(e as unknown as { prompt: () => void }) }
-    const done = () => setInstallPrompt(null)
-    window.addEventListener('beforeinstallprompt', on)
-    window.addEventListener('appinstalled', done)
-    return () => { window.removeEventListener('beforeinstallprompt', on); window.removeEventListener('appinstalled', done) }
-  }, [])
   // Search text is remembered per org, so switching orgs and back restores
   // whatever you'd typed in each
   const [searchByOrg, setSearchByOrg] = useState<Record<string, string>>({})
@@ -1407,13 +1398,6 @@ export function Sidebar({ liveSessions, orgs, activeOrgId, onSwitchOrg, historyS
             <button onClick={() => setDueNote(null)} className="px-3 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-medium">Dismiss</button>
           </div>
         </div>
-      )}
-      {installPrompt && (
-        <button onClick={() => { installPrompt.prompt(); setInstallPrompt(null) }}
-          title="Its own window and Dock icon, and notifications that come from Polyergon"
-          className="flex-shrink-0 border-t border-gray-800 px-4 py-2 text-left text-xs text-gray-500 hover:text-gray-200">
-          ⤓ Install as an app
-        </button>
       )}
     </aside>
   )

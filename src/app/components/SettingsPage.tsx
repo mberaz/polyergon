@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useInstallPrompt, isInstalledApp } from '@/hooks/useInstallPrompt'
 import type { Settings } from '@/lib/settingsStore'
 import type { TranscriptionStatus } from '@/lib/meetingConfig'
 import type { ClaudeAuthStatus, ClaudeLogin } from '@/lib/claudeAuth'
@@ -12,6 +13,7 @@ const MIN_K = 100
 const MAX_K = 1000
 
 const SECTIONS = [
+  ['app', 'App'],
   ['account', 'Claude account'],
   ['sessions', 'Sessions'],
   ['power', 'Power'],
@@ -147,6 +149,10 @@ export function SettingsPage({ onClose, guard }: { onClose: () => void; guard?: 
       <div className="flex-1 overflow-y-auto px-6 py-6">
       <div className="max-w-2xl space-y-5">
         <h1 className="text-lg font-semibold md:hidden">Settings</h1>
+        <Sec id="app" title="App" desc="Run Polyergon in its own window, with a Dock icon and notifications from Polyergon.">
+          <InstallApp />
+        </Sec>
+
         <Sec id="account" title="Claude account" desc="How sessions sign in to Claude. Each org has its own login.">
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'login'} onChange={() => { setAuthMode('login'); setAuthDirty(true); touch() }} />Claude login</label>
@@ -327,4 +333,13 @@ function LocalWhisperSetup() {
       {st.error && <p className="text-red-400">{st.error}</p>}
     </div>
   )
+}
+
+function InstallApp() {
+  const install = useInstallPrompt()
+  const [installed, setInstalled] = useState(false)
+  useEffect(() => { setInstalled(isInstalledApp()) }, [])
+  if (installed) return <p className="text-sm text-green-400">✓ You&apos;re using the installed app.</p>
+  if (install) return <button onClick={install} className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-500 text-white">Install Polyergon</button>
+  return <p className="text-xs text-gray-400 leading-relaxed">Already installed: open Polyergon from the Dock or Launchpad. Otherwise use the install icon at the right of Chrome&apos;s address bar.</p>
 }
