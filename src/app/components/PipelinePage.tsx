@@ -70,7 +70,10 @@ function Panel({ title, children, right }: { title: string; children: React.Reac
   )
 }
 
-function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview }: { t: PrTrack; p: Pipeline; auto: AutoSteps; onSend: () => void; onDismiss: () => void; onSetReview: (r: PrReview) => void }) {
+function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview, onTell }: { t: PrTrack; p: Pipeline; auto: AutoSteps; onSend: () => void; onDismiss: () => void; onSetReview: (r: PrReview) => void; onTell: (text: string) => void }) {
+  const [tell, setTell] = useState('')
+  const [told, setTold] = useState(false)
+  const sendTell = () => { if (!tell.trim()) return; onTell(tell.trim()); setTell(''); setTold(true); setTimeout(() => setTold(false), 4000) }
   const review: PrReview = t.review ?? { channel: p.config.slackChannel, reviewers: [] }
   const [editReview, setEditReview] = useState(false)
   const v = t.view
@@ -105,6 +108,13 @@ function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview }: { t: PrTrack; p
         {!editReview && <button onClick={() => setEditReview(true)} className="text-blue-400 hover:text-blue-300">Change</button>}
       </div>}
       {editReview && <ReviewEditor initial={review} onSave={r => { onSetReview(r); setEditReview(false) }} onCancel={() => setEditReview(false)} />}
+      <div className="mt-3 flex gap-2">
+        <input dir="auto" value={tell} onChange={e => setTell(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendTell() }}
+          placeholder="Tell Claude about this PR, e.g. let product (Shiri and Lior) know it's ready"
+          className="flex-1 bg-gray-950 border border-gray-800 rounded-md px-3 py-1.5 text-sm text-gray-100 outline-none focus:border-blue-500 placeholder-gray-600" />
+        <button onClick={sendTell} disabled={!tell.trim()} className="text-xs px-3 rounded-md bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">Send</button>
+      </div>
+      {told && <p className="text-[11px] text-emerald-400 mt-1">Sent to the session. It does it when free and reports back there.</p>}
 
       <div className="mt-4"><Track steps={prSteps(t, !!review.channel)} working={t.state === 'working'} /></div>
 
@@ -148,7 +158,7 @@ function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview }: { t: PrTrack; p
   )
 }
 
-export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onAct, onDismiss, onSetAuto }: {
+export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onTell, onAct, onDismiss, onSetAuto }: {
   sessionName: string
   pipeline: Pipeline | null
   error: string | null
@@ -158,6 +168,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   onStop: (id: string) => void
   onAddPr: (id: string, url: string, review?: PrReview) => void
   onSetPrReview: (id: string, url: string, review: PrReview) => void
+  onTell: (id: string, url: string, text: string) => void
   onAct: (id: string, prUrl: string | null) => void
   onDismiss: (id: string, prUrl: string | null) => void
   onSetAuto: (id: string, auto: Partial<AutoSteps>) => void
@@ -206,7 +217,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
         {/* PRs */}
         <div className="space-y-5 min-w-0">
           {pipeline?.suggestion && <SuggestionBox s={pipeline.suggestion} onSend={() => onAct(pipeline.id, null)} onDismiss={() => onDismiss(pipeline.id, null)} />}
-          {pipeline?.prs.map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} />)}
+          {pipeline?.prs.map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} onTell={text => onTell(pipeline.id, t.url, text)} />)}
           {running && pipeline && (
             <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-4 space-y-2">
               <div className="flex gap-2">

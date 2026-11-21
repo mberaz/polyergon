@@ -430,6 +430,9 @@ app.prepare().then(async () => {
       } else if (msg.type === 'pipeline-add-pr') {
         const err = pipelineEngine.addPr(msg.id as string, String(msg.url ?? '').trim(), msg.review as PrReview | undefined)
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
+      } else if (msg.type === 'pipeline-instruct') {
+        const err = pipelineEngine.instruct(msg.id as string, String(msg.url ?? ''), String(msg.text ?? ''))
+        if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
       } else if (msg.type === 'pipeline-pr-review') {
         const err = pipelineEngine.setPrReview(msg.id as string, String(msg.url ?? ''), (msg.review ?? { channel: null, reviewers: [] }) as PrReview)
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })

@@ -112,7 +112,7 @@ export default function Demo() {
     <div className="fixed inset-0">
       <div className="relative w-full h-full">
         <PipelinePage sessionName="ledger: webhook retries" pipeline={pipeline} error={null}
-          onOpenSession={noop} onStart={noop} onStop={noop} onAddPr={noop} onSetPrReview={noop} onAct={noop} onDismiss={noop} onSetAuto={noop} />
+          onOpenSession={noop} onStart={noop} onStop={noop} onAddPr={noop} onSetPrReview={noop} onTell={noop} onAct={noop} onDismiss={noop} onSetAuto={noop} />
       </div>
     </div>
   )

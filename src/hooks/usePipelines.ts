@@ -43,6 +43,10 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
     setError(null)
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-pr-review', id, liveId, url, review }))
   }, [])
+  const instructPipeline = useCallback((id: string, liveId: string, url: string, text: string) => {
+    setError(null)
+    wsRef.current?.send(JSON.stringify({ type: 'pipeline-instruct', id, liveId, url, text }))
+  }, [])
   const actPipeline = useCallback((id: string, liveId: string, prUrl: string | null) => {
     setError(null)
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-act', id, liveId, prUrl }))
@@ -61,5 +65,5 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-remove', id }))
   }, [])
 
-  return { removePipeline, setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline }
+  return { instructPipeline, removePipeline, setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline }
 }

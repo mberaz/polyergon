@@ -5,7 +5,7 @@ import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
-import { submitLine, onAnyStatusChange, onAnyPrUrlChange } from './ptyManager'
+import { submitLine, sendWhenReady, onAnyStatusChange, onAnyPrUrlChange } from './ptyManager'
 import { summarizeChecks, isValidPrUrl } from './ghPrStatus'
 import { postToSlack, dmOnSlack, DM_TARGET, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
 import type { PrCheckStatus } from './prTypes'
@@ -298,6 +298,21 @@ class PipelineEngine {
     if (!isValidPrUrl(url)) return { error: 'Not a GitHub pull request URL' }
     this.addTrack(p, url, 'You added', cleanReview(review))
     this.step(p.id, true)
+    return null
+  }
+
+  // Your free-form instruction about one PR ("notify product: Shiri and Lior"),
+  // done by the session once it's free.
+  instruct(id: string, url: string, text: string): { error: string } | null {
+    const p = this.items.find(x => x.id === id)
+    const t = p?.prs.find(x => x.url === url)
+    if (!p || !t) return { error: 'PR not found' }
+    const msg = text.replace(/\s+/g, ' ').trim().slice(0, 4000)
+    if (!msg) return { error: 'Write what Claude should do' }
+    if (!liveSessionStore.get(p.liveId)) return { error: 'The session is gone' }
+    sendWhenReady(p.liveId, `About the pull request ${url}${t.view?.title ? ` ("${t.view.title}")` : ''}: ${msg} ` +
+      '— Use gh and the Slack connector as needed. Report back here what you did, and say plainly if something failed.', 3 * 60 * 60_000)
+    this.update(p, {}, `You told Claude about ${shortPr(url)}: ${msg.slice(0, 120)}`)
     return null
   }
 

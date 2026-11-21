@@ -18,7 +18,7 @@ const prs: Record<string, Pr> = {}
 let foundPrs: string[] = []
 const dmed: string[] = []
 jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? session : undefined) } }))
-jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writes.push(t), onAnyStatusChange: () => () => {}, onAnyPrUrlChange: () => () => {} }))
+jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writes.push(t), sendWhenReady: (_id: string, t: string) => writes.push(t), onAnyStatusChange: () => () => {}, onAnyPrUrlChange: () => () => {} }))
 jest.mock('../sessionPrs', () => ({ openPrsOfSession: async () => foundPrs }))
 jest.mock('../slackBridge', () => ({ postToSlack: async (c: { name: string }, t: string) => { posts.push(t); postedTo.push(c.name); return { permalink: null } }, readSlackThread: async () => null, DM_TARGET: /^@?[\p{L}\p{N} ._'-]{1,60}( \([UW][A-Z0-9]{5,}\))?$/u, dmOnSlack: async (who: string) => { dmed.push(who); return { permalink: null } } }))
 jest.mock('child_process', () => ({ execFile: (cmd: string, a: string[], _o: object, cb: (e: Error | null, r?: { stdout: string }) => void) => {
@@ -261,5 +261,21 @@ test('a draft is not sent for review until it is marked ready', async () => {
   prs[G].isDraft = false
   later(); await pipelineEngine.step(p.id, true); await flush(); await flush(); await flush()
   expect(postedTo).toEqual(['discovery-prs']); expect(dmed).toEqual(['dana'])
+  pipelineEngine.stop(p.id)
+})
+
+test('you can tell Claude something about one PR', async () => {
+  const H = 'https://github.com/o/app/pull/7831'
+  prs[H] = base(7831)
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
+  await flush()
+  pipelineEngine.addPr(p.id, H); await flush()
+  writes.length = 0
+  expect(pipelineEngine.instruct(p.id, H, 'let product (Shiri and Lior) know')).toBeNull()
+  expect(writes).toHaveLength(1)
+  expect(writes[0]).toContain(H)
+  expect(writes[0]).toContain('let product (Shiri and Lior) know')
+  expect(pipelineEngine.instruct(p.id, H, '  ')).toEqual({ error: expect.any(String) })
   pipelineEngine.stop(p.id)
 })
