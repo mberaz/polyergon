@@ -226,3 +226,40 @@ test('a reviewer who only commented (e.g. the claude app) does not block; change
   expect(reviewBlockersOf([{ login: 'claude', state: 'COMMENTED', commit: 'H' }, { login: 'dean', state: 'APPROVED', commit: 'H' }], 'H', [])).toEqual([])
   expect(reviewBlockersOf([{ login: 'gal', state: 'CHANGES_REQUESTED', commit: 'H' }], 'H', [])).toEqual(['gal requested changes'])
 })
+
+test('only reviewers you chose block while pending; GitHub auto-requested ones do not', async () => {
+  const E = 'https://github.com/o/api/pull/648', F = 'https://github.com/o/api/pull/649'
+  prs[E] = { ...base(648), reviewRequests: [{ login: 'GalBenSinai' }] }
+  prs[F] = { ...base(649), reviewRequests: [{ login: 'GalBenSinai' }] }
+  threads = []; gqlReviews = []
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  session.prUrl = null
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
+  await flush()
+  pipelineEngine.addPr(p.id, E)
+  pipelineEngine.addPr(p.id, F, { channel: null, reviewers: ['galbensinai'] })
+  await flush(); await flush(); await flush()
+  later(); await pipelineEngine.step(p.id, true)
+  const blockers = (u: string) => p.prs.find((t: { url: string }) => t.url === u).view?.blockers
+  expect(blockers(E)).toEqual([])
+  expect(blockers(F)).toEqual(['waiting for GalBenSinai'])
+  pipelineEngine.stop(p.id)
+})
+
+test('a draft is not sent for review until it is marked ready', async () => {
+  const G = 'https://github.com/o/discovery/pull/9500'
+  prs[G] = { ...base(9500), isDraft: true, reviewRequests: [] }
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  session.prUrl = null
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
+  await flush()
+  postedTo.length = 0; dmed.length = 0
+  pipelineEngine.addPr(p.id, G, { channel: { id: 'C2', name: 'discovery-prs' }, reviewers: [], dms: ['dana'] })
+  await flush(); await flush(); await flush()
+  later(); await pipelineEngine.step(p.id, true); await flush()
+  expect(postedTo).toEqual([]); expect(dmed).toEqual([])
+  prs[G].isDraft = false
+  later(); await pipelineEngine.step(p.id, true); await flush(); await flush(); await flush()
+  expect(postedTo).toEqual(['discovery-prs']); expect(dmed).toEqual(['dana'])
+  pipelineEngine.stop(p.id)
+})

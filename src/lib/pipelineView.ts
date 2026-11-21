@@ -48,6 +48,15 @@ export function prSteps(t: PrTrack, slack: boolean): { label: string; done: bool
     : v.isDraft ? 'Still a draft'
     : v.blockers?.length ? v.blockers[0][0].toUpperCase() + v.blockers[0].slice(1)
     : 'Ready to merge'
+  // A draft isn't up for review yet: that's the step it's on
+  if (v?.isDraft && !merged) return [
+    { label: 'PR opened', done: true, current: false },
+    { label: v.checks === 'failing' ? 'Draft · CI failing' : 'Draft: not ready for review', done: false, current: true },
+    ...(slack ? [{ label: 'Posted to Slack', done: !!t.slack, current: false }] : []),
+    { label: 'In review', done: false, current: false },
+    { label: 'Approved', done: false, current: false },
+    { label: 'Merged', done: false, current: false },
+  ]
   return [
     { label: 'PR opened', done: true, current: false },
     ...(slack ? [{ label: 'Posted to Slack', done: !!t.slack, current: !t.slack }] : []),

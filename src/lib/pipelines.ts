@@ -182,7 +182,9 @@ async function reviewGate(url: string, env: NodeJS.ProcessEnv): Promise<{ unreso
   } catch { return { unresolved: -1, headOid: '', reviews: [] } }
 }
 
-async function prSnapshot(url: string): Promise<PrSnapshot | null> {
+// mustReview: reviewers you chose in Polyergon. Only their pending requests block;
+// ones GitHub added on its own (CODEOWNERS, team auto-assign) don't.
+async function prSnapshot(url: string, mustReview: string[] = []): Promise<PrSnapshot | null> {
   try {
     const env = { ...process.env }
     delete env.GITHUB_TOKEN; delete env.GH_TOKEN
@@ -199,7 +201,7 @@ async function prSnapshot(url: string): Promise<PrSnapshot | null> {
     const gate = await reviewGate(url, env)
     const unresolved = gate.unresolved
     // Only named people block when requested; team requests (CODEOWNERS) often linger after approval
-    const requestedPeople = (j.reviewRequests ?? []).map((r: { login?: string }) => r.login ?? '').filter((x: string) => x && !reviewed.has(x))
+    const requestedPeople = (j.reviewRequests ?? []).map((r: { login?: string }) => r.login ?? '').filter((x: string) => x && !reviewed.has(x) && mustReview.some(m => m.toLowerCase() === x.toLowerCase()))
     const reviewBlockers = reviewBlockersOf(gate.reviews.filter(r => r.login !== author), gate.headOid, requestedPeople)
     const view: PrView = { number: j.number, title: j.title ?? '', state: j.state, isDraft: !!j.isDraft, reviewDecision: j.reviewDecision ?? null, checks, requested, reviews, fetchedAt: Date.now(), unresolved: Math.max(0, unresolved), blockers: reviewBlockers }
     return { state: j.state, reviewDecision: j.reviewDecision ?? null, checks, feedback: others(j.reviews) + others(j.comments), title: j.title ?? '', view, unresolved, isDraft: !!j.isDraft, reviewBlockers, headOid: gate.headOid, copilotStale: reviewBlockers.some(b => /^copilot hasn't reviewed the latest commit/.test(b)), copilotOnHead: gate.reviews.some(r => isBot(r.login) && r.commit === gate.headOid) }
@@ -462,10 +464,12 @@ class PipelineEngine {
 
     // Refresh every open PR, then pick at most one thing for the session to do
     for (const t of p.prs.filter(t => OPEN_TRACK.includes(t.state))) {
-      const pr = await prSnapshot(t.url)
+      const pr = await prSnapshot(t.url, t.review?.reviewers ?? [])
       if (!pr) continue
       const wasFailing = t.view?.checks === 'failing' // suggest CI fixes once per failure, not every poll
+      const wasDraft = t.view?.isDraft
       this.patchTrack(p, t, { view: pr.view })
+      if (wasDraft && !pr.view.isDraft) this.announce(p, t) // marked ready: now ask for review
       this.refreshSlack(p, t)
       if (pr.state === 'MERGED' || pr.state === 'CLOSED') {
         this.patchTrack(p, t, { state: 'done' }, `${shortPr(t.url)} ${pr.state.toLowerCase()}`, { title: `PR ${pr.state.toLowerCase()}`, body: pr.title })
@@ -513,9 +517,10 @@ class PipelineEngine {
 
   private async announce(p: Pipeline, t: PrTrack, force = false) {
     const ch = t.review ? t.review.channel : p.config.slackChannel
+    const pr = await prSnapshot(t.url, t.review?.reviewers ?? [])
+    if (pr) this.patchTrack(p, t, { view: pr.view })
+    if (pr?.isDraft) return // drafts aren't up for review; announced when marked ready
     if (ch && (!t.slack?.permalink || force)) {
-      const pr = await prSnapshot(t.url)
-      if (pr) this.patchTrack(p, t, { view: pr.view })
       try {
         const { permalink } = await postToSlack(ch, `:eyes: Ready for review: *${pr?.title ?? 'PR'}*\n${t.url}`, liveSessionStore.get(p.liveId)?.orgId)
         this.patchTrack(p, t, { slack: { channel: ch.name, permalink, checkedAt: Date.now() } }, `Posted ${shortPr(t.url)} to #${ch.name}`)

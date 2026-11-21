@@ -57,7 +57,7 @@ function Stepper({ steps }: { steps: { label: string; done: boolean; current: bo
 
 export function PrCard({ t, slackSet, max, onSend, onDismiss, auto }: { t: PrTrack; slackSet: boolean; max: number; onSend?: () => void; onDismiss?: () => void; auto?: AutoSteps }) {
   const v = t.view
-  const [label, cls] = TRACK_BADGE[t.state]
+  const [label, cls] = t.view?.isDraft && t.state === 'in-review' ? ['draft', 'bg-gray-700 text-gray-300'] : TRACK_BADGE[t.state]
   return (
     <div className="rounded-lg border border-gray-800 p-3">
       <div className="flex items-center gap-2 min-w-0">

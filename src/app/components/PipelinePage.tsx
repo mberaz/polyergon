@@ -74,7 +74,7 @@ function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview }: { t: PrTrack; p
   const review: PrReview = t.review ?? { channel: p.config.slackChannel, reviewers: [] }
   const [editReview, setEditReview] = useState(false)
   const v = t.view
-  const [label, cls] = TRACK_BADGE[t.state]
+  const [label, cls] = t.view?.isDraft && t.state === 'in-review' ? ['draft', 'bg-gray-700 text-gray-300'] : TRACK_BADGE[t.state]
   const max = p.config.maxRounds
   const ci = CI[v?.checks ?? 'none'] ?? CI.none
   const autoNext = t.suggestion && t.suggestion.kind !== 'open-pr' && auto[t.suggestion.kind]
