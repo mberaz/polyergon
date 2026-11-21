@@ -283,3 +283,27 @@ test('you can tell Claude something about one PR', async () => {
   expect(pipelineEngine.instruct(p.id, H, '  ')).toEqual({ error: expect.any(String) })
   pipelineEngine.stop(p.id)
 })
+
+test('post-merge checks are optional: off, a merged PR is done; on, the session verifies it first', async () => {
+  const M = 'https://github.com/o/svc/pull/77'
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  session.prUrl = null
+  const auto = { openPr: false, review: false, ci: false, merge: false, postMerge: true }
+  dirty = false // no open-PR suggestion in the way
+  // off (default)
+  prs[M] = { ...base(77), state: 'MERGED' }
+  let p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto })
+  await flush(); pipelineEngine.addPr(p.id, M); await flush(); await flush()
+  later(); await pipelineEngine.step(p.id, true)
+  expect(p.prs[0].state).toBe('done')
+  pipelineEngine.stop(p.id)
+  // on, automatic
+  writes.length = 0
+  p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto, postMergeOn: true, postMergeChecks: 'pods healthy in prod-eu' })
+  await flush(); pipelineEngine.addPr(p.id, M); await flush(); await flush()
+  for (let i = 0; i < 3; i++) { later(); await pipelineEngine.step(p.id, true) } // merged → checks sent (idle, Auto) → session finished
+  expect(writes.some((w: string) => w.includes('post-merge checks') && w.includes('pods healthy in prod-eu'))).toBe(true)
+  expect(p.log.some((l: { text: string }) => l.text.startsWith('Post-merge checks finished'))).toBe(true)
+  expect(p.prs[0].state).toBe('done')
+  expect(p.phase).toBe('done')
+})

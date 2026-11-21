@@ -1,6 +1,8 @@
 // Which steps run on their own (true) vs wait for your click (false)
-export interface AutoSteps { openPr: boolean; review: boolean; ci: boolean; merge: boolean }
-export const DEFAULT_AUTO: AutoSteps = { openPr: true, review: true, ci: true, merge: false }
+export interface AutoSteps { openPr: boolean; review: boolean; ci: boolean; merge: boolean; postMerge: boolean }
+export const DEFAULT_AUTO: AutoSteps = { openPr: true, review: true, ci: true, merge: false, postMerge: true }
+// Which step a suggestion belongs to
+export const stepOf = (kind: 'open-pr' | 'review' | 'ci' | 'merge' | 'post-merge'): keyof AutoSteps => kind === 'open-pr' ? 'openPr' : kind === 'post-merge' ? 'postMerge' : kind
 
 // Browser-safe helpers for showing automations (no Node imports here).
 import type { Pipeline, PipelinePhase, PrTrackState, PrTrack } from './pipelines'
@@ -64,6 +66,7 @@ export function prSteps(t: PrTrack, slack: boolean): { label: string; done: bool
     { label: 'Approved', done: approved, current: false },
     { label: ready ? 'Ready to merge' : blocker, done: ready, current: approved && !ready },
     { label: 'Merged', done: merged, current: ready && !merged },
+    ...(merged ? [{ label: t.state === 'done' ? 'Post-merge checks done' : 'Post-merge checks', done: t.state === 'done', current: t.state !== 'done' }] : []),
   ]
 }
 

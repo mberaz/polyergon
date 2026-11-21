@@ -39,7 +39,7 @@ export type PipelinePhase =
   | 'needs-you'
   | 'stopped'
 
-export type PrTrackState = 'in-review' | 'working' | 'ready' | 'done' | 'needs-you'
+export type PrTrackState = 'in-review' | 'working' | 'ready' | 'verifying' | 'done' | 'needs-you' // verifying: merged, post-merge checks to run
 
 import { DEFAULT_AUTO, type AutoSteps } from './pipelineView'
 export { DEFAULT_AUTO, type AutoSteps }
@@ -48,6 +48,8 @@ export interface PipelineConfig {
   slackChannel: SlackChannel | null
   maxRounds: number // review rounds + CI fixes, each, per PR
   auto?: AutoSteps // missing = DEFAULT_AUTO
+  postMergeOn?: boolean // optional step, off unless you turn it on
+  postMergeChecks?: string // what else to verify after a merge (free text)
 }
 
 // What the dialog shows about a PR (GitHub) and its review post (Slack)
@@ -72,7 +74,7 @@ export interface SlackView extends Partial<SlackThreadView> {
 }
 
 // A message the automation proposes; sent only when you click Send
-export interface Suggestion { kind: 'open-pr' | 'review' | 'ci' | 'merge'; text: string; at: number }
+export interface Suggestion { kind: 'open-pr' | 'review' | 'ci' | 'merge' | 'post-merge'; text: string; at: number }
 
 export interface PrTrack {
   url: string
@@ -116,14 +118,14 @@ const POLL_MS = 2 * 60_000
 const SETTLE_MS = 20_000 // a session must be quiet this long after we sent it work
 const SLACK_CHECK_MS = 10 * 60_000
 const QUIET_MS = 15_000 // session must stay 'waiting' this long before we type into it
-import { ACTIVE_PHASES } from './pipelineView'
+import { ACTIVE_PHASES, stepOf } from './pipelineView'
 const OPEN_TRACK: PrTrackState[] = ['in-review', 'working', 'ready']
 
-const STEP_NAME: Record<keyof AutoSteps, string> = { openPr: 'open the PR', review: 'fix review comments', ci: 'fix CI', merge: 'merge' }
+const STEP_NAME: Record<keyof AutoSteps, string> = { openPr: 'open the PR', review: 'fix review comments', ci: 'fix CI', merge: 'merge', postMerge: 'post-merge checks' }
 export const autoOf = (p: { config: PipelineConfig }): AutoSteps => ({ ...DEFAULT_AUTO, ...p.config.auto })
 const cleanAuto = (a?: Partial<AutoSteps>): AutoSteps => {
   const m = { ...DEFAULT_AUTO, ...a }
-  return { openPr: m.openPr === true, review: m.review === true, ci: m.ci === true, merge: m.merge === true }
+  return { openPr: m.openPr === true, review: m.review === true, ci: m.ci === true, merge: m.merge === true, postMerge: m.postMerge === true }
 }
 
 const PROMPTS = {
@@ -131,6 +133,8 @@ const PROMPTS = {
   review: (url: string) => `There is new review feedback on ${url}. Read it with gh (reviews and comments), address each point, push the fixes, and reply on the PR to say what changed.`,
   ci: (url: string) => `CI is failing on ${url}. Find the failing checks with gh, fix the cause, and push.`,
   unresolved: (url: string, n: number) => `${url} has ${n} unresolved review thread${n > 1 ? 's' : ''}. Read them with gh (review comments), fix what's needed, push, reply in each thread, and resolve the ones you addressed.`,
+  postMerge: (url: string, extra?: string) => `${url} was merged. Run post-merge checks: confirm CI on the main branch passed for the merge commit, and if this repo deploys on merge, follow the deploy until it is rolled out and healthy (rollout status, logs, error rates). ` +
+    (extra ? `Also check: ${extra}. ` : '') + 'Only check: ask me before changing anything in production. Report what you verified and anything that looks wrong.',
   merge: (url: string) => `${url} is approved and CI is green. Merge it with gh pr merge, using the merge method this repo uses, and delete the branch. Print the result.`,
 }
 
@@ -278,7 +282,7 @@ class PipelineEngine {
     if (this.items.some(p => p.liveId === liveId && ACTIVE_PHASES.includes(p.phase))) return { error: 'This session already has a running automation' }
     const p: Pipeline = {
       id: randomUUID(), liveId, template: 'ship-it',
-      config: { slackChannel: config.slackChannel, maxRounds: Math.min(10, Math.max(1, Math.round(config.maxRounds) || 3)), auto: cleanAuto(config.auto) },
+      config: { slackChannel: config.slackChannel, maxRounds: Math.min(10, Math.max(1, Math.round(config.maxRounds) || 3)), auto: cleanAuto(config.auto), ...(config.postMergeOn ? { postMergeOn: true } : {}), ...(config.postMergeChecks?.trim() ? { postMergeChecks: config.postMergeChecks.trim().slice(0, 2000) } : {}) },
       phase: 'waiting-for-session', prs: [], workingOn: null, actedAt: 0,
       log: [{ t: Date.now(), text: 'Started' }],
       createdAt: Date.now(), updatedAt: Date.now(),
@@ -365,8 +369,8 @@ class PipelineEngine {
       if (sug.kind === 'review') t.reviewRounds++
       if (sug.kind === 'ci') t.ciFixes++
       if (sug.kind === 'merge') t.mergeAttempts = (t.mergeAttempts ?? 0) + 1
-      this.patchTrack(p, t, { suggestion: null, state: 'working' })
-      this.update(p, { workingOn: t.url, actedAt: Date.now() }, `Sent the session: ${sug.kind === 'review' ? 'address review feedback' : sug.kind === 'merge' ? 'merge' : 'fix CI'} on ${shortPr(t.url)}`)
+      this.patchTrack(p, t, { suggestion: null, state: sug.kind === 'post-merge' ? 'verifying' : 'working' })
+      this.update(p, { workingOn: t.url, actedAt: Date.now() }, `Sent the session: ${sug.kind === 'review' ? 'address review feedback' : sug.kind === 'merge' ? 'merge' : sug.kind === 'post-merge' ? 'post-merge checks' : 'fix CI'} on ${shortPr(t.url)}`)
     } else {
       this.update(p, { suggestion: null, phase: 'opening-pr', actedAt: Date.now() }, 'You sent the session: open a PR')
     }
@@ -383,11 +387,19 @@ class PipelineEngine {
     this.step(p.id)
   }
 
+  // The optional post-merge step: on/off and what else to verify
+  setPostMerge(id: string, on: boolean, checks?: string) {
+    const p = this.items.find(x => x.id === id)
+    if (!p) return
+    const v = (checks ?? p.config.postMergeChecks ?? '').trim().slice(0, 2000)
+    this.update(p, { config: { ...p.config, postMergeOn: on, postMergeChecks: v || undefined } }, on ? `Post-merge checks on${v ? `, also verifying: ${v.slice(0, 120)}` : ''}` : 'Post-merge checks off')
+  }
+
   dismiss(id: string, prUrl: string | null) {
     const p = this.items.find(x => x.id === id)
     if (!p) return
     const t = prUrl ? p.prs.find(x => x.url === prUrl) : null
-    if (t) this.patchTrack(p, t, { suggestion: null }, `Dismissed suggestion on ${shortPr(t.url)}`)
+    if (t) this.patchTrack(p, t, { suggestion: null, ...(t.state === 'verifying' ? { state: 'done' as const } : {}) }, `Dismissed suggestion on ${shortPr(t.url)}`)
     else this.update(p, { suggestion: null }, 'Dismissed the open-PR suggestion')
   }
 
@@ -415,14 +427,14 @@ class PipelineEngine {
     }
     for (const t of p.prs) {
       const k = t.suggestion?.kind
-      if (!k || k === 'open-pr' || !auto[k]) continue
+      if (!k || k === 'open-pr' || !auto[stepOf(k)]) continue
       if (k === 'merge' && (t.mergeAttempts ?? 0) >= 1) continue // auto-merge tries once; then it's yours
       const used = k === 'review' ? t.reviewRounds : k === 'ci' ? t.ciFixes : 0
       if (used >= p.config.maxRounds) {
         if (!p.log.at(-1)?.text.startsWith('Fix limit')) this.update(p, {}, `Fix limit reached (${p.config.maxRounds} rounds) on ${shortPr(t.url)}: click Send to continue`, { title: 'Automation needs you', body: `${shortPr(t.url)} hit ${p.config.maxRounds} fix rounds` })
         continue
       }
-      this.update(p, {}, `Automatic: ${STEP_NAME[k]} on ${shortPr(t.url)}`)
+      this.update(p, {}, `Automatic: ${STEP_NAME[stepOf(k)]} on ${shortPr(t.url)}`)
       this.act(p.id, t.url)
       return
     }
@@ -471,7 +483,8 @@ class PipelineEngine {
     if (busyOn && !quiet) return // session still on it
     let refresh = poll
     if (busyOn) {
-      this.patchTrack(p, busyOn, { state: 'in-review' }, `Session finished work on ${shortPr(busyOn.url)}`)
+      if (busyOn.state === 'verifying') this.patchTrack(p, busyOn, { state: 'done' }, `Post-merge checks finished on ${shortPr(busyOn.url)}: see the session for results`, { title: 'Post-merge checks finished', body: shortPr(busyOn.url) })
+      else this.patchTrack(p, busyOn, { state: 'in-review' }, `Session finished work on ${shortPr(busyOn.url)}`)
       this.update(p, { workingOn: null })
       refresh = true
     }
@@ -486,6 +499,11 @@ class PipelineEngine {
       this.patchTrack(p, t, { view: pr.view })
       if (wasDraft && !pr.view.isDraft) this.announce(p, t) // marked ready: now ask for review
       this.refreshSlack(p, t)
+      if (pr.state === 'MERGED' && p.config.postMergeOn) {
+        this.patchTrack(p, t, { state: 'verifying', suggestion: null }, `${shortPr(t.url)} merged`, { title: 'PR merged', body: pr.title })
+        suggest(t, 'post-merge', PROMPTS.postMerge(t.url, p.config.postMergeChecks), `Post-merge checks ready for ${shortPr(t.url)}`, 'Run post-merge checks?', `${pr.title}: click Send to ask the session to verify the merge`)
+        continue
+      }
       if (pr.state === 'MERGED' || pr.state === 'CLOSED') {
         this.patchTrack(p, t, { state: 'done' }, `${shortPr(t.url)} ${pr.state.toLowerCase()}`, { title: `PR ${pr.state.toLowerCase()}`, body: pr.title })
         continue

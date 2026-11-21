@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Task } from '@/lib/taskStore'
 import type { LiveSessionInfo } from '@/hooks/useTerminal'
 import type { Pipeline } from '@/lib/pipelines'
-import { isRunning, shortPr, prSteps, DEFAULT_AUTO } from '@/lib/pipelineView'
+import { isRunning, shortPr, prSteps, DEFAULT_AUTO, stepOf } from '@/lib/pipelineView'
 import type { SlackChannel } from '@/lib/slackBridge'
 import { SlackChannelPicker } from './SlackChannelPicker'
 
@@ -165,7 +165,7 @@ export function TaskBoard({ orgId, folders, liveSessions, pipelines, demoTasks, 
                           {(x.view?.isDraft || !!x.view?.unresolved) && <p className="text-[11px] text-amber-300 mt-0.5">{[x.view?.isDraft && 'draft', x.view?.unresolved && `${x.view.unresolved} unresolved thread${x.view.unresolved > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}</p>}
                           {x.suggestion && (x.suggestion.kind === 'merge' && !auto.merge
                             ? <div className="flex gap-1.5 mt-1.5"><button onClick={() => s && onAct(pipe.id, s.id, x.url)} className="text-xs px-2.5 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500">Merge</button><button onClick={() => onDismiss(pipe.id, x.url)} className="text-xs px-1.5 text-gray-500 hover:text-gray-200">Not yet</button></div>
-                            : x.suggestion.kind !== 'merge' && x.suggestion.kind !== 'open-pr' && auto[x.suggestion.kind] && (x.suggestion.kind === 'review' ? x.reviewRounds : x.ciFixes) < pipe.config.maxRounds
+                            : x.suggestion.kind !== 'merge' && x.suggestion.kind !== 'open-pr' && auto[stepOf(x.suggestion.kind)] && (x.suggestion.kind === 'review' ? x.reviewRounds : x.ciFixes) < pipe.config.maxRounds
                               ? <p className="text-[11px] text-blue-300/80 mt-1">{x.suggestion.kind === 'review' ? 'Review comments' : 'CI failure'} going to the session…</p>
                               : <div className="flex gap-1.5 mt-1.5 items-center"><span className="text-[11px] text-amber-300 flex-1">{x.suggestion.kind === 'review' ? 'Review comments' : x.suggestion.kind === 'ci' ? 'CI failing' : 'Ready'}</span><button onClick={() => s && onAct(pipe.id, s.id, x.url)} className="text-xs px-2 py-0.5 rounded-md bg-amber-600 hover:bg-amber-500">Send to session</button></div>)}
                         </div>

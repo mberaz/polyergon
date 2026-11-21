@@ -3,7 +3,7 @@ import { SlackPeoplePicker } from './SlackPeoplePicker'
 import { useEffect, useState } from 'react'
 import type { Pipeline, PipelineConfig, PrTrack, PrReview } from '@/lib/pipelines'
 import type { SlackChannel } from '@/lib/slackBridge'
-import { DEFAULT_AUTO, type AutoSteps, isRunning, pipelineSummary, shortPr, prSteps, preprSteps } from '@/lib/pipelineView'
+import { DEFAULT_AUTO, stepOf, type AutoSteps, isRunning, pipelineSummary, shortPr, prSteps, preprSteps } from '@/lib/pipelineView'
 import { SlackChannelPicker } from './SlackChannelPicker'
 import { SuggestionBox, TRACK_BADGE, AUTO_ROWS } from './AutomateDialog'
 
@@ -79,9 +79,9 @@ function LiveStatus({ t, p, auto, sessionBusy }: { t: PrTrack; p: Pipeline; auto
   const [dot, text, cls] =
     !isRunning(p) ? ['bg-gray-500', 'Automation stopped. Nothing runs on this PR.', 'text-gray-400']
     : t.state === 'done' ? ['bg-emerald-400', v?.state === 'MERGED' ? 'Merged. Nothing left to do.' : 'Closed. Nothing left to do.', 'text-emerald-300']
-    : p.workingOn === t.url ? ['bg-blue-400 animate-pulse', `Claude is working on this PR now${sessionBusy ? '' : ' (finishing up)'}.`, 'text-blue-200']
+    : p.workingOn === t.url ? ['bg-blue-400 animate-pulse', `Claude is ${t.state === 'verifying' ? 'running post-merge checks' : 'working on this PR'} now${sessionBusy ? '' : ' (finishing up)'}.`, 'text-blue-200']
     : t.state === 'needs-you' ? ['bg-amber-400', 'Stopped and needs you. Open the session.', 'text-amber-300']
-    : t.suggestion && t.suggestion.kind !== 'open-pr' && !auto[t.suggestion.kind] ? ['bg-amber-400', 'Waiting for you: send or dismiss the suggestion below.', 'text-amber-300']
+    : t.suggestion && t.suggestion.kind !== 'open-pr' && !auto[stepOf(t.suggestion.kind)] ? ['bg-amber-400', 'Waiting for you: send or dismiss the suggestion below.', 'text-amber-300']
     : t.suggestion ? ['bg-blue-400 animate-pulse', sessionBusy ? 'Queued: Claude takes it when the session is free.' : 'Sending to Claude now.', 'text-blue-200']
     : ['bg-emerald-400 animate-pulse', `Automation active, watching. ${v?.isDraft ? 'Waits for the draft to be marked ready.' : t.state === 'ready' ? 'Ready to merge.' : v?.checks === 'failing' ? `CI failing${auto.ci ? '' : ': fixing CI is set to Ask me'}.` : 'Waiting on reviewers.'}`, 'text-emerald-200']
   return (
@@ -103,7 +103,7 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
   const [label, cls] = t.view?.isDraft && t.state === 'in-review' ? ['draft', 'bg-gray-700 text-gray-300'] : TRACK_BADGE[t.state]
   const max = p.config.maxRounds
   const ci = CI[v?.checks ?? 'none'] ?? CI.none
-  const autoNext = t.suggestion && t.suggestion.kind !== 'open-pr' && auto[t.suggestion.kind]
+  const autoNext = t.suggestion && t.suggestion.kind !== 'open-pr' && auto[stepOf(t.suggestion.kind)]
   return (
     <article className="rounded-2xl border border-gray-800 bg-gradient-to-b from-gray-900/80 to-gray-900/30 p-5 shadow-lg shadow-black/20">
       <header className="flex items-start gap-3">
@@ -182,7 +182,7 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
   )
 }
 
-export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onTell, sessionBusy = false, onAct, onDismiss, onSetAuto }: {
+export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onTell, onSetPostMerge, sessionBusy = false, onAct, onDismiss, onSetAuto }: {
   sessionName: string
   pipeline: Pipeline | null
   error: string | null
@@ -193,6 +193,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   onAddPr: (id: string, url: string, review?: PrReview) => void
   onSetPrReview: (id: string, url: string, review: PrReview) => void
   onTell: (id: string, url: string, text: string) => void
+  onSetPostMerge: (id: string, on: boolean, checks: string) => void
   sessionBusy?: boolean
   onAct: (id: string, prUrl: string | null) => void
   onDismiss: (id: string, prUrl: string | null) => void
@@ -202,17 +203,21 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   const [channel, setChannel] = useState<SlackChannel | null>(null)
   const [maxRounds, setMaxRounds] = useState(3)
   const [autoDraft, setAutoDraft] = useState<AutoSteps>(DEFAULT_AUTO)
+  const [pmDraft, setPmDraft] = useState({ on: false, checks: '' })
   const [prUrl, setPrUrl] = useState('')
   const [newReview, setNewReview] = useState<PrReview | null>(null)
   const running = isRunning(pipeline)
   const auto: AutoSteps = running && pipeline ? { ...DEFAULT_AUTO, ...pipeline.config.auto } : autoDraft
   const setAuto = (k: keyof AutoSteps, on: boolean) => running && pipeline ? onSetAuto(pipeline.id, { [k]: on }) : setAutoDraft(a => ({ ...a, [k]: on }))
+  const pm = running && pipeline ? { on: !!pipeline.config.postMergeOn, checks: pipeline.config.postMergeChecks ?? '' } : pmDraft
+  const setPm = (on: boolean, checks = pm.checks) => running && pipeline ? onSetPostMerge(pipeline.id, on, checks) : setPmDraft({ on, checks })
+  const [pmText, setPmText] = useState<string | null>(null) // editing the checks box
   const [phaseLabel, phaseCls] = pipeline ? PHASE[pipeline.phase] : ['Not running', 'bg-gray-800 text-gray-400 ring-gray-700']
   const input = 'w-full bg-gray-900 border border-gray-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-white outline-none placeholder-gray-500'
 
   function start() {
     const name = (channel?.name ?? channelText).replace(/^#/, '').trim()
-    onStart({ slackChannel: name ? { id: channel?.id ?? '', name } : null, maxRounds, auto: autoDraft })
+    onStart({ slackChannel: name ? { id: channel?.id ?? '', name } : null, maxRounds, auto: autoDraft, postMergeOn: pmDraft.on, postMergeChecks: pmDraft.checks })
   }
 
   return (
@@ -274,15 +279,26 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
             <h2 className="text-sm font-semibold">Steps</h2>
             <p className="text-[11px] text-gray-500 mb-3">Automatic steps run when the session is idle. Approving is always up to your reviewers.</p>
             <div className="space-y-2">
-              {AUTO_ROWS.map(([k, label, hint]) => (
-                <div key={k} className="flex items-center justify-between gap-2" title={hint}>
-                  <span className="text-sm text-gray-200">{label}</span>
-                  <span className="flex rounded-lg border border-gray-700 overflow-hidden text-[11px] flex-shrink-0">
-                    <button onClick={() => setAuto(k, true)} className={`px-2.5 py-1 ${auto[k] ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Auto</button>
-                    <button onClick={() => setAuto(k, false)} className={`px-2.5 py-1 ${!auto[k] ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Ask me</button>
-                  </span>
+              {AUTO_ROWS.map(([k, label, hint]) => {
+                const optional = k === 'postMerge', off = optional && !pm.on
+                return (
+                <div key={k} title={hint}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`text-sm ${off ? 'text-gray-500' : 'text-gray-200'}`}>{label}{optional && <span className="text-[10px] text-gray-500"> (optional)</span>}</span>
+                    <span className="flex rounded-lg border border-gray-700 overflow-hidden text-[11px] flex-shrink-0">
+                      {optional && <button onClick={() => setPm(false)} className={`px-2.5 py-1 ${off ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Off</button>}
+                      <button onClick={() => { if (optional && !pm.on) setPm(true); setAuto(k, true) }} className={`px-2.5 py-1 ${!off && auto[k] ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Auto</button>
+                      <button onClick={() => { if (optional && !pm.on) setPm(true); setAuto(k, false) }} className={`px-2.5 py-1 ${!off && !auto[k] ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Ask me</button>
+                    </span>
+                  </div>
+                  {optional && pm.on && (
+                    <textarea dir="auto" rows={2} value={pmText ?? pm.checks} onChange={e => setPmText(e.target.value)}
+                      onBlur={() => { if (pmText !== null && pmText !== pm.checks) setPm(true, pmText); setPmText(null) }}
+                      placeholder="Also check (optional), e.g. the labeling-service pods are healthy in prod-us and prod-eu"
+                      className="mt-1.5 w-full bg-gray-950 border border-gray-800 rounded-md px-2.5 py-1.5 text-xs text-gray-100 outline-none focus:border-blue-500 placeholder-gray-600 resize-none" />
+                  )}
                 </div>
-              ))}
+              )})}
             </div>
             {pipeline && <p className="text-[11px] text-gray-500 mt-3">Slack: {pipeline.config.slackChannel ? `#${pipeline.config.slackChannel.name}` : 'none'} · up to {pipeline.config.maxRounds} fix rounds per PR</p>}
           </section>

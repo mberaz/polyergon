@@ -13,7 +13,7 @@ const m = (min: number) => now - min * 60_000
 
 const pipeline: Pipeline = {
   id: 'demo', liveId: 'demo', template: 'ship-it',
-  config: { slackChannel: { id: 'C0', name: 'ledger-reviews' }, maxRounds: 3, auto: { openPr: true, review: true, ci: true, merge: false } },
+  config: { slackChannel: { id: 'C0', name: 'ledger-reviews' }, maxRounds: 3, auto: { openPr: true, review: true, ci: true, merge: false, postMerge: false } },
   phase: 'tracking', workingOn: null, actedAt: m(9), createdAt: m(120), updatedAt: m(1),
   prs: [
     {
@@ -112,7 +112,7 @@ export default function Demo() {
     <div className="fixed inset-0">
       <div className="relative w-full h-full">
         <PipelinePage sessionName="ledger: webhook retries" pipeline={pipeline} error={null}
-          onOpenSession={noop} onStart={noop} onStop={noop} onAddPr={noop} onSetPrReview={noop} onTell={noop} onAct={noop} onDismiss={noop} onSetAuto={noop} />
+          onOpenSession={noop} onStart={noop} onStop={noop} onAddPr={noop} onSetPrReview={noop} onTell={noop} onSetPostMerge={noop} onAct={noop} onDismiss={noop} onSetAuto={noop} />
       </div>
     </div>
   )

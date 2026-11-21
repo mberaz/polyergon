@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import type { Pipeline, PipelineConfig, PrTrack, Suggestion } from '@/lib/pipelines'
-import { DEFAULT_AUTO, type AutoSteps } from '@/lib/pipelineView'
+import { DEFAULT_AUTO, stepOf, type AutoSteps } from '@/lib/pipelineView'
 import type { SlackChannel } from '@/lib/slackBridge'
 import { isRunning, pipelineSummary, shortPr, prSteps, preprSteps } from '@/lib/pipelineView'
 import { SlackChannelPicker } from './SlackChannelPicker'
@@ -16,7 +16,7 @@ const STEPS = [
 
 // A proposed message for the session. Only your click sends it.
 export function SuggestionBox({ s, onSend, onDismiss }: { s: Suggestion; onSend: () => void; onDismiss: () => void }) {
-  const title = s.kind === 'open-pr' ? 'Ready to open a PR?' : s.kind === 'review' ? 'New review feedback' : s.kind === 'merge' ? 'Approved and green: ready to merge' : 'CI is failing'
+  const title = s.kind === 'open-pr' ? 'Ready to open a PR?' : s.kind === 'review' ? 'New review feedback' : s.kind === 'merge' ? 'Approved and green: ready to merge' : s.kind === 'post-merge' ? 'Merged: run post-merge checks?' : 'CI is failing'
   return (
     <div className="mt-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-2.5">
       <p className="text-xs font-medium text-amber-200">{title}</p>
@@ -35,6 +35,7 @@ export const REVIEW_COLOR: Record<string, string> = { APPROVED: 'text-emerald-30
 export const TRACK_BADGE: Record<PrTrack['state'], [string, string]> = {
   'in-review': ['in review', 'bg-blue-500/15 text-blue-300'],
   working: ['session is fixing', 'bg-blue-500/15 text-blue-300'],
+  verifying: ['post-merge checks', 'bg-blue-500/15 text-blue-300'],
   ready: ['ready to merge', 'bg-emerald-500/15 text-emerald-300'],
   done: ['done', 'bg-gray-700 text-gray-300'],
   'needs-you': ['needs you', 'bg-amber-500/15 text-amber-300'],
@@ -68,7 +69,7 @@ export function PrCard({ t, slackSet, max, onSend, onDismiss, auto }: { t: PrTra
         <p className="text-[11px] text-gray-500"><a href={t.url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">{shortPr(t.url)} ↗</a>{v?.isDraft ? ' · draft' : ''} · review fixes {t.reviewRounds}/{max} · CI fixes {t.ciFixes}/{max}</p>
       </div>
       {t.suggestion && onSend && onDismiss && <SuggestionBox s={t.suggestion} onSend={onSend} onDismiss={onDismiss} />}
-      {t.suggestion && auto && t.suggestion.kind !== 'open-pr' && auto[t.suggestion.kind] && (t.suggestion.kind === 'merge' ? (t.mergeAttempts ?? 0) < 1 : (t.suggestion.kind === 'review' ? t.reviewRounds : t.ciFixes) < max) &&
+      {t.suggestion && auto && t.suggestion.kind !== 'open-pr' && auto[stepOf(t.suggestion.kind)] && (t.suggestion.kind === 'merge' ? (t.mergeAttempts ?? 0) < 1 : (t.suggestion.kind === 'review' ? t.reviewRounds : t.ciFixes) < max) &&
         <p className="text-[11px] text-amber-300/80 mt-1">Automatic: this goes to the session as soon as it&apos;s idle.</p>}
       <Stepper steps={prSteps(t, slackSet)} />
       <div className="grid grid-cols-2 gap-3 text-xs">
@@ -107,6 +108,7 @@ export const AUTO_ROWS: [keyof AutoSteps, string, string][] = [
   ['review', 'Fix review comments', 'When reviewers comment, ask the session to address them, push and reply'],
   ['ci', 'Fix failing CI', 'When CI fails, ask the session to fix it and push'],
   ['merge', 'Merge when approved', 'When approved and CI is green, ask the session to merge (tried once automatically)'],
+  ['postMerge', 'Post-merge checks', 'After a PR merges, ask the session to check CI on main, the deploy and logs. It only checks; production changes still ask you'],
 ]
 
 // Start a "Ship it" automation on a session, or watch / stop the running one.
@@ -160,7 +162,7 @@ export function AutomateDialog({ sessionName, pipeline, error, onStart, onStop, 
         <div className="rounded-lg border border-gray-800 p-3 mb-4">
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Steps · automatic or ask me</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-            {AUTO_ROWS.map(([k, label, hint]) => (
+            {AUTO_ROWS.filter(([k]) => k !== 'postMerge').map(([k, label, hint]) => (
               <label key={k} className="flex items-center justify-between gap-2 text-xs" title={hint}>
                 <span className="text-gray-300">{label}</span>
                 <span className="flex rounded-md border border-gray-700 overflow-hidden flex-shrink-0">

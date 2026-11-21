@@ -265,7 +265,7 @@ app.prepare().then(async () => {
           // Opening the PR waits for you ("Your review" column); fixes run on their own; merge asks.
           const task = updateTask(msg.taskId, { liveId: id })
           if (task?.ship && gitRoot && backend === 'claude') {
-            pipelineEngine.create(id, { slackChannel: task.slackChannel ?? null, maxRounds: 3, auto: { openPr: false, review: true, ci: true, merge: false } })
+            pipelineEngine.create(id, { slackChannel: task.slackChannel ?? null, maxRounds: 3, auto: { openPr: false, review: true, ci: true, merge: false, postMerge: false } })
           }
         }
         send({ type: 'created', id, cwd, gitRoot, orgId })
@@ -471,6 +471,8 @@ app.prepare().then(async () => {
         // The one place an automation's message reaches a session: your click
         const err = pipelineEngine.act(msg.id as string, (msg.prUrl as string) || null)
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
+      } else if (msg.type === 'pipeline-post-merge') {
+        pipelineEngine.setPostMerge(msg.id as string, msg.on === true, typeof msg.checks === 'string' ? msg.checks : undefined)
       } else if (msg.type === 'pipeline-auto') {
         pipelineEngine.setAuto(msg.id as string, (msg.auto ?? {}) as object)
       } else if (msg.type === 'pipeline-dismiss') {
