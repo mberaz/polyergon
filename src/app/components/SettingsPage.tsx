@@ -43,7 +43,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [tStatus, setTStatus] = useState<TranscriptionStatus | null>(null)
-  const [tProvider, setTProvider] = useState<'none' | 'openai' | 'azure'>('none')
+  const [tProvider, setTProvider] = useState<'none' | 'openai' | 'azure' | 'local'>('none')
   const [tEndpoint, setTEndpoint] = useState('')
   const [tDeployment, setTDeployment] = useState('')
   const [tKey, setTKey] = useState('')
@@ -103,7 +103,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
       if (!r.ok) throw new Error('Could not save settings')
       if (tDirty) {
         const body = tProvider === 'azure' ? { provider: 'azure', endpoint: tEndpoint, deployment: tDeployment, apiKey: tKey }
-          : tProvider === 'openai' ? { provider: 'openai', apiKey: tKey } : { provider: 'none' }
+          : tProvider === 'openai' ? { provider: 'openai', apiKey: tKey } : tProvider === 'local' ? { provider: 'local' } : { provider: 'none' }
         const tr = await fetch('/api/settings/transcription', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         const data = await tr.json()
         if (!tr.ok) throw new Error(data.error ?? 'Could not save transcription')
@@ -237,7 +237,9 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             <option value="none">Not configured</option>
             <option value="openai">OpenAI</option>
             <option value="azure">Azure OpenAI</option>
+            <option value="local">Local Whisper (free, offline)</option>
           </select>
+          {tProvider === 'local' && <LocalWhisperSetup />}
           {tProvider === 'azure' && (
             <>
               <label className="block text-xs text-gray-400">Endpoint
@@ -248,7 +250,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
               </label>
             </>
           )}
-          {tProvider !== 'none' && (
+          {(tProvider === 'openai' || tProvider === 'azure') && (
             <label className="block text-xs text-gray-400">API key
               <input
                 type="password" autoComplete="off" value={tKey} onChange={e => editT(setTKey)(e.target.value)}
@@ -279,6 +281,31 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           >{state === 'saving' ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Local Whisper: whisper.cpp + a model file. Shows what's missing and downloads the model.
+function LocalWhisperSetup() {
+  const [st, setSt] = useState<{ cli: boolean; model: boolean; downloading: number | null; error: string | null } | null>(null)
+  const load = (method = 'GET') => fetch('/api/settings/transcription/local', { method }).then(r => r.json()).then(setSt).catch(() => {})
+  useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (st?.downloading == null) return
+    const t = setTimeout(() => load(), 1500)
+    return () => clearTimeout(t)
+  }, [st])
+  if (!st) return null
+  return (
+    <div className="text-xs space-y-2 mt-2">
+      <p className="text-gray-500 leading-relaxed">Runs OpenAI&apos;s open-source Whisper model on this Mac with whisper.cpp. Audio never leaves your computer, and there&apos;s no key or cost.</p>
+      <p className={st.cli ? 'text-green-400' : 'text-amber-300'}>
+        {st.cli ? '✓ whisper.cpp installed' : <>1. In Terminal run <code className="text-amber-200">brew install whisper-cpp</code>, then <button onClick={() => load()} className="underline">check again</button></>}
+      </p>
+      {st.model ? <p className="text-green-400">✓ Model downloaded (large-v3-turbo)</p>
+        : st.downloading != null ? <p className="text-blue-300">Downloading model… {st.downloading}%</p>
+        : <p className="text-amber-300">2. <button onClick={() => load('POST')} className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white">Download model</button> <span className="text-gray-500">large-v3-turbo, about 550 MB</span></p>}
+      {st.error && <p className="text-red-400">{st.error}</p>}
     </div>
   )
 }

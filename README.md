@@ -38,7 +38,7 @@ Each step can be **Auto** or **Ask me**. By default steps 1 to 4 are automatic a
 - **Channel watcher:** finds unanswered questions in a channel and drafts replies, optionally with a session's knowledge, extra sources (links, folders, channels, notes) and your own rules. You approve each reply, or let it answer new questions on its own. Every action is in an activity log.
 
 ### Meetings (beta, macOS)
-Record a call and get a live transcript, running notes, answers to your questions and a summary. Add context from links, Slack channels, past meetings or sessions. Search every recording, continue a stopped one, and send the summary to Slack.
+Record a call and get a live transcript (local Whisper, OpenAI or Azure), running notes, answers to your questions and a summary. Add context from links, Slack channels, past meetings or sessions. Search every recording, continue a stopped one, and send the summary to Slack.
 
 ### More
 - **Orgs:** keep separate Claude accounts apart. Each org has its own login, Slack workspace, skills, plugins and automations.
@@ -52,7 +52,7 @@ Record a call and get a live transcript, running notes, answers to your question
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and logged in, and/or GitHub Copilot CLI
 - Optional: [`gh`](https://cli.github.com) for PRs and Ship it
 - Optional, Slack features: the Slack connector or plugin in Claude Code
-- Optional, meetings: `ffmpeg`, [BlackHole](https://github.com/ExistentialAudio/BlackHole), and an OpenAI or Azure OpenAI key for transcription
+- Optional, meetings: `ffmpeg`, [BlackHole](https://github.com/ExistentialAudio/BlackHole), and transcription: free and offline with Whisper (`brew install whisper-cpp`; the app downloads the model), or an OpenAI or Azure OpenAI key
 
 ## Install
 

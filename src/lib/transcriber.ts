@@ -1,10 +1,11 @@
 import { readFileSync } from 'fs'
 import { wavRms, SILENCE_RMS_THRESHOLD } from './audioCapture'
 import type { TranscriptionConfig } from './meetingConfig'
+import { transcribeLocal } from './localWhisper'
 
 const MAX_ATTEMPTS = 3
 
-function requestFor(config: TranscriptionConfig, buf: Buffer, prompt: string): { url: string; headers: Record<string, string>; form: FormData } {
+function requestFor(config: Exclude<TranscriptionConfig, { kind: 'local' }>, buf: Buffer, prompt: string): { url: string; headers: Record<string, string>; form: FormData } {
   const form = new FormData()
   form.append('file', new Blob([new Uint8Array(buf)], { type: 'audio/wav' }), 'chunk.wav')
   // Prior transcript as context — keeps language and terminology consistent
@@ -31,6 +32,7 @@ function requestFor(config: TranscriptionConfig, buf: Buffer, prompt: string): {
 export async function transcribeChunk(filePath: string, config: TranscriptionConfig, prompt = ''): Promise<string | null> {
   const buf = readFileSync(filePath)
   if (wavRms(buf) < SILENCE_RMS_THRESHOLD) return null
+  if (config.kind === 'local') return transcribeLocal(filePath, prompt)
 
   let lastError: unknown
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {

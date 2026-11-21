@@ -5,9 +5,16 @@ import { startCapture, micTest, CaptureHandle } from './audioCapture'
 import { transcribeChunk } from './transcriber'
 import { MeetingAssistant } from './meetingAssistant'
 import { getTranscriptionConfig, getAudioDevices } from './meetingConfig'
+import { localWhisperProblem } from './localWhisper'
 import { orgRegistry, DEFAULT_ORG_ID } from './orgRegistry'
 
 const NOTES_TICK_MS = 90_000
+
+function transcriptionProblem(): string | null {
+  const c = getTranscriptionConfig()
+  if (!c) return 'Transcription not configured: open Settings → Meetings and choose OpenAI, Azure OpenAI or Local Whisper.'
+  return c.kind === 'local' ? localWhisperProblem() : null
+}
 
 export type MeetingEvent =
   | { type: 'meeting-status'; meeting: Meeting }
@@ -55,18 +62,16 @@ class MeetingManager {
   }
 
   start(title: string, orgId: string): Meeting | { error: string } {
-    if (!getTranscriptionConfig()) {
-      return { error: 'Transcription not configured: open Settings → Meeting transcription and add an OpenAI or Azure OpenAI key.' }
-    }
+    const notReady = transcriptionProblem()
+    if (notReady) return { error: notReady }
     return this.begin(meetingStore.create(title, orgId || DEFAULT_ORG_ID))
   }
 
   // Continue an ended/interrupted meeting: same transcript, notes and assistant
   // conversation; new audio is appended. The summary is rewritten on stop.
   resume(meetingId: string): Meeting | { error: string } {
-    if (!getTranscriptionConfig()) {
-      return { error: 'Transcription not configured: open Settings → Meeting transcription and add an OpenAI or Azure OpenAI key.' }
-    }
+    const notReady = transcriptionProblem()
+    if (notReady) return { error: notReady }
     const existing = meetingStore.get(meetingId)
     if (!existing) return { error: 'Meeting not found' }
     if (this.active.has(meetingId) || existing.status === 'recording') return { error: 'Meeting is already recording' }

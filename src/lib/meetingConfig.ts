@@ -1,13 +1,16 @@
 import { CONFIG_FILE, readConfig, writeConfig } from './configFile'
+import { LOCAL_MODEL_PATH } from './localWhisper'
 
 export type TranscriptionConfig =
   | { kind: 'openai'; apiKey: string }
   | { kind: 'azure'; endpoint: string; apiKey: string; deployment: string }
+  | { kind: 'local'; model: string }
 
 // Azure (AI Foundry deployment) takes precedence when configured; plain
 // OpenAI key works as before.
 export function getTranscriptionConfig(file = CONFIG_FILE): TranscriptionConfig | null {
   const cfg = readConfig(file)
+  if (cfg.transcriptionProvider === 'local') return { kind: 'local', model: LOCAL_MODEL_PATH }
   const { azureEndpoint, azureApiKey, azureDeployment } = cfg
   if (typeof azureEndpoint === 'string' && azureEndpoint && typeof azureApiKey === 'string' && azureApiKey) {
     return {
@@ -24,7 +27,7 @@ export function getTranscriptionConfig(file = CONFIG_FILE): TranscriptionConfig 
 
 // What the Settings UI may see: never the key itself, only its last 4 chars.
 export interface TranscriptionStatus {
-  provider: 'openai' | 'azure' | null
+  provider: 'openai' | 'azure' | 'local' | null
   keyHint: string | null
   fromEnv: boolean // OPENAI_API_KEY env var, can't be changed from the UI
   endpoint: string | null
@@ -35,12 +38,14 @@ export function getTranscriptionStatus(file = CONFIG_FILE): TranscriptionStatus 
   const c = getTranscriptionConfig(file)
   const hint = (k: string) => '…' + k.slice(-4)
   if (!c) return { provider: null, keyHint: null, fromEnv: false, endpoint: null, deployment: null }
+  if (c.kind === 'local') return { provider: 'local', keyHint: null, fromEnv: false, endpoint: null, deployment: null }
   if (c.kind === 'azure') return { provider: 'azure', keyHint: hint(c.apiKey), fromEnv: false, endpoint: c.endpoint, deployment: c.deployment }
   return { provider: 'openai', keyHint: hint(c.apiKey), fromEnv: !readConfig(file).openaiApiKey, endpoint: null, deployment: null }
 }
 
 export type TranscriptionInput =
   | { provider: 'none' }
+  | { provider: 'local' }
   | { provider: 'openai'; apiKey?: string }
   | { provider: 'azure'; endpoint: string; deployment?: string; apiKey?: string }
 
@@ -49,7 +54,10 @@ export type TranscriptionInput =
 export function saveTranscriptionConfig(input: TranscriptionInput, file = CONFIG_FILE): TranscriptionStatus {
   const cfg = readConfig(file)
   const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
-  if (input.provider === 'none') {
+  delete cfg.transcriptionProvider // only 'local' sets it; saved keys stay for switching back
+  if (input.provider === 'local') {
+    cfg.transcriptionProvider = 'local'
+  } else if (input.provider === 'none') {
     for (const k of ['azureEndpoint', 'azureApiKey', 'azureDeployment', 'openaiApiKey']) delete cfg[k]
   } else if (input.provider === 'openai') {
     const key = str(input.apiKey) || str(cfg.openaiApiKey)
