@@ -227,6 +227,8 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   const pm = running && pipeline ? { on: !!pipeline.config.postMergeOn, checks: pipeline.config.postMergeChecks ?? '' } : pmDraft
   const setPm = (on: boolean, checks = pm.checks) => running && pipeline ? onSetPostMerge(pipeline.id, on, checks) : setPmDraft({ on, checks })
   const [pmText, setPmText] = useState<string | null>(null) // editing the checks box
+  const [pmSaved, setPmSaved] = useState(false)
+  const savePm = () => { if (pmText !== null && pmText !== pm.checks) { setPm(true, pmText); setPmSaved(true); setTimeout(() => setPmSaved(false), 2500) } setPmText(null) }
   const [phaseLabel, phaseCls] = pipeline ? PHASE[pipeline.phase] : ['Not running', 'bg-gray-800 text-gray-400 ring-gray-700']
   const input = 'w-full bg-gray-900 border border-gray-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-white outline-none placeholder-gray-500'
 
@@ -307,10 +309,18 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
                     </span>
                   </div>
                   {optional && pm.on && (
-                    <textarea dir="auto" rows={2} value={pmText ?? pm.checks} onChange={e => setPmText(e.target.value)}
-                      onBlur={() => { if (pmText !== null && pmText !== pm.checks) setPm(true, pmText); setPmText(null) }}
-                      placeholder="Also check (optional), e.g. the labeling-service pods are healthy in prod-us and prod-eu"
-                      className="mt-1.5 w-full bg-gray-950 border border-gray-800 rounded-md px-2.5 py-1.5 text-xs text-gray-100 outline-none focus:border-blue-500 placeholder-gray-600 resize-none" />
+                    <div className="mt-1.5">
+                      <textarea dir="auto" rows={2} value={pmText ?? pm.checks} onChange={e => setPmText(e.target.value)}
+                        placeholder="Also (optional), e.g. use the post-merge skill; check labeling-service pods in prod-us and prod-eu"
+                        className="w-full bg-gray-950 border border-gray-800 rounded-md px-2.5 py-1.5 text-xs text-gray-100 outline-none focus:border-blue-500 placeholder-gray-600 resize-none" />
+                      <div className="flex items-center justify-end gap-2 mt-1">
+                        {pmSaved && <span className="text-[11px] text-emerald-400">✓ Saved. Used on the next merge.</span>}
+                        {pmText !== null && pmText !== pm.checks && <>
+                          <button onClick={() => setPmText(null)} className="text-[11px] px-2 py-0.5 text-gray-400 hover:text-white">Cancel</button>
+                          <button onClick={savePm} className="text-[11px] px-2.5 py-0.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white">Save</button>
+                        </>}
+                      </div>
+                    </div>
                   )}
                 </div>
               )})}

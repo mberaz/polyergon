@@ -134,7 +134,7 @@ const PROMPTS = {
   ci: (url: string) => `CI is failing on ${url}. Find the failing checks with gh, fix the cause, and push.`,
   unresolved: (url: string, n: number) => `${url} has ${n} unresolved review thread${n > 1 ? 's' : ''}. Read them with gh (review comments), fix what's needed, push, reply in each thread, and resolve the ones you addressed.`,
   postMerge: (url: string, extra?: string) => `${url} was merged. Run post-merge checks: confirm CI on the main branch passed for the merge commit, and if this repo deploys on merge, follow the deploy until it is rolled out and healthy (rollout status, logs, error rates). ` +
-    (extra ? `Also check: ${extra}. ` : '') + 'Only check: ask me before changing anything in production. Report what you verified and anything that looks wrong.',
+    (extra ? `Also (the owner's instructions for this step): ${extra}. ` : '') + 'Only check: ask me before changing anything in production. Report what you verified and anything that looks wrong.',
   merge: (url: string) => `${url} is approved and CI is green. Merge it with gh pr merge, using the merge method this repo uses, and delete the branch. Print the result.`,
 }
 
