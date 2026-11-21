@@ -373,6 +373,14 @@ class PipelineEngine {
     else this.update(p, { suggestion: null }, 'Dismissed the open-PR suggestion')
   }
 
+  // Removes a finished or stopped automation from the list. PRs and session are untouched.
+  remove(id: string) {
+    const p = this.items.find(x => x.id === id)
+    if (!p || ACTIVE_PHASES.includes(p.phase)) return
+    this.items = this.items.filter(x => x !== p)
+    this.save()
+  }
+
   stop(id: string) {
     const p = this.items.find(x => x.id === id)
     if (p && ACTIVE_PHASES.includes(p.phase)) this.update(p, { phase: 'stopped', workingOn: null }, 'Stopped by you')

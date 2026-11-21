@@ -472,6 +472,8 @@ app.prepare().then(async () => {
         pipelineEngine.setAuto(msg.id as string, (msg.auto ?? {}) as object)
       } else if (msg.type === 'pipeline-dismiss') {
         pipelineEngine.dismiss(msg.id as string, (msg.prUrl as string) || null)
+      } else if (msg.type === 'pipeline-remove') {
+        pipelineEngine.remove(msg.id as string)
       } else if (msg.type === 'pipeline-stop') {
         pipelineEngine.stop(msg.id as string)
       } else if (msg.type === 'meeting-resume') {

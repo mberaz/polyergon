@@ -87,7 +87,7 @@ function WatchAudit({ log }: { log: WatchLog[] }) {
   )
 }
 
-export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen, onStop, onNewWatcher, onEditWatcher, watcherCmd, showMacLoops }: {
+export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen, onStop, onRemove, onNewWatcher, onEditWatcher, watcherCmd, showMacLoops }: {
   showMacLoops: boolean // the Mac's launchd loops run with ~/.claude (Default)
   pipelines: Pipeline[]
   watchers: SlackWatcher[]
@@ -95,12 +95,14 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
   nameOf: (liveId: string) => string
   onOpen: (liveId: string) => void
   onStop: (id: string) => void
+  onRemove: (id: string) => void
   onNewWatcher: () => void
   onEditWatcher: (w: SlackWatcher) => void
   watcherCmd: (type: string, body?: object) => void
 }) {
   const [ctxOpen, setCtxOpen] = useState<string | null>(null) // watcher whose context editor is open
   const [shipFor, setShipFor] = useState('')
+  const [closing, setClosing] = useState<Pipeline | null>(null)
   const sorted = [...pipelines].sort((a, b) => Number(isRunning(b)) - Number(isRunning(a)) || b.updatedAt - a.updatedAt)
   const liveWatchers = [...watchers].sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running'))
   const card = 'rounded-xl border border-gray-800 bg-gray-900/50 p-4 flex flex-col gap-2'
@@ -202,7 +204,11 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
             <div className="flex items-center gap-3 mb-3">
               <span className={`w-2 h-2 rounded-full ${isRunning(p) ? 'bg-blue-400 animate-pulse' : 'bg-gray-600'}`} />
               <button onClick={() => onOpen(p.liveId)} className="text-sm font-medium hover:underline truncate">🚢 {nameOf(p.liveId)}</button>
-              <span className="text-xs text-gray-500 truncate">{pipelineSummary(p)}</span>
+              {isRunning(p)
+                ? <span className="text-xs text-gray-500 truncate">{pipelineSummary(p)}</span>
+                : <button onClick={() => setClosing(p)} title="Close this automation"
+                    className={`text-xs px-2 py-0.5 rounded-full border ${p.phase === 'done' ? 'border-emerald-700/60 text-emerald-300 hover:bg-emerald-950/40' : 'border-gray-700 text-gray-400 hover:bg-gray-800'}`}>
+                    {p.phase === 'done' ? `✓ ${pipelineSummary(p)}` : 'Stopped'} · Close</button>}
               <span className="ml-auto flex gap-2 flex-shrink-0">
                 <button onClick={() => onOpen(p.liveId)} className="text-xs px-2.5 py-1 rounded-md border border-gray-700 hover:bg-gray-800">Open</button>
                 {isRunning(p) && <button onClick={() => onStop(p.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-red-400 hover:bg-red-950/40">Stop</button>}
@@ -214,6 +220,18 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
           </section>
         ))}
       </div>
+      {closing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setClosing(null)}>
+          <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} className="w-[400px] max-w-[92vw] rounded-xl border border-gray-700 bg-gray-900 p-5 shadow-xl">
+            <p className="text-sm font-semibold text-gray-100">Close this automation?</p>
+            <p className="text-xs text-gray-400 mt-2">🚢 {nameOf(closing.liveId)}: {pipelineSummary(closing)}. It leaves this list. The session and its PRs are not touched.</p>
+            <div className="flex justify-end gap-2 mt-4">
+              <button autoFocus onClick={() => setClosing(null)} className="text-xs px-3 py-1.5 rounded-md text-gray-300 hover:bg-gray-800">Keep</button>
+              <button onClick={() => { onRemove(closing.id); setClosing(null) }} className="text-xs px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white">Close it</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

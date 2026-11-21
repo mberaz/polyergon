@@ -57,5 +57,9 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-stop', id }))
   }, [])
 
-  return { setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline }
+  const removePipeline = useCallback((id: string) => {
+    wsRef.current?.send(JSON.stringify({ type: 'pipeline-remove', id }))
+  }, [])
+
+  return { removePipeline, setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline }
 }

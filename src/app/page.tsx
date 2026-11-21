@@ -68,7 +68,7 @@ export default function Home() {
   const { watchers, watcherError, watcherCmd } = useSlackWatchers(ws, (title, body) => notifyNeedsInput(`👂 ${title}`, body))
   const [showWatcherDialog, setShowWatcherDialog] = useState(false)
   const [editWatcher, setEditWatcher] = useState<SlackWatcher | null>(null)
-  const { setPipelineAuto, pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
+  const { removePipeline, setPipelineAuto, pipelines, pipelineError, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline } = usePipelines(ws, (title, body) => notifyNeedsInput(`⚡ ${title}`, body))
   // prEntries still feeds the notification-suppression logic; the PRs tab
   // itself now renders the GitHub workload inbox
   const { entries: prEntries } = usePrSessions(ws)
@@ -502,6 +502,7 @@ export default function Home() {
             nameOf={id => { const s = liveSessions.find(x => x.id === id); return (s && (sessionNameOverrides[s.id] || (s.claudeSessionId && sessionNameOverrides[s.claudeSessionId]) || sessions.find(h => h.sessionId === s.claudeSessionId)?.firstUserMessage || s.cwd.split('/').at(-1))) || 'Session' }}
             onOpen={id => setAutomateFor(id)}
             onStop={stopPipeline}
+            onRemove={removePipeline}
           />
         )}
 

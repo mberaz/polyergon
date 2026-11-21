@@ -207,3 +207,15 @@ test('a PR can also DM people on Slack, each once', async () => {
   expect(dmed).toEqual(['dana', 'Koren Tako', 'eve'])
   pipelineEngine.stop(p.id)
 })
+
+test('a finished or stopped automation can be closed; a running one cannot', async () => {
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  session.prUrl = null
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
+  await flush()
+  pipelineEngine.remove(p.id)
+  expect(pipelineEngine.list().some((x: { id: string }) => x.id === p.id)).toBe(true)
+  pipelineEngine.stop(p.id)
+  pipelineEngine.remove(p.id)
+  expect(pipelineEngine.list().some((x: { id: string }) => x.id === p.id)).toBe(false)
+})
