@@ -354,6 +354,8 @@ export function onScreenDialog(id: string): boolean {
   return !!h && STARTUP_DIALOG_RE.test(bottomRows(h.term, 25))
 }
 
+export function isRunning(id: string): boolean { return ptyProcesses.has(id) }
+
 // Sends `text` as the session's first prompt once it sits at the real input
 // prompt; while a startup dialog is showing it waits for you to answer it.
 export function sendWhenReady(id: string, text: string, timeoutMs = 10 * 60_000) {

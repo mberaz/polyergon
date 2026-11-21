@@ -134,6 +134,16 @@ app.prepare().then(async () => {
   // Meeting events go to every connected client — a meeting isn't "attached"
   // like a terminal session; any open tab shows its state.
   pipelineEngine.start()
+  slackWatchers.wake = (id) => {
+    const s = liveSessionStore.get(id)
+    if (!s?.claudeSessionId || missingCli(s.backend)) return false
+    const org = orgRegistry.get(s.orgId)
+    liveSessionStore.setStatus(id, 'thinking')
+    spawnSession(id, s.cwd, s.claudeSessionId, org?.configDir ?? null, s.model ?? org?.model, rcNameFor(s), s.backend, s.rc)
+    const sessions = liveSessionStore.list().map(sessionView)
+    wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'sessions', sessions })) })
+    return true
+  }
   slackWatchers.start()
   keepAwake.start()
   sessionWatch.start()

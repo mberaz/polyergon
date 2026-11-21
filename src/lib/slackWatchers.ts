@@ -3,7 +3,7 @@ import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
-import { sendWhenReady } from './ptyManager'
+import { sendWhenReady, isRunning } from './ptyManager'
 import { orgRegistry } from './orgRegistry'
 import { newChannelRequests, draftChannelReply, NEEDS_OWNER, replyInThread, timeFromPermalink, type SlackChannel } from './slackBridge'
 
@@ -53,6 +53,18 @@ class SlackWatcherEngine {
   private items: SlackWatcher[] = []
   private listeners = new Set<(ev: WatcherEvent) => void>()
   private started = false
+  // Set by the server: resumes a stopped session; false if it can't.
+  wake: (liveId: string) => boolean = () => false
+
+  // Hands text to the linked session, resuming it first if it isn't running.
+  // Waits up to 3h for it to finish what it's doing. Returns why it couldn't.
+  private toSession(w: SlackWatcher, text: string): string | null {
+    const id = w.liveId
+    if (!id || !liveSessionStore.get(id)) return 'Link a session to this watcher first (the 🧠 menu on the card)'
+    if (!isRunning(id) && !this.wake(id)) return 'The linked session is stopped and could not be resumed. Open it and press Resume.'
+    sendWhenReady(id, text, 3 * 60 * 60_000)
+    return null
+  }
 
   start() {
     if (this.started) return
@@ -134,12 +146,15 @@ class SlackWatcherEngine {
           // A new message in a thread the session is already working: pass it on, don't draft over it
           const owner = w.liveId && liveSessionStore.get(w.liveId) && w.items.find(i => i.state === 'delegated' && i.permalink !== r.permalink && threadKey(i.permalink) === threadKey(r.permalink))
           const it = w.items.find(i => i.permalink === r.permalink)!
-          if (owner && it) {
-            sendWhenReady(w.liveId!, `Follow-up in the Slack thread you are handling (${r.permalink}) from ${r.author}: "${r.text.replace(/\s+/g, ' ').slice(0, 1500)}". ` +
-              'Continue until it is resolved and verified, then reply in the thread. Ask me here before any production change.')
+          const err = owner && it ? this.toSession(w, `Follow-up in the Slack thread you are handling (${r.permalink}) from ${r.author}: "${r.text.replace(/\s+/g, ' ').slice(0, 1500)}". ` +
+              'Continue until it is resolved and verified, then reply in the thread. Ask me here before any production change.') : 'no owner'
+          if (!err) {
             it.state = 'delegated'
             this.log(w, `${r.author} followed up: passed to the session`, undefined, { detail: r.text, link: r.permalink })
-          } else await this.draft(w, r.permalink)
+          } else {
+            if (owner) this.log(w, `Couldn't pass ${r.author}'s follow-up to the session`, { title: `#${w.channel.name}: session stopped`, body: err }, { detail: err })
+            await this.draft(w, r.permalink)
+          }
         }
       } else {
         // One rolling line, not one per check
@@ -170,7 +185,11 @@ class SlackWatcherEngine {
       // Auto-answer only messages posted after you started the watcher; older backlog waits for your approval
       const backlog = !(Date.parse(timeFromPermalink(it.permalink) || '') >= w.createdAt) // unknown time counts as backlog
       if (w.mode === 'auto' && !backlog && needsYou && w.liveId) {
-        this.delegate(w.id, it.permalink, true)
+        const err = this.delegate(w.id, it.permalink, true)
+        if (err) {
+          it.state = 'pending'
+          this.log(w, `Couldn't hand ${it.author}'s request to the session: draft waits for you`, { title: `#${w.channel.name}: session stopped`, body: err.error }, { detail: err.error, link: it.permalink })
+        }
       } else if (w.mode === 'auto' && !backlog && !needsYou) {
         await replyInThread(it.permalink, it.draft, w.orgId)
         it.state = 'sent'
@@ -210,10 +229,9 @@ class SlackWatcherEngine {
     const w = this.items.find(x => x.id === id)
     const it = w?.items.find(i => i.permalink === permalink)
     if (!w || !it) return { error: 'Not found' }
-    if (!w.liveId || !liveSessionStore.get(w.liveId)) return { error: 'Link a session to this watcher first' }
     if (it.state === 'delegated' || it.state === 'sending') return { error: 'Already handed off' }
     const text = it.text.replace(/\s+/g, ' ').slice(0, 1500)
-    sendWhenReady(w.liveId,
+    const err = this.toSession(w,
       `Slack request in #${w.channel.name} from ${it.author} (${it.permalink}): "${text}". ` +
       'Do the work needed to answer it (run the checks, read the code or logs, make the change). Then reply in that Slack thread with the Slack connector, with the actual results. ' +
       'Report only what you verified; if something failed or you could not check it, say so plainly. Do not promise to do it later. ' +
@@ -221,6 +239,7 @@ class SlackWatcherEngine {
       'Before any step that changes production (deploy, set image, rollout, restart, delete, migrate), ask me here and wait for my OK, then continue. ' +
       'Reply in the Slack thread only when it is done (with how you verified it) or truly blocked (say exactly what blocks it). ' +
       'If they reply in the thread again, I will pass it to you here.')
+    if (err) return { error: err }
     it.state = 'delegated'
     this.log(w, `${auto ? 'Needed real work: sent' : 'You sent'} ${it.author}'s request to the session`, undefined, { detail: it.text, link: it.permalink })
     return null
@@ -231,10 +250,9 @@ class SlackWatcherEngine {
   instruct(id: string, text: string): { error: string } | null {
     const w = this.items.find(x => x.id === id)
     if (!w) return { error: 'Not found' }
-    if (!w.liveId || !liveSessionStore.get(w.liveId)) return { error: 'Link a session to this watcher first (the 🧠 menu on the card)' }
     const t = text.trim().slice(0, 4000)
     if (!t) return { error: 'Write what it should do' }
-    sendWhenReady(w.liveId,
+    const err = this.toSession(w,
       `About the Slack channel #${w.channel.name} (id ${w.channel.id}), the owner asks: ${t.replace(/\s+/g, ' ')} ` +
       '— Use the Slack connector to read what you need and do it. Post in Slack only if that is what the owner asked for. ' +
       'Report only what you verified; if you could not do something, say so plainly. ' +
@@ -242,6 +260,7 @@ class SlackWatcherEngine {
       'Before any step that changes production (deploy, set image, rollout, restart, delete, migrate), ask me here and wait for my OK, then continue. ' +
       'Reply in the Slack thread only when it is done (with how you verified it) or truly blocked (say exactly what blocks it). ' +
       'If they reply in the thread again, I will pass it to you here.')
+    if (err) return { error: err }
     this.log(w, 'You told the session what to do', undefined, { detail: t })
     return null
   }

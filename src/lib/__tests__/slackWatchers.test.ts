@@ -9,8 +9,9 @@ let draft = ''
 let mockReqs: { permalink: string; author: string; text: string }[] | null = null
 jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
 const typed: string[] = []
+let running = true
 jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? { claudeSessionId: 'c1', cwd: '/r', orgId: 'o' } : undefined) } }))
-jest.mock('../ptyManager', () => ({ sendWhenReady: (_id: string, t: string) => typed.push(t) }))
+jest.mock('../ptyManager', () => ({ sendWhenReady: (_id: string, t: string) => typed.push(t), isRunning: () => running }))
 jest.mock('../orgRegistry', () => ({ orgRegistry: { get: () => undefined } }))
 jest.mock('../slackBridge', () => ({
   NEEDS_OWNER: 'NEEDS_OWNER:',
@@ -58,6 +59,21 @@ test('your instruction goes to the linked session; without one it errors', () =>
   expect(typed.at(-1)).toContain('answer Koren with the deploy status')
   const unlinked = slackWatchers.create({ channel: { id: 'C2', name: 'other' }, liveId: null, mode: 'approve', intervalMin: 5, orgId: 'o' })
   expect(slackWatchers.instruct(unlinked.id, 'x')).toEqual({ error: expect.stringContaining('Link a session') })
+})
+
+test('a stopped linked session is resumed first; if it cannot be, the hand-off errors instead of vanishing', () => {
+  const w = slackWatchers.create({ channel: { id: 'C3', name: 'deployment' }, liveId: 'L1', mode: 'approve', intervalMin: 5, orgId: 'o' })
+  if ('error' in w) throw new Error(w.error)
+  running = false
+  const woke: string[] = []
+  slackWatchers.wake = (id: string) => { woke.push(id); return true }
+  expect(slackWatchers.instruct(w.id, 'status?')).toBeNull()
+  expect(woke).toEqual(['L1'])
+  slackWatchers.wake = () => false
+  const before = typed.length
+  expect(slackWatchers.instruct(w.id, 'status?')).toEqual({ error: expect.stringContaining('stopped') })
+  expect(typed.length).toBe(before)
+  running = true
 })
 
 test('a follow-up in a thread the session handles goes back to that session, not to a draft', async () => {
