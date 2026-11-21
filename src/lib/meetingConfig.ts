@@ -1,16 +1,25 @@
 import { CONFIG_FILE, readConfig, writeConfig } from './configFile'
 import { LOCAL_MODEL_PATH } from './localWhisper'
 
-export type TranscriptionConfig =
+export type TranscriptionConfig = (
   | { kind: 'openai'; apiKey: string }
   | { kind: 'azure'; endpoint: string; apiKey: string; deployment: string }
   | { kind: 'local'; model: string }
+) & { language?: string } // ISO 639-1 code; unset = detect each chunk
+
+// Spoken language for meetings. Auto-detect can guess wrong on noisy or mixed
+// chunks and then writes Hebrew speech out in English; a fixed language avoids it.
+export function getTranscriptionLanguage(file = CONFIG_FILE): string | undefined {
+  const l = readConfig(file).transcriptionLanguage
+  return typeof l === 'string' && /^[a-z]{2}$/.test(l) ? l : undefined
+}
 
 // Azure (AI Foundry deployment) takes precedence when configured; plain
 // OpenAI key works as before.
 export function getTranscriptionConfig(file = CONFIG_FILE): TranscriptionConfig | null {
   const cfg = readConfig(file)
-  if (cfg.transcriptionProvider === 'local') return { kind: 'local', model: LOCAL_MODEL_PATH }
+  const language = getTranscriptionLanguage(file)
+  if (cfg.transcriptionProvider === 'local') return { kind: 'local', model: LOCAL_MODEL_PATH, language }
   const { azureEndpoint, azureApiKey, azureDeployment } = cfg
   if (typeof azureEndpoint === 'string' && azureEndpoint && typeof azureApiKey === 'string' && azureApiKey) {
     return {
@@ -18,10 +27,11 @@ export function getTranscriptionConfig(file = CONFIG_FILE): TranscriptionConfig 
       endpoint: azureEndpoint.replace(/\/+$/, ''),
       apiKey: azureApiKey,
       deployment: typeof azureDeployment === 'string' && azureDeployment ? azureDeployment : 'gpt-4o-transcribe',
+      language,
     }
   }
   const key = process.env.OPENAI_API_KEY || cfg.openaiApiKey
-  if (typeof key === 'string' && key) return { kind: 'openai', apiKey: key }
+  if (typeof key === 'string' && key) return { kind: 'openai', apiKey: key, language }
   return null
 }
 
@@ -32,22 +42,25 @@ export interface TranscriptionStatus {
   fromEnv: boolean // OPENAI_API_KEY env var, can't be changed from the UI
   endpoint: string | null
   deployment: string | null
+  language: string | null
 }
 
 export function getTranscriptionStatus(file = CONFIG_FILE): TranscriptionStatus {
   const c = getTranscriptionConfig(file)
   const hint = (k: string) => '…' + k.slice(-4)
-  if (!c) return { provider: null, keyHint: null, fromEnv: false, endpoint: null, deployment: null }
-  if (c.kind === 'local') return { provider: 'local', keyHint: null, fromEnv: false, endpoint: null, deployment: null }
-  if (c.kind === 'azure') return { provider: 'azure', keyHint: hint(c.apiKey), fromEnv: false, endpoint: c.endpoint, deployment: c.deployment }
-  return { provider: 'openai', keyHint: hint(c.apiKey), fromEnv: !readConfig(file).openaiApiKey, endpoint: null, deployment: null }
+  const language = getTranscriptionLanguage(file) ?? null
+  if (!c) return { provider: null, keyHint: null, fromEnv: false, endpoint: null, deployment: null, language }
+  if (c.kind === 'local') return { provider: 'local', keyHint: null, fromEnv: false, endpoint: null, deployment: null, language }
+  if (c.kind === 'azure') return { provider: 'azure', keyHint: hint(c.apiKey), fromEnv: false, endpoint: c.endpoint, deployment: c.deployment, language }
+  return { provider: 'openai', keyHint: hint(c.apiKey), fromEnv: !readConfig(file).openaiApiKey, endpoint: null, deployment: null, language }
 }
 
-export type TranscriptionInput =
+export type TranscriptionInput = (
   | { provider: 'none' }
   | { provider: 'local' }
   | { provider: 'openai'; apiKey?: string }
   | { provider: 'azure'; endpoint: string; deployment?: string; apiKey?: string }
+) & { language?: string | null }
 
 // Saves provider settings into config.json (0600, other keys kept). An empty
 // apiKey keeps the saved one, so the UI never needs to know it.
@@ -55,6 +68,10 @@ export function saveTranscriptionConfig(input: TranscriptionInput, file = CONFIG
   const cfg = readConfig(file)
   const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
   delete cfg.transcriptionProvider // only 'local' sets it; saved keys stay for switching back
+  if (input.language !== undefined) {
+    if (input.language && !/^[a-z]{2}$/.test(input.language)) throw new Error('Unknown language')
+    if (input.language) cfg.transcriptionLanguage = input.language; else delete cfg.transcriptionLanguage
+  }
   if (input.provider === 'local') {
     cfg.transcriptionProvider = 'local'
   } else if (input.provider === 'none') {

@@ -33,6 +33,8 @@ function Sec({ id, title, desc, children }: { id: string; title: string; desc: s
 }
 
 // Full-page settings, one card per section with a jump list on the left
+const SPOKEN: [string, string][] = [['he', 'Hebrew'], ['en', 'English'], ['ar', 'Arabic'], ['ru', 'Russian'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['pl', 'Polish'], ['tr', 'Turkish'], ['uk', 'Ukrainian'], ['zh', 'Chinese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['hi', 'Hindi']]
+
 export type SettingsGuard = { dirty: boolean; save: () => Promise<boolean> }
 
 export function SettingsPage({ onClose, guard }: { onClose: () => void; guard?: { current: SettingsGuard | null } }) {
@@ -50,6 +52,7 @@ export function SettingsPage({ onClose, guard }: { onClose: () => void; guard?: 
   const [tProvider, setTProvider] = useState<'none' | 'openai' | 'azure' | 'local'>('none')
   const [tEndpoint, setTEndpoint] = useState('')
   const [tDeployment, setTDeployment] = useState('')
+  const [tLang, setTLang] = useState('')
   const [tKey, setTKey] = useState('')
   const [tDirty, setTDirty] = useState(false)
   const [auth, setAuth] = useState<(ClaudeAuthStatus & { login: ClaudeLogin | null }) | null>(null)
@@ -75,6 +78,7 @@ export function SettingsPage({ onClose, guard }: { onClose: () => void; guard?: 
       setTProvider(t.provider ?? 'none')
       setTEndpoint(t.endpoint ?? '')
       setTDeployment(t.deployment ?? '')
+      setTLang(t.language ?? '')
     }).catch(() => {})
   }, [])
 
@@ -116,8 +120,11 @@ export function SettingsPage({ onClose, guard }: { onClose: () => void; guard?: 
       })
       if (!r.ok) throw new Error('Could not save settings')
       if (tDirty) {
-        const body = tProvider === 'azure' ? { provider: 'azure', endpoint: tEndpoint, deployment: tDeployment, apiKey: tKey }
-          : tProvider === 'openai' ? { provider: 'openai', apiKey: tKey } : tProvider === 'local' ? { provider: 'local' } : { provider: 'none' }
+        const body = {
+          ...(tProvider === 'azure' ? { provider: 'azure', endpoint: tEndpoint, deployment: tDeployment, apiKey: tKey }
+            : tProvider === 'openai' ? { provider: 'openai', apiKey: tKey } : tProvider === 'local' ? { provider: 'local' } : { provider: 'none' }),
+          language: tLang || null,
+        }
         const tr = await fetch('/api/settings/transcription', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         const data = await tr.json()
         if (!tr.ok) throw new Error(data.error ?? 'Could not save transcription')
@@ -263,6 +270,15 @@ export function SettingsPage({ onClose, guard }: { onClose: () => void; guard?: 
             <option value="azure">Azure OpenAI</option>
             <option value="local">Local Whisper (free, offline)</option>
           </select>
+          {tProvider !== 'none' && (
+            <label className="block text-xs text-gray-400">Spoken language
+              <select value={tLang} onChange={e => editT(setTLang)(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white mt-1">
+                <option value="">Detect automatically</option>
+                {SPOKEN.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+              </select>
+              <span className="block mt-1 text-gray-500">Pick the main language if words come out in the wrong language. English terms inside still come through.</span>
+            </label>
+          )}
           {tProvider === 'local' && <LocalWhisperSetup />}
           {tProvider === 'azure' && (
             <>

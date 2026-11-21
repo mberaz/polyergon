@@ -57,8 +57,9 @@ export function downloadLocalModel(): void {
 }
 
 // Transcribes one WAV chunk. `prompt` (earlier transcript) keeps language and terms consistent.
-export function transcribeLocal(file: string, prompt: string): Promise<string | null> {
-  const args = ['-m', LOCAL_MODEL_PATH, '-f', file, '-l', 'auto', '-nt', '-np']
+export function transcribeLocal(file: string, prompt: string, language = 'auto'): Promise<string | null> {
+  // Never --translate: output stays in the spoken language
+  const args = ['-m', LOCAL_MODEL_PATH, '-f', file, '-l', language, '-nt', '-np']
   if (prompt) args.push('--prompt', prompt.slice(-800))
   return new Promise((resolve, reject) => {
     execFile(CLI, args, { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {

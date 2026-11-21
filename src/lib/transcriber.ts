@@ -11,6 +11,7 @@ function requestFor(config: Exclude<TranscriptionConfig, { kind: 'local' }>, buf
   // Prior transcript as context — keeps language and terminology consistent
   // across chunks (crucial for short chunks and mixed Hebrew/English)
   if (prompt) form.append('prompt', prompt)
+  if (config.language) form.append('language', config.language)
   if (config.kind === 'openai') {
     form.append('model', 'whisper-1')
     return {
@@ -32,7 +33,7 @@ function requestFor(config: Exclude<TranscriptionConfig, { kind: 'local' }>, buf
 export async function transcribeChunk(filePath: string, config: TranscriptionConfig, prompt = ''): Promise<string | null> {
   const buf = readFileSync(filePath)
   if (wavRms(buf) < SILENCE_RMS_THRESHOLD) return null
-  if (config.kind === 'local') return transcribeLocal(filePath, prompt)
+  if (config.kind === 'local') return transcribeLocal(filePath, prompt, config.language)
 
   let lastError: unknown
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {

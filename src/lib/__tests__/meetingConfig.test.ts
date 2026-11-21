@@ -11,7 +11,7 @@ describe('transcription config', () => {
   test('saves azure at 0600, keeps other keys, never exposes the key', () => {
     writeFileSync(file, JSON.stringify({ micDevice: 'Mic' }), { mode: 0o644 })
     const st = saveTranscriptionConfig({ provider: 'azure', endpoint: 'https://x.openai.azure.com/', apiKey: 'secret-1234' }, file)
-    expect(st).toEqual({ provider: 'azure', keyHint: '…1234', fromEnv: false, endpoint: 'https://x.openai.azure.com', deployment: 'gpt-4o-transcribe' })
+    expect(st).toEqual({ provider: 'azure', keyHint: '…1234', fromEnv: false, endpoint: 'https://x.openai.azure.com', deployment: 'gpt-4o-transcribe', language: null })
     expect(JSON.stringify(st)).not.toContain('secret')
     expect(statSync(file).mode & 0o777).toBe(0o600)
     expect(JSON.parse(readFileSync(file, 'utf-8')).micDevice).toBe('Mic')
@@ -32,4 +32,14 @@ describe('transcription config', () => {
     expect(() => saveTranscriptionConfig({ provider: 'azure', endpoint: 'http://x', apiKey: 'k' }, file)).toThrow('https')
     expect(() => saveTranscriptionConfig({ provider: 'azure', endpoint: 'nope', apiKey: 'k' }, file)).toThrow('URL')
   })
+})
+
+test('spoken language is saved, passed to transcription, and cleared with null', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { saveTranscriptionConfig, getTranscriptionConfig } = require('../meetingConfig')
+  const f = require('path').join(require('os').tmpdir(), `lang-${Date.now()}.json`)
+  expect(saveTranscriptionConfig({ provider: 'local', language: 'he' }, f).language).toBe('he')
+  expect(getTranscriptionConfig(f).language).toBe('he')
+  expect(saveTranscriptionConfig({ provider: 'local', language: null }, f).language).toBeNull()
+  expect(() => saveTranscriptionConfig({ provider: 'local', language: 'hebrew; rm' }, f)).toThrow('Unknown language')
 })
