@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.11
+
+- **Meetings: Start recording tells you why it can't start** (for example, transcription not set up), with a button to Settings. Before, nothing happened.
+- **Clearer audio test:** "✓ Your microphone works", and the BlackHole note is a tip, not a warning.
+
 ## 0.1.10
 
 - **Meetings: choose the microphone.** The record dialog lists your microphones; the choice is remembered. Fixes silent tests when the Mac's default input is another device.

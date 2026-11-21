@@ -28,6 +28,7 @@ export function useMeetings(ws: WebSocket | null) {
   // The browser records the meeting this window started; survives view changes
   const recorder = useRef<{ meetingId: string; rec: Recorder } | null>(null)
   const wantRecording = useRef(false)
+  const [startError, setStartError] = useState<string | null>(null) // why the last start/resume failed
 
   const fetchMeetings = useCallback(() => {
     return fetch('/api/meetings').then(r => r.json()).then(setMeetings).catch(() => {})
@@ -49,6 +50,7 @@ export function useMeetings(ws: WebSocket | null) {
 
       if (msg.type === 'meeting-started' && wantRecording.current) {
         wantRecording.current = false
+        setStartError(null)
         const id = (msg.meeting as Meeting).id
         startRecorder(data => wsRef.current?.send(JSON.stringify({ type: 'meeting-audio', meetingId: id, data })))
           .then(rec => { recorder.current = { meetingId: id, rec } })
@@ -89,6 +91,7 @@ export function useMeetings(ws: WebSocket | null) {
         updateLive(msg.meetingId as string, l => ({ ...l, context: msg.items as ContextItem[] }))
       } else if (msg.type === 'meeting-error') {
         if (msg.meetingId) updateLive(msg.meetingId as string, l => ({ ...l, lastError: msg.message as string }))
+        if (wantRecording.current) { wantRecording.current = false; setStartError(msg.message as string) }
       }
     }
 
@@ -98,11 +101,13 @@ export function useMeetings(ws: WebSocket | null) {
 
   const startMeeting = useCallback((title: string, orgId: string) => {
     wantRecording.current = true
+    setStartError(null)
     wsRef.current?.send(JSON.stringify({ type: 'meeting-start', title, orgId }))
   }, [])
 
   const resumeMeeting = useCallback((meetingId: string) => {
     wantRecording.current = true
+    setStartError(null)
     wsRef.current?.send(JSON.stringify({ type: 'meeting-resume', meetingId }))
   }, [])
 
@@ -129,5 +134,5 @@ export function useMeetings(ws: WebSocket | null) {
 
   const activeMeeting = meetings.find(m => m.status === 'recording') ?? null
 
-  return { meetings, live, activeMeeting, startMeeting, resumeMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings: fetchMeetings }
+  return { startError, meetings, live, activeMeeting, startMeeting, resumeMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings: fetchMeetings }
 }

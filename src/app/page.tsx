@@ -76,7 +76,7 @@ export default function Home() {
   const { orgs, addOrg, refreshOrgs } = useOrgs()
   const { notes, setNotes } = useNotes()
   const [skillsVersion, setSkillsVersion] = useState(0)
-  const { meetings, live: meetingLive, activeMeeting, startMeeting, resumeMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings } = useMeetings(ws)
+  const { startError: meetingStartError, meetings, live: meetingLive, activeMeeting, startMeeting, resumeMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings } = useMeetings(ws)
   const { usage } = useUsage()
   const { limits } = useLimits()
   const [view, setViewRaw] = useState<View>({ mode: 'empty' })
@@ -294,8 +294,7 @@ export default function Home() {
   }
 
   function handleStartMeeting(title: string, orgId: string) {
-    setShowRecordDialog(false)
-    awaitingMeetingStartRef.current = true
+    awaitingMeetingStartRef.current = true // the dialog closes once the server confirms
     startMeeting(title, orgId)
   }
 
@@ -338,6 +337,7 @@ export default function Home() {
   useEffect(() => {
     if (awaitingMeetingStartRef.current && activeMeeting) {
       awaitingMeetingStartRef.current = false
+      setShowRecordDialog(false)
       setView({ mode: 'meeting', meetingId: activeMeeting.id })
     }
   }, [activeMeeting])
@@ -682,6 +682,8 @@ export default function Home() {
           onStart={handleStartMeeting}
           onCancel={() => setShowRecordDialog(false)}
           onMicTest={micTest}
+          startError={meetingStartError}
+          onOpenSettings={() => { setShowRecordDialog(false); setView({ mode: 'settings' }) }}
         />
       )}
 

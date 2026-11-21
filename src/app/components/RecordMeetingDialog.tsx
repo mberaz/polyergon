@@ -8,10 +8,15 @@ interface Props {
   defaultOrgId: string
   onStart: (title: string, orgId: string) => void
   onCancel: () => void
+  startError?: string | null
+  onOpenSettings?: () => void
   onMicTest: () => Promise<{ level?: number; error?: string; devices?: { mic: string; system: string | null } }>
 }
 
-export function RecordMeetingDialog({ orgs, defaultOrgId, onStart, onCancel, onMicTest }: Props) {
+export function RecordMeetingDialog({ orgs, defaultOrgId, onStart, onCancel, onMicTest, startError, onOpenSettings }: Props) {
+  const [starting, setStarting] = useState(false)
+  useEffect(() => { if (startError) setStarting(false) }, [startError])
+  useEffect(() => { if (!starting) return; const t = setTimeout(() => setStarting(false), 20_000); return () => clearTimeout(t) }, [starting])
   const [title, setTitle] = useState('')
   const [orgId, setOrgId] = useState(defaultOrgId)
   const [testing, setTesting] = useState(false)
@@ -100,13 +105,20 @@ export function RecordMeetingDialog({ orgs, defaultOrgId, onStart, onCancel, onM
           )}
         </div>
 
+        {startError && !starting && (
+          <div className="mb-4 rounded-lg border border-red-800/60 bg-red-950/40 p-3">
+            <p className="text-xs text-red-300">Couldn&apos;t start: {startError}</p>
+            {/settings/i.test(startError) && onOpenSettings && <button onClick={onOpenSettings} className="mt-2 text-xs px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-200">Open Settings → Meetings</button>}
+          </div>
+        )}
         <div className="flex justify-end gap-3">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
           <button
-            onClick={() => onStart(title.trim(), orgId)}
+            onClick={() => { setStarting(true); onStart(title.trim(), orgId) }}
+            disabled={starting}
             className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium flex items-center gap-2"
           >
-            <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> Start recording
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> {starting ? 'Starting…' : 'Start recording'}
           </button>
         </div>
       </div>
