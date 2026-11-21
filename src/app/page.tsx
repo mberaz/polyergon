@@ -545,7 +545,7 @@ export default function Home() {
               onSetPrReview={(id, url, review) => setPrReview(id, lid, url, review)}
               onTell={(id, url, text) => instructPipeline(id, lid, url, text)}
               onSetPostMerge={setPipelinePostMerge}
-              onRemovePr={(id, url) => removePipelinePr(id, lid, url)}
+              onRemovePr={(id, url, reopen) => removePipelinePr(id, lid, url, reopen)}
               sessionBusy={liveSessions.find(s => s.id === lid)?.status === 'thinking'}
               onAct={(id, prUrl) => actPipeline(id, lid, prUrl)}
               onDismiss={dismissPipeline}

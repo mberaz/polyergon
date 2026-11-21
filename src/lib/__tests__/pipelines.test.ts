@@ -318,7 +318,9 @@ test('you can close one PR you are finished with', async () => {
   const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false, postMerge: false } })
   await flush(); pipelineEngine.addPr(p.id, A); pipelineEngine.addPr(p.id, B); await flush()
   expect(pipelineEngine.removePr(p.id, A)).toBeNull()
-  expect(p.prs.map((t: { url: string }) => t.url)).toEqual([B])
-  expect(pipelineEngine.removePr(p.id, A)).toEqual({ error: 'PR not found' })
+  expect(p.prs.find((t: { url: string }) => t.url === A).closed).toBe(true) // folded into a 'finished' row, not deleted
+  expect(pipelineEngine.removePr(p.id, A, true)).toBeNull()
+  expect(p.prs.find((t: { url: string }) => t.url === A).closed).toBe(false) // brought back
+  expect(pipelineEngine.removePr(p.id, 'https://github.com/o/x/pull/9')).toEqual({ error: 'PR not found' })
   pipelineEngine.stop(p.id)
 })

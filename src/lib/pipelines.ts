@@ -92,6 +92,7 @@ export interface PrTrack {
   review?: PrReview
   dmSent?: string[] // people already DMed about this PR
   postMergeRan?: boolean // went through the post-merge checks step
+  closed?: boolean // you closed it: kept as a one-line 'finished' row, not tracked
 }
 
 // Where a PR asks for review: a Slack channel (null = don't post) and GitHub reviewers
@@ -388,12 +389,15 @@ class PipelineEngine {
     this.step(p.id)
   }
 
-  // Stop tracking one PR (you're finished with it). The PR itself is untouched.
-  removePr(id: string, url: string): { error: string } | null {
+  // You're finished with one PR: it folds into a 'finished' row and stops being tracked.
+  // reopen = bring it back. The PR on GitHub is untouched either way.
+  removePr(id: string, url: string, reopen = false): { error: string } | null {
     const p = this.items.find(x => x.id === id)
-    if (!p?.prs.some(t => t.url === url)) return { error: 'PR not found' }
-    p.prs = p.prs.filter(t => t.url !== url)
-    this.update(p, { workingOn: p.workingOn === url ? null : p.workingOn }, `Closed ${shortPr(url)}: no longer tracked`)
+    const t = p?.prs.find(x => x.url === url)
+    if (!p || !t) return { error: 'PR not found' }
+    t.closed = !reopen
+    this.update(p, { workingOn: p.workingOn === url && !reopen ? null : p.workingOn }, reopen ? `Brought back ${shortPr(url)}` : `Closed ${shortPr(url)}: finished`)
+    if (reopen) this.step(p.id, true)
     return null
   }
 
@@ -435,7 +439,7 @@ class PipelineEngine {
       if (auto.openPr) { this.update(p, {}, 'Automatic: asking the session to open a PR'); this.act(p.id, null) }
       return
     }
-    for (const t of p.prs) {
+    for (const t of p.prs.filter(t => !t.closed)) {
       const k = t.suggestion?.kind
       if (!k || k === 'open-pr' || !auto[stepOf(k)]) continue
       if (k === 'merge' && (t.mergeAttempts ?? 0) >= 1) continue // auto-merge tries once; then it's yours
@@ -501,7 +505,7 @@ class PipelineEngine {
     if (!refresh) return
 
     // Refresh every open PR, then pick at most one thing for the session to do
-    for (const t of p.prs.filter(t => OPEN_TRACK.includes(t.state))) {
+    for (const t of p.prs.filter(t => OPEN_TRACK.includes(t.state) && !t.closed)) {
       const pr = await prSnapshot(t.url, t.review?.reviewers ?? [])
       if (!pr) continue
       const wasFailing = t.view?.checks === 'failing' // suggest CI fixes once per failure, not every poll
@@ -555,7 +559,7 @@ class PipelineEngine {
 
     this.autoSend(p, quiet)
 
-    if (p.prs.length && p.prs.every(t => t.state === 'done')) this.update(p, { phase: 'done' }, 'All PRs are merged or closed', { title: 'Automation finished', body: `${p.prs.length} PR(s) done` })
+    if (p.prs.length && p.prs.every(t => t.state === 'done' || t.closed)) this.update(p, { phase: 'done' }, 'All PRs are merged or closed', { title: 'Automation finished', body: `${p.prs.length} PR(s) done` })
   }
 
   private async announce(p: Pipeline, t: PrTrack, force = false) {

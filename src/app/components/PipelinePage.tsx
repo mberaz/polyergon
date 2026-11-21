@@ -70,6 +70,34 @@ function Panel({ title, children, right }: { title: string; children: React.Reac
   )
 }
 
+// A PR you closed: one green line. Click to bring it back.
+function FinishedRow({ t, onReopen }: { t: PrTrack; onReopen: () => void }) {
+  const [asking, setAsking] = useState(false)
+  return (
+    <>
+      <button onClick={() => setAsking(true)} title="Bring it back"
+        className="w-full flex items-center gap-2 rounded-lg border border-emerald-800/50 bg-emerald-950/20 hover:bg-emerald-950/40 px-3 py-2 text-left text-xs">
+        <span className="text-emerald-400">✓</span>
+        <span className="text-emerald-200 truncate">{t.view?.title || shortPr(t.url)}</span>
+        <span className="font-mono text-emerald-400/70 flex-shrink-0">{shortPr(t.url)}</span>
+        <span className="ml-auto text-emerald-400/80 flex-shrink-0">finished</span>
+      </button>
+      {asking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setAsking(false)}>
+          <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} className="w-[420px] max-w-[92vw] rounded-xl border border-gray-700 bg-gray-900 p-5 shadow-xl">
+            <p className="text-sm font-semibold text-gray-100">Bring this PR back?</p>
+            <p className="text-xs text-gray-400 mt-2">{shortPr(t.url)} goes back to the automation and is tracked again.</p>
+            <div className="flex justify-end gap-2 mt-4">
+              <button autoFocus onClick={() => setAsking(false)} className="text-xs px-3 py-1.5 rounded-md text-gray-300 hover:bg-gray-800">Keep it finished</button>
+              <button onClick={() => { onReopen(); setAsking(false) }} className="text-xs px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white">Bring it back</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 // One line: is the automation alive on this PR, and is Claude on it right now?
 function LiveStatus({ t, p, auto, sessionBusy }: { t: PrTrack; p: Pipeline; auto: AutoSteps; sessionBusy: boolean }) {
   const [, tick] = useState(0)
@@ -210,7 +238,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   onSetPrReview: (id: string, url: string, review: PrReview) => void
   onTell: (id: string, url: string, text: string) => void
   onSetPostMerge: (id: string, on: boolean, checks: string) => void
-  onRemovePr: (id: string, url: string) => void
+  onRemovePr: (id: string, url: string, reopen?: boolean) => void
   sessionBusy?: boolean
   onAct: (id: string, prUrl: string | null) => void
   onDismiss: (id: string, prUrl: string | null) => void
@@ -266,7 +294,12 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
         {/* PRs */}
         <div className="space-y-5 min-w-0">
           {pipeline?.suggestion && <SuggestionBox s={pipeline.suggestion} onSend={() => onAct(pipeline.id, null)} onDismiss={() => onDismiss(pipeline.id, null)} />}
-          {pipeline?.prs.map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} sessionBusy={sessionBusy} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} onTell={text => onTell(pipeline.id, t.url, text)} onRemove={() => onRemovePr(pipeline.id, t.url)} />)}
+          {pipeline?.prs.filter(t => !t.closed).map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} sessionBusy={sessionBusy} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} onTell={text => onTell(pipeline.id, t.url, text)} onRemove={() => onRemovePr(pipeline.id, t.url)} />)}
+          {pipeline && pipeline.prs.some(t => t.closed) && (
+            <div className="space-y-1.5">
+              {pipeline.prs.filter(t => t.closed).map(t => <FinishedRow key={t.url} t={t} onReopen={() => onRemovePr(pipeline.id, t.url, true)} />)}
+            </div>
+          )}
           {running && pipeline && (
             <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-4 space-y-2">
               <div className="flex gap-2">

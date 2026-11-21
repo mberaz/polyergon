@@ -472,7 +472,7 @@ app.prepare().then(async () => {
         const err = pipelineEngine.act(msg.id as string, (msg.prUrl as string) || null)
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
       } else if (msg.type === 'pipeline-remove-pr') {
-        const err = pipelineEngine.removePr(msg.id as string, String(msg.url ?? ''))
+        const err = pipelineEngine.removePr(msg.id as string, String(msg.url ?? ''), msg.reopen === true)
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
       } else if (msg.type === 'pipeline-post-merge') {
         pipelineEngine.setPostMerge(msg.id as string, msg.on === true, typeof msg.checks === 'string' ? msg.checks : undefined)
