@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.5
+
+- **Chat view:** read a live session as chat messages. Right-to-left languages display correctly.
+- **New Session redesign:** tabs for Chat, Folder and Slack. Browse for any folder; org, agent and model always shown.
+- **No more status flicker:** cards stay on "thinking" while Claude works, and switch to waiting only when it stops.
+- **Ship it per-PR review:** each PR can have its own Slack channel and GitHub reviewers.
+- **Slack watcher:** add context, guide a redraft with a hint, and tell the linked session what to do. Delegated work continues until it's finished, and follow-ups in the thread go to the session.
+- **Local Whisper:** transcribe meetings on your Mac with whisper.cpp, with no API key.
+- **Install as an app:** Settings, then App. Notifications show as Polyergon. Includes a test-notification button.
+- **Settings:** asks before you leave with unsaved changes.
+- **Clear errors** when Claude Code isn't installed. Finds `claude` in `~/.local/bin` and Homebrew paths.
+- Terminal upgraded to xterm 6.
+
 ## 0.1.4
 
 - **Fix: sessions went idle right away** when installed with `npx` or `npm install -g`. The terminal helper wasn't executable, so every session exited at start and had nothing to resume.
