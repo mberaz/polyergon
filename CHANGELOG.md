@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.8
+
+- **Meetings:** fixes "Input/output error" with newer ffmpeg, which adds a "[uid:…]" tag to device names. If macOS blocks the microphone, the message says what to allow.
+- **Updates:** installer copies in a custom folder get the Upgrade button too.
+
 ## 0.1.7
 
 - **Upgrade from Settings:** Settings → App → Updates shows when a newer version is out. Mac installer copies upgrade with one click and restart on their own.

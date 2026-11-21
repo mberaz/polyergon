@@ -21,7 +21,8 @@ export interface UpdateInfo {
 const root = () => process.env.POLYERGON_ROOT || process.cwd()
 
 export function installMethod(dir = root()): InstallMethod {
-  if (dir.includes('/.polyergon/app/node_modules/polyergon')) return 'installer'
+  // the installer's launchd agent sets POLYERGON_LABEL; default home is ~/.polyergon
+  if (dir.includes('/.polyergon/app/node_modules/polyergon') || (process.env.POLYERGON_LABEL && dir.includes('/app/node_modules/polyergon'))) return 'installer'
   if (dir.includes('/_npx/')) return 'npx'
   if (existsSync(join(dir, '.git'))) return 'source'
   return 'global'

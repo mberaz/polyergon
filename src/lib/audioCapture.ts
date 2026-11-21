@@ -49,11 +49,16 @@ export interface AudioDevices {
   mic: string
 }
 
+export function parseAudioDevices(listing: string): string[] {
+  return [...listing.matchAll(/\] \[\d+\] (.+)$/gm)].map(m => m[1].replace(/\s*\[uid:[^\]]*\]\s*$/, '').trim())
+}
+
 // Audio input names as macOS/ffmpeg sees them on this Mac.
 export function listAudioDevices(): string[] {
   const r = spawnSync('ffmpeg', ['-hide_banner', '-f', 'avfoundation', '-list_devices', 'true', '-i', ''], { encoding: 'utf-8', timeout: 10_000 })
   const out = `${r.stderr ?? ''}`.split('AVFoundation audio devices:')[1] ?? ''
-  return [...out.matchAll(/\] \[\d+\] (.+)$/gm)].map(m => m[1].trim())
+  // newer ffmpeg appends ' [uid:…]' to each name; avfoundation opens it by the plain name
+  return parseAudioDevices(out)
 }
 
 // The devices to record: what you configured if this Mac has it, else the
@@ -88,7 +93,7 @@ function ffmpegInputArgs(devices: AudioDevices): string[] {
 
 // ffmpeg's "Input/output error" with devices present almost always means macOS blocked the mic.
 export function explainAudioError(err: string, devices: AudioDevices): string {
-  if (/input\/output error|permission|not authorized/i.test(err)) return `Couldn't open "${devices.mic}"${devices.system ? ` or "${devices.system}"` : ''}. macOS may be blocking the microphone: System Settings → Privacy & Security → Microphone, allow Terminal (or the app running Polyergon), then try again. (${err})`
+  if (/input\/output error|permission|not authorized/i.test(err)) return `Couldn't open "${devices.mic}"${devices.system ? ` or "${devices.system}"` : ''}. macOS may be blocking the microphone: System Settings → Privacy & Security → Microphone, turn on node (Polyergon running in the background) or Terminal, then try again. (${err})`
   return err
 }
 
