@@ -443,7 +443,7 @@ export default function Home() {
         {view.mode === 'live' && activeSessionId && (reading
           ? <HistoryPanel sessionId={liveSessions.find(s => s.id === activeSessionId)?.claudeSessionId ?? null}
               onSend={text => sendToLive(activeSessionId, text)} onClose={() => setReading(false)} />
-          : <button onClick={() => setReading(true)} title="Show the conversation as text. Use it for Hebrew and other right-to-left languages, which the terminal can't lay out."
+          : <button onClick={() => setReading(true)} title="Show the conversation as easy-to-read text. Right-to-left languages display correctly here."
               className="absolute top-2 right-4 z-10 text-xs px-2.5 py-1 rounded border border-gray-700 bg-gray-900/90 text-gray-300 hover:bg-gray-800">Read</button>)}
 
         {view.mode === 'usagedash' && usage && (
