@@ -9,6 +9,7 @@ import { submitLine, onAnyStatusChange, onAnyPrUrlChange } from './ptyManager'
 import { summarizeChecks, isValidPrUrl } from './ghPrStatus'
 import { postToSlack, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
 import type { PrCheckStatus } from './prTypes'
+import { openPrsOfSession } from './sessionPrs'
 
 const execFileAsync = promisify(execFile)
 
@@ -227,7 +228,18 @@ class PipelineEngine {
     })
     onAnyPrUrlChange(id => this.forSession(id, p => this.step(p.id)))
     setInterval(() => this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => this.step(p.id, true)), POLL_MS)
-    this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => this.step(p.id, true))
+    this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => { this.step(p.id, true); void this.findOpenPrs(p) })
+  }
+
+  // A session often has several PRs open; track each, not just the latest one.
+  private async findOpenPrs(p: Pipeline) {
+    const sid = liveSessionStore.get(p.liveId)?.claudeSessionId
+    if (!sid) return
+    const urls = await openPrsOfSession(sid).catch(() => [] as string[])
+    if (!ACTIVE_PHASES.includes(p.phase)) return
+    let added = false
+    for (const u of urls) if (!p.prs.some(t => t.url === u)) { this.addTrack(p, u, 'Found open PR'); added = true }
+    if (added) this.step(p.id, true)
   }
 
   private forSession(liveId: string, fn: (p: Pipeline) => void) {
@@ -270,6 +282,7 @@ class PipelineEngine {
     if (s.prUrl) this.addTrack(p, s.prUrl, 'Found existing PR')
     this.save()
     this.step(p.id, true)
+    void this.findOpenPrs(p)
     return p
   }
 

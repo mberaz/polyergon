@@ -4,7 +4,7 @@ import { join } from 'path'
 
 process.env.POLYERGON_DATA_DIR = mkdtempSync(join(tmpdir(), 'pipes-'))
 
-const session = { id: 'L1', status: 'waiting', prUrl: null as string | null, backend: 'claude', cwd: '/repo' }
+const session = { id: 'L1', status: 'waiting', prUrl: null as string | null, backend: 'claude', cwd: '/repo', claudeSessionId: 'c1' }
 const writes: string[] = []
 const posts: string[] = []
 const postedTo: string[] = []
@@ -15,8 +15,10 @@ type Pr = { number: number; state: string; isDraft: boolean; reviewDecision: str
 const base = (n: number): Pr => ({ number: n, state: 'OPEN', isDraft: false, reviewDecision: null, statusCheckRollup: [], author: { login: 'me' }, reviews: [], latestReviews: [], reviewRequests: [{ login: 'alice' }], comments: [], title: `PR ${n}` })
 const prs: Record<string, Pr> = {}
 
+let foundPrs: string[] = []
 jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? session : undefined) } }))
 jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writes.push(t), onAnyStatusChange: () => () => {}, onAnyPrUrlChange: () => () => {} }))
+jest.mock('../sessionPrs', () => ({ openPrsOfSession: async () => foundPrs }))
 jest.mock('../slackBridge', () => ({ postToSlack: async (c: { name: string }, t: string) => { posts.push(t); postedTo.push(c.name); return { permalink: null } }, readSlackThread: async () => null }))
 jest.mock('child_process', () => ({ execFile: (cmd: string, a: string[], _o: object, cb: (e: Error | null, r?: { stdout: string }) => void) => {
   if (cmd === 'git') return a.includes('--porcelain') ? cb(null, { stdout: dirty ? ' M file.ts' : '' }) : cb(new Error('no upstream'))
@@ -170,4 +172,17 @@ test('each PR can have its own review channel and reviewers', async () => {
   expect(pipelineEngine.setPrReview(p.id, U3, { channel: null, reviewers: ['eve'] })).toBeNull(); await flush()
   expect(postedTo).toHaveLength(n)
   pipelineEngine.stop(p.id)
+})
+
+test('starting finds every open PR of the session, not just the latest', async () => {
+  const A = 'https://github.com/o/labeling/pull/16', B = 'https://github.com/o/infra/pull/5061', C = 'https://github.com/o/api/pull/648'
+  prs[A] = base(16); prs[B] = base(5061); prs[C] = base(648)
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  session.prUrl = B
+  foundPrs = [A, B, C]
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
+  await flush(); await flush()
+  expect(p.prs.map((t: { url: string }) => t.url).sort()).toEqual([A, B, C].sort())
+  pipelineEngine.stop(p.id)
+  foundPrs = []
 })
