@@ -179,6 +179,15 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
     }
   }
 
+  // Native macOS folder picker (server side); the chosen folder is selected and shown on top.
+  const [browsing, setBrowsing] = useState(false)
+  async function browse() {
+    setBrowsing(true)
+    try {
+      const d = await fetch('/api/pick-folder', { method: 'POST' }).then(r => r.json())
+      if (d.path) { setQuery(d.path); setSelectedCwd(d.path) }
+    } finally { setBrowsing(false) }
+  }
   const q = query.trim()
   const shown = folders.filter(f => f.toLowerCase().includes(q.toLowerCase()))
   const typedPath = q.startsWith('/') || q.startsWith('~') ? q.replace(/^~/, '') : ''
@@ -226,8 +235,12 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
 
           {mode === 'folder' && (
             <div className="space-y-2">
-              <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={enterStarts} autoFocus
-                placeholder="Search your folders, or paste a path" className={input} />
+              <div className="flex gap-2">
+                <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={enterStarts} autoFocus
+                  placeholder="Search your folders, or paste a path" className={input} />
+                <button onClick={browse} disabled={browsing} title="Choose any folder on this Mac"
+                  className="flex-shrink-0 px-3 text-sm rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800 disabled:opacity-60">{browsing ? 'Choosing…' : 'Browse…'}</button>
+              </div>
               <div className="max-h-52 overflow-y-auto rounded-md border border-gray-800">
                 {typedPath && !folders.includes(typedPath) && (
                   <button onClick={() => setSelectedCwd(typedPath)} className={`w-full text-left px-3 py-2 text-sm border-b border-gray-800 ${folderPick === typedPath ? 'bg-blue-600/20' : 'hover:bg-gray-800'}`}>
