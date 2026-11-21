@@ -31,7 +31,9 @@ function Sec({ id, title, desc, children }: { id: string; title: string; desc: s
 }
 
 // Full-page settings, one card per section with a jump list on the left
-export function SettingsPage({ onClose }: { onClose: () => void }) {
+export type SettingsGuard = { dirty: boolean; save: () => Promise<boolean> }
+
+export function SettingsPage({ onClose, guard }: { onClose: () => void; guard?: { current: SettingsGuard | null } }) {
   const [enabled, setEnabled] = useState(true)
   const [k, setK] = useState(300)
   const [loaded, setLoaded] = useState(false)
@@ -78,7 +80,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     fetch(withOrg('/api/settings/auth')).then(r => r.json()).then((a: ClaudeAuthStatus & { login: ClaudeLogin | null }) => { setAuth(a); setAuthMode(a.mode) }).catch(() => {})
   }, [])
 
-  const editT = <T,>(set: (v: T) => void) => (v: T) => { set(v); setTDirty(true); setState('idle') }
+  const editT = <T,>(set: (v: T) => void) => (v: T) => { set(v); setTDirty(true); touch() }
 
   useEffect(() => {
     setPermission(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission)
@@ -92,7 +94,17 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     Notification.requestPermission().then(setPermission)
   }
 
-  async function save() {
+  // Unsaved edits: the app asks before leaving Settings, the browser before closing.
+  const [dirty, setDirty] = useState(false)
+  const touch = () => { setState('idle'); setDirty(true) }
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+
+  async function save(): Promise<boolean> {
     setState('saving')
     try {
       const r = await fetch('/api/settings', {
@@ -116,9 +128,11 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         setAuth(ad); setAuthKey(''); setAuthDirty(false)
       }
       setNotificationsEnabled(notifyOn)
-      setState('saved')
-    } catch (e) { setErrorMsg((e as Error).message || 'Could not save settings'); setState('error') }
+      setState('saved'); setDirty(false)
+      return true
+    } catch (e) { setErrorMsg((e as Error).message || 'Could not save settings'); setState('error'); return false }
   }
+  if (guard) guard.current = { dirty, save }
 
   return (
     <div className="absolute inset-0 flex bg-gray-950 text-gray-100">
@@ -135,8 +149,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         <h1 className="text-lg font-semibold md:hidden">Settings</h1>
         <Sec id="account" title="Claude account" desc="How sessions sign in to Claude. Each org has its own login.">
           <div className="flex gap-4 text-sm">
-            <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'login'} onChange={() => { setAuthMode('login'); setAuthDirty(true); setState('idle') }} />Claude login</label>
-            <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'apiKey'} onChange={() => { setAuthMode('apiKey'); setAuthDirty(true); setState('idle') }} />API key</label>
+            <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'login'} onChange={() => { setAuthMode('login'); setAuthDirty(true); touch() }} />Claude login</label>
+            <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'apiKey'} onChange={() => { setAuthMode('apiKey'); setAuthDirty(true); touch() }} />API key</label>
           </div>
           {authMode === 'login' && (
             <div className="flex items-center gap-2 text-xs rounded border border-gray-800 bg-gray-900/60 px-2.5 py-2">
@@ -153,7 +167,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           )}
           {authMode === 'apiKey' && (
             <label className="block text-xs text-gray-400">Anthropic API key
-              <input type="password" autoComplete="off" value={authKey} onChange={e => { setAuthKey(e.target.value); setAuthDirty(true); setState('idle') }}
+              <input type="password" autoComplete="off" value={authKey} onChange={e => { setAuthKey(e.target.value); setAuthDirty(true); touch() }}
                 placeholder={auth?.keyHint ? `Saved (${auth.keyHint}). Leave blank to keep it.` : 'sk-ant-…'} className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white mt-1" />
             </label>
           )}
@@ -166,7 +180,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
         <Sec id="sessions" title="Sessions" desc="How new Claude and Copilot sessions run.">
           <label className="flex items-center gap-2 text-sm font-medium">
-            <input type="checkbox" checked={enabled} disabled={!loaded} onChange={e => { setEnabled(e.target.checked); setState('idle') }} />
+            <input type="checkbox" checked={enabled} disabled={!loaded} onChange={e => { setEnabled(e.target.checked); touch() }} />
             Auto-compact Claude sessions
           </label>
 
@@ -175,7 +189,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             <div className="flex items-center gap-2 mt-1">
               <input
                 type="number" min={MIN_K} max={MAX_K} step={50} value={k} disabled={!enabled || !loaded}
-                onChange={e => { setK(Number(e.target.value)); setState('idle') }}
+                onChange={e => { setK(Number(e.target.value)); touch() }}
                 className="w-28 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white"
               />
               <span className="text-gray-400">k tokens</span>
@@ -189,7 +203,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           </p>
           <div className="border-t border-gray-800 pt-3" />
           <label className="flex items-center gap-2 text-sm font-medium">
-            <input type="checkbox" checked={skipPerms} disabled={!loaded} onChange={e => { setSkipPerms(e.target.checked); setState('idle') }} />
+            <input type="checkbox" checked={skipPerms} disabled={!loaded} onChange={e => { setSkipPerms(e.target.checked); touch() }} />
             Skip permission prompts
           </label>
           <p className="text-xs text-gray-500 leading-relaxed">
@@ -201,7 +215,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
         <Sec id="power" title="Power" desc="Keep sessions and automations running when you step away.">
           <label className="flex items-center gap-2 text-sm font-medium" title="Uses macOS caffeinate while Polyergon runs">
-            <input type="checkbox" checked={keepAwake} disabled={!loaded} onChange={e => { setKeepAwake(e.target.checked); setState('idle') }} />
+            <input type="checkbox" checked={keepAwake} disabled={!loaded} onChange={e => { setKeepAwake(e.target.checked); touch() }} />
             Keep working while the Mac is locked or idle
           </label>
           <p className="text-xs text-gray-500 leading-relaxed">
@@ -213,7 +227,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
         <Sec id="notifications" title="Notifications" desc="Desktop alerts from this browser.">
           <label className="flex items-center gap-2 text-sm font-medium">
-            <input type="checkbox" checked={notifyOn} disabled={!loaded} onChange={e => { setNotifyOn(e.target.checked); setState('idle') }} />
+            <input type="checkbox" checked={notifyOn} disabled={!loaded} onChange={e => { setNotifyOn(e.target.checked); touch() }} />
             Desktop notifications
           </label>
           <p className="text-xs text-gray-500 leading-relaxed">
@@ -279,8 +293,9 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-gray-800 bg-gray-950/95">
           {state === 'saved' && <span className="text-xs text-green-400 mr-auto">Saved</span>}
           {state === 'error' && <span className="text-xs text-red-400 mr-auto">{errorMsg || 'Could not save settings'}</span>}
+          {dirty && state === 'idle' && <span className="text-xs text-gray-400 mr-auto">Unsaved changes</span>}
           <button
-            onClick={save} disabled={!loaded || !valid || state === 'saving'}
+            onClick={() => { save() }} disabled={!loaded || !valid || state === 'saving'}
             className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-500 disabled:opacity-40"
           >{state === 'saving' ? 'Saving…' : 'Save'}</button>
         </div>

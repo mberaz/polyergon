@@ -17,7 +17,7 @@ import { SlackInbox } from './components/SlackInbox'
 import { AutomationsPage } from './components/AutomationsPage'
 import { HomePage } from './components/HomePage'
 import { WatcherDialog } from './components/WatcherDialog'
-import { SettingsPage } from './components/SettingsPage'
+import { SettingsPage, type SettingsGuard } from './components/SettingsPage'
 import { PipelinePage } from './components/PipelinePage'
 import { DiffPage } from './components/DiffPage'
 import { TaskBoard } from './components/TaskBoard'
@@ -78,7 +78,17 @@ export default function Home() {
   const { meetings, live: meetingLive, activeMeeting, startMeeting, resumeMeeting, stopMeeting, askMeeting, addMeetingContext, micTest, refreshMeetings } = useMeetings(ws)
   const { usage } = useUsage()
   const { limits } = useLimits()
-  const [view, setView] = useState<View>({ mode: 'empty' })
+  const [view, setViewRaw] = useState<View>({ mode: 'empty' })
+  // Leaving Settings with unsaved edits asks first (Save / Discard / Keep editing).
+  const settingsGuard = useRef<SettingsGuard | null>(null)
+  const [leaveTo, setLeaveTo] = useState<View | null>(null)
+  const viewRef = useRef(view)
+  viewRef.current = view
+  const setView = useCallback((next: View | ((v: View) => View)) => {
+    const target = typeof next === 'function' ? next(viewRef.current) : next
+    if (viewRef.current.mode === 'settings' && target.mode !== 'settings' && settingsGuard.current?.dirty) { setLeaveTo(target); return }
+    setViewRaw(target)
+  }, [])
   const [showDialog, setShowDialog] = useState(false)
   const [showRecordDialog, setShowRecordDialog] = useState(false)
   // Set when this tab clicked "Start recording" — switches the view to the
@@ -535,7 +545,21 @@ export default function Home() {
             />
           )
         })()}
-        {view.mode === 'settings' && <SettingsPage key={activeOrgId} onClose={() => setView({ mode: 'empty' })} />}
+        {view.mode === 'settings' && <SettingsPage key={activeOrgId} guard={settingsGuard} onClose={() => setView({ mode: 'empty' })} />}
+        {leaveTo && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setLeaveTo(null)}>
+            <div role="dialog" aria-modal className="bg-gray-900 border border-gray-700 rounded-xl p-5 w-[380px] max-w-[92vw] shadow-2xl" onClick={e => e.stopPropagation()}>
+              <h2 className="text-white font-semibold">Save your changes?</h2>
+              <p className="text-sm text-gray-400 mt-1">You changed settings but didn&apos;t save them.</p>
+              <div className="flex justify-end gap-2 mt-5">
+                <button onClick={() => setLeaveTo(null)} className="px-3 py-1.5 text-sm text-gray-400 hover:text-white">Keep editing</button>
+                <button onClick={() => { const t = leaveTo; setLeaveTo(null); setViewRaw(t) }} className="px-3 py-1.5 text-sm rounded-md border border-gray-700 text-gray-200 hover:bg-gray-800">Discard</button>
+                <button autoFocus onClick={async () => { const t = leaveTo; if (await settingsGuard.current?.save()) { setLeaveTo(null); setViewRaw(t) } else setLeaveTo(null) }}
+                  className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-500 text-white">Save</button>
+              </div>
+            </div>
+          </div>
+        )}
         {view.mode === 'skills' && (
           <SkillsPage key={activeOrgId} selected={view.name} onSelect={name => setView({ mode: 'skills', name })} onChanged={() => setSkillsVersion(v => v + 1)} />
         )}
