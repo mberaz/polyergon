@@ -10,6 +10,8 @@ Polyergon is a local app for people who run many Claude Code (or GitHub Copilot 
 
 [polyergon.ai](https://polyergon.ai) · [npm](https://www.npmjs.com/package/polyergon)
 
+![Polyergon: every session in the sidebar with its status (thinking, waiting for input, idle), and the selected session's terminal](site/img/sessions.jpg)
+
 ![Task board demo: a task is started, a session works on it, it waits for your review, its PR goes through CI and review, and it lands in Ready to merge](site/img/demo.gif)
 
 ![The Ship it pipeline: two pull requests with review, CI and Slack status, and the automation's activity log](site/img/pipeline.jpg)
@@ -23,6 +25,9 @@ Polyergon is a local app for people who run many Claude Code (or GitHub Copilot 
 ### Sessions
 - Real Claude Code and Copilot terminals in the browser, side by side. Each card shows **thinking**, **waiting for you** or **idle**, cost, and how close it is to compacting.
 - **New session** from a plain chat, any folder (search or **Browse…**), or a **Slack channel, thread or DM** as context. Optionally on its **own git worktree**.
+
+  <img src="site/img/new-session.jpg" width="640" alt="New session dialog: Chat, Folder and Slack tabs, then org, agent and model">
+
 - **Chat view:** read a session as chat, with right-to-left text shown properly and Claude's questions as buttons.
 - **Review changes** with line comments, a **task board** that turns tasks into sessions, auto-continue after usage limits, stall alerts, <kbd>⌘K</kbd> search.
 
