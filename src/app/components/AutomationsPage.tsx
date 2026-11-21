@@ -7,6 +7,24 @@ import { PrCard } from './AutomateDialog'
 import { Combobox, type ComboOption } from './Combobox'
 import { ExistingAutomations } from './ExistingAutomations'
 
+// Which sections you collapsed, remembered in this browser.
+function useCollapsed(): [Set<string>, (k: string) => void] {
+  const KEY = 'polyergon.automations.collapsed'
+  const [set, setSet] = useState<Set<string>>(new Set())
+  useEffect(() => { try { setSet(new Set(JSON.parse(localStorage.getItem(KEY) ?? '[]'))) } catch { /* private mode */ } }, [])
+  const toggle = (k: string) => setSet(prev => {
+    const next = new Set(prev)
+    if (next.has(k)) next.delete(k); else next.add(k)
+    try { localStorage.setItem(KEY, JSON.stringify([...next])) } catch { /* private mode */ }
+    return next
+  })
+  return [set, toggle]
+}
+
+function Chevron({ open, onClick }: { open: boolean; onClick: () => void }) {
+  return <button onClick={onClick} aria-expanded={open} title={open ? 'Collapse' : 'Expand'} className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-gray-800 flex-shrink-0">{open ? '▾' : '▸'}</button>
+}
+
 function WatchCard({ it, onSend, onDismiss, onRedraft, onDelegate, onOpenSession }: { it: WatchItem; onSend: (text: string) => void; onDismiss: () => void; onRedraft: (hint?: string) => void; onDelegate?: () => void; onOpenSession?: () => void }) {
   const [text, setText] = useState(it.draft ?? '')
   const [hint, setHint] = useState<string | null>(null) // null = hint box closed
@@ -103,6 +121,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
   const [ctxOpen, setCtxOpen] = useState<string | null>(null) // watcher whose context editor is open
   const [shipFor, setShipFor] = useState('')
   const [closing, setClosing] = useState<Pipeline | null>(null)
+  const [collapsed, toggle] = useCollapsed()
   const sorted = [...pipelines].sort((a, b) => Number(isRunning(b)) - Number(isRunning(a)) || b.updatedAt - a.updatedAt)
   const liveWatchers = [...watchers].sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running'))
   const card = 'rounded-xl border border-gray-800 bg-gray-900/50 p-4 flex flex-col gap-2'
@@ -141,7 +160,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
           </div>
         </section>
 
-        {showMacLoops && <ExistingAutomations />}
+        {showMacLoops && <ExistingAutomations collapsed={collapsed.has('mac')} onToggle={() => toggle('mac')} />}
 
         {liveWatchers.map(w => {
           const open = w.items.filter(i => i.state === 'pending' || i.state === 'drafting' || i.state === 'sending' || i.state === 'failed' || i.state === 'delegated' || (i.state === 'sent' && Date.now() - (i.doneAt ?? 0) < 86_400_000))
@@ -152,8 +171,10 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
               <div className="flex items-start gap-3 flex-wrap">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
+                    <Chevron open={!collapsed.has(w.id)} onClick={() => toggle(w.id)} />
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${w.status === 'running' ? 'bg-emerald-400' : 'bg-gray-600'}`} title={w.status === 'running' ? 'Running' : 'Stopped'} />
                     <span className="text-sm font-semibold">Slack watcher · #{w.channel.name}</span>
+                    {collapsed.has(w.id) && open.length > 0 && <span className="text-[11px] text-gray-500">{open.length} open</span>}
                     {w.checking && <span className="text-[11px] text-blue-300 animate-pulse">checking…</span>}
                   </div>
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap">
@@ -178,6 +199,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
                   {w.status === 'running' && <button onClick={() => watcherCmd('watcher-stop', { id: w.id })} className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-red-400 hover:bg-red-950/40">Stop</button>}
                 </span>
               </div>
+              {!collapsed.has(w.id) && <>
               <TellBox linked={!!w.liveId} onSend={text => watcherCmd('watcher-instruct', { id: w.id, text })} />
               {ctxOpen === w.id && <ContextEditor key={w.id} knowledge={w.knowledge ?? ''} instructions={w.instructions ?? ''}
                 onSave={(knowledge, instructions) => { watcherCmd('watcher-update', { id: w.id, patch: { knowledge, instructions } }); setCtxOpen(null) }}
@@ -195,13 +217,15 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
                 : <p className="text-xs text-gray-500">Nothing waiting on you. Last: {w.log.at(-1)?.text ?? 'no checks yet'}</p>}
               </div>
               <WatchAudit log={w.log} />
+              </>}
             </section>
           )
         })}
 
         {sorted.map(p => (
           <section key={p.id} className="rounded-xl border border-gray-800 bg-gray-900/40 p-4">
-            <div className="flex items-center gap-3 mb-3">
+            <div className={`flex items-center gap-3 ${collapsed.has(p.id) ? '' : 'mb-3'}`}>
+              <Chevron open={!collapsed.has(p.id)} onClick={() => toggle(p.id)} />
               <span className={`w-2 h-2 rounded-full ${isRunning(p) ? 'bg-blue-400 animate-pulse' : 'bg-gray-600'}`} />
               <button onClick={() => onOpen(p.liveId)} className="text-sm font-medium hover:underline truncate">🚢 {nameOf(p.liveId)}</button>
               {isRunning(p)
@@ -214,7 +238,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
                 {isRunning(p) && <button onClick={() => onStop(p.id)} className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-red-400 hover:bg-red-950/40">Stop</button>}
               </span>
             </div>
-            {p.prs.length > 0
+            {collapsed.has(p.id) ? null : p.prs.length > 0
               ? <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))' }}>{p.prs.filter(t => !t.closed).map(t => <PrCard key={t.url} t={t} slackSet={!!(t.review ? t.review.channel : p.config.slackChannel)} max={p.config.maxRounds} />)}</div>
               : <p className="text-xs text-gray-500">{p.log.at(-1)?.text}</p>}
           </section>

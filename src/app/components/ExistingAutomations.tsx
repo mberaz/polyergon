@@ -41,7 +41,7 @@ function LoopCard({ l, onRun }: { l: ExistingLoop; onRun: () => Promise<string |
 }
 
 // Loops and hooks that already run on this Mac, outside Polyergon.
-export function ExistingAutomations() {
+export function ExistingAutomations({ collapsed = false, onToggle }: { collapsed?: boolean; onToggle?: () => void }) {
   const [data, setData] = useState<{ loops: ExistingLoop[]; hooks: ExistingHook[] } | null>(null)
   const load = () => fetch('/api/automations/existing').then(r => r.json()).then(setData).catch(() => {})
   useEffect(() => { load(); const t = setInterval(load, 30_000); return () => clearInterval(t) }, [])
@@ -55,7 +55,10 @@ export function ExistingAutomations() {
 
   return (
     <section>
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Already running on this Mac</p>
+      <button onClick={onToggle} aria-expanded={!collapsed} className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 hover:text-gray-200">
+        <span className="w-3 text-gray-500">{collapsed ? '▸' : '▾'}</span>Already running on this Mac{collapsed && <span className="normal-case font-normal text-gray-500"> · {data.loops.length}</span>}
+      </button>
+      {!collapsed && <>
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
         {data.loops.map(l => <LoopCard key={l.label} l={l} onRun={() => run(l.label)} />)}
       </div>
@@ -69,6 +72,7 @@ export function ExistingAutomations() {
           </ul>
         </details>
       )}
+      </>}
     </section>
   )
 }
