@@ -141,7 +141,7 @@ function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview }: { t: PrTrack; p
                 : <p className="text-gray-500">{t.slack.reviewers ? 'Nobody has claimed it yet' : 'Checking replies…'}</p>}
               {t.slack.replies?.slice(-2).map((r, i) => <p key={i} className="text-gray-400 line-clamp-2"><span className="text-gray-300 font-medium">{r.user}</span> {r.text}</p>)}
             </div>
-          ) : <p className="text-xs text-gray-500">{p.config.slackChannel ? 'Posting…' : 'No channel set'}</p>}
+          ) : <p className="text-xs text-gray-500">{review.channel ? 'Posting…' : review.dms?.length ? 'Sent by DM' : 'No channel set'}</p>}
         </Panel>
       </div>
     </article>

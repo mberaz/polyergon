@@ -131,12 +131,12 @@ test('ready to merge only when approved, green, not a draft and no unresolved th
   later(); await pipelineEngine.step(p.id, true)
   expect(p.prs[0].state).toBe('in-review')
 
-  // Copilot reviewed an older commit, a person only commented: not ready
+  // Copilot reviewed an older commit: not ready. A person who only commented doesn't block
   threads = []
   gqlReviews = [{ author: { login: 'copilot-pull-request-reviewer' }, state: 'COMMENTED', commit: { oid: 'H1' } }, { author: { login: 'bob' }, state: 'COMMENTED', commit: { oid: 'H2' } }]
   later(); await pipelineEngine.step(p.id, true)
   expect(p.prs[0].state).toBe('in-review')
-  expect(p.prs[0].view?.blockers).toEqual(["copilot hasn't reviewed the latest commit", "bob hasn't approved"])
+  expect(p.prs[0].view?.blockers).toEqual(["copilot hasn't reviewed the latest commit"])
   await flush()
   expect(posts.filter(x => x.includes('--add-reviewer @copilot'))).toHaveLength(1) // asked Copilot once for this commit
   later(); await pipelineEngine.step(p.id, true); await flush()
@@ -218,4 +218,11 @@ test('a finished or stopped automation can be closed; a running one cannot', asy
   pipelineEngine.stop(p.id)
   pipelineEngine.remove(p.id)
   expect(pipelineEngine.list().some((x: { id: string }) => x.id === p.id)).toBe(false)
+})
+
+test('a reviewer who only commented (e.g. the claude app) does not block; changes requested does', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { reviewBlockersOf } = require('../pipelines')
+  expect(reviewBlockersOf([{ login: 'claude', state: 'COMMENTED', commit: 'H' }, { login: 'dean', state: 'APPROVED', commit: 'H' }], 'H', [])).toEqual([])
+  expect(reviewBlockersOf([{ login: 'gal', state: 'CHANGES_REQUESTED', commit: 'H' }], 'H', [])).toEqual(['gal requested changes'])
 })

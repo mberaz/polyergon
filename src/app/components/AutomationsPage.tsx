@@ -215,7 +215,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
               </span>
             </div>
             {p.prs.length > 0
-              ? <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))' }}>{p.prs.map(t => <PrCard key={t.url} t={t} slackSet={!!p.config.slackChannel} max={p.config.maxRounds} />)}</div>
+              ? <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))' }}>{p.prs.map(t => <PrCard key={t.url} t={t} slackSet={!!(t.review ? t.review.channel : p.config.slackChannel)} max={p.config.maxRounds} />)}</div>
               : <p className="text-xs text-gray-500">{p.log.at(-1)?.text}</p>}
           </section>
         ))}

@@ -149,14 +149,15 @@ async function requestCopilotReview(url: string): Promise<void> {
 const isBot = (login: string) => /\[bot\]$|^copilot/i.test(login)
 
 // Every reviewer must be satisfied, not just "one approval":
-// people's latest review must be APPROVED; bots (Copilot) can't approve, so their
-// latest review must be on the newest commit. Pending requests block too.
+// nobody's latest review is "changes requested"; Copilot's latest review is on the
+// newest commit. Someone who only commented is satisfied once their threads are
+// resolved (unresolved threads block separately). Pending requests block too.
 export function reviewBlockersOf(reviews: { login: string; state: string; commit: string | null }[], headOid: string, requested: string[]): string[] {
   const out: string[] = []
   for (const r of reviews) {
     if (r.state === 'DISMISSED' || r.state === 'PENDING') continue
     if (isBot(r.login)) { if (r.commit && headOid && r.commit !== headOid) out.push(`${r.login.replace(/-pull-request-reviewer|\[bot\]/g, '')} hasn't reviewed the latest commit`) }
-    else if (r.state !== 'APPROVED') out.push(`${r.login} ${r.state === 'CHANGES_REQUESTED' ? 'requested changes' : "hasn't approved"}`)
+    else if (r.state === 'CHANGES_REQUESTED') out.push(`${r.login} requested changes`)
   }
   for (const who of requested) out.push(`waiting for ${who}`)
   return out
