@@ -328,7 +328,7 @@ class PipelineEngine {
     this.update(p, {}, `Review for ${shortPr(url)}: ${next.channel ? `#${next.channel.name}` : 'no Slack post'}${next.dms?.length ? `, DM ${next.dms.join(', ')}` : ''}${next.reviewers.length ? `, reviewers ${next.reviewers.join(', ')}` : ''}`)
     if (added.length) this.requestReviewers(p, t, added)
     if (next.channel && next.channel.name !== t.slack?.channel) this.announce(p, t, true)
-    else this.sendDms(p, t)
+    else this.announce(p, t) // DMs only; announce holds them while it's a draft
     return null
   }
 

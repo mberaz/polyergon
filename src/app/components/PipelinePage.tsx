@@ -1,6 +1,6 @@
 'use client'
 import { SlackPeoplePicker } from './SlackPeoplePicker'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Pipeline, PipelineConfig, PrTrack, PrReview } from '@/lib/pipelines'
 import type { SlackChannel } from '@/lib/slackBridge'
 import { DEFAULT_AUTO, type AutoSteps, isRunning, pipelineSummary, shortPr, prSteps, preprSteps } from '@/lib/pipelineView'
@@ -70,7 +70,30 @@ function Panel({ title, children, right }: { title: string; children: React.Reac
   )
 }
 
-function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview, onTell }: { t: PrTrack; p: Pipeline; auto: AutoSteps; onSend: () => void; onDismiss: () => void; onSetReview: (r: PrReview) => void; onTell: (text: string) => void }) {
+// One line: is the automation alive on this PR, and is Claude on it right now?
+function LiveStatus({ t, p, auto, sessionBusy }: { t: PrTrack; p: Pipeline; auto: AutoSteps; sessionBusy: boolean }) {
+  const [, tick] = useState(0)
+  useEffect(() => { const i = setInterval(() => tick(x => x + 1), 30_000); return () => clearInterval(i) }, [])
+  const ago = (ms?: number) => { if (!ms) return ''; const m = Math.round((Date.now() - ms) / 60_000); return m < 1 ? 'just now' : `${m} min ago` }
+  const v = t.view
+  const [dot, text, cls] =
+    !isRunning(p) ? ['bg-gray-500', 'Automation stopped. Nothing runs on this PR.', 'text-gray-400']
+    : t.state === 'done' ? ['bg-emerald-400', v?.state === 'MERGED' ? 'Merged. Nothing left to do.' : 'Closed. Nothing left to do.', 'text-emerald-300']
+    : p.workingOn === t.url ? ['bg-blue-400 animate-pulse', `Claude is working on this PR now${sessionBusy ? '' : ' (finishing up)'}.`, 'text-blue-200']
+    : t.state === 'needs-you' ? ['bg-amber-400', 'Stopped and needs you. Open the session.', 'text-amber-300']
+    : t.suggestion && t.suggestion.kind !== 'open-pr' && !auto[t.suggestion.kind] ? ['bg-amber-400', 'Waiting for you: send or dismiss the suggestion below.', 'text-amber-300']
+    : t.suggestion ? ['bg-blue-400 animate-pulse', sessionBusy ? 'Queued: Claude takes it when the session is free.' : 'Sending to Claude now.', 'text-blue-200']
+    : ['bg-emerald-400 animate-pulse', `Automation active, watching. ${v?.isDraft ? 'Waits for the draft to be marked ready.' : t.state === 'ready' ? 'Ready to merge.' : v?.checks === 'failing' ? `CI failing${auto.ci ? '' : ': fixing CI is set to Ask me'}.` : 'Waiting on reviewers.'}`, 'text-emerald-200']
+  return (
+    <div className="mt-3 flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-950/60 px-3 py-1.5 text-xs">
+      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+      <span className={cls}>{text}</span>
+      {isRunning(p) && v?.fetchedAt && <span className="ml-auto text-gray-500 whitespace-nowrap">checked {ago(v.fetchedAt)}</span>}
+    </div>
+  )
+}
+
+function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTell }: { t: PrTrack; p: Pipeline; auto: AutoSteps; sessionBusy: boolean; onSend: () => void; onDismiss: () => void; onSetReview: (r: PrReview) => void; onTell: (text: string) => void }) {
   const [tell, setTell] = useState('')
   const [told, setTold] = useState(false)
   const sendTell = () => { if (!tell.trim()) return; onTell(tell.trim()); setTell(''); setTold(true); setTimeout(() => setTold(false), 4000) }
@@ -107,6 +130,7 @@ function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview, onTell }: { t: Pr
         <span>Review in <b className="text-gray-200 font-medium">{review.channel ? `#${review.channel.name}` : 'no Slack channel'}</b>{!!review.dms?.length && <> · DM <b className="text-gray-200 font-medium">{review.dms.map(personName).join(', ')}</b></>}{review.reviewers.length > 0 && <> · reviewers <b className="text-gray-200 font-medium">{review.reviewers.join(', ')}</b></>}</span>
         {!editReview && <button onClick={() => setEditReview(true)} className="text-blue-400 hover:text-blue-300">Change</button>}
       </div>}
+      <LiveStatus t={t} p={p} auto={auto} sessionBusy={sessionBusy} />
       {editReview && <ReviewEditor initial={review} onSave={r => { onSetReview(r); setEditReview(false) }} onCancel={() => setEditReview(false)} />}
       <div className="mt-3 flex gap-2">
         <input dir="auto" value={tell} onChange={e => setTell(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendTell() }}
@@ -151,14 +175,14 @@ function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview, onTell }: { t: Pr
                 : <p className="text-gray-500">{t.slack.reviewers ? 'Nobody has claimed it yet' : 'Checking replies…'}</p>}
               {t.slack.replies?.slice(-2).map((r, i) => <p key={i} className="text-gray-400 line-clamp-2"><span className="text-gray-300 font-medium">{r.user}</span> {r.text}</p>)}
             </div>
-          ) : <p className="text-xs text-gray-500">{review.channel ? 'Posting…' : review.dms?.length ? 'Sent by DM' : 'No channel set'}</p>}
+          ) : <p className="text-xs text-gray-500">{v?.isDraft ? 'Waits until the draft is marked ready' : review.channel ? 'Posting…' : review.dms?.length ? (t.dmSent?.length ? `DMed ${t.dmSent.map(personName).join(', ')}` : 'Sending DMs…') : 'No channel set'}</p>}
         </Panel>
       </div>
     </article>
   )
 }
 
-export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onTell, onAct, onDismiss, onSetAuto }: {
+export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onTell, sessionBusy = false, onAct, onDismiss, onSetAuto }: {
   sessionName: string
   pipeline: Pipeline | null
   error: string | null
@@ -169,6 +193,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   onAddPr: (id: string, url: string, review?: PrReview) => void
   onSetPrReview: (id: string, url: string, review: PrReview) => void
   onTell: (id: string, url: string, text: string) => void
+  sessionBusy?: boolean
   onAct: (id: string, prUrl: string | null) => void
   onDismiss: (id: string, prUrl: string | null) => void
   onSetAuto: (id: string, auto: Partial<AutoSteps>) => void
@@ -217,7 +242,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
         {/* PRs */}
         <div className="space-y-5 min-w-0">
           {pipeline?.suggestion && <SuggestionBox s={pipeline.suggestion} onSend={() => onAct(pipeline.id, null)} onDismiss={() => onDismiss(pipeline.id, null)} />}
-          {pipeline?.prs.map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} onTell={text => onTell(pipeline.id, t.url, text)} />)}
+          {pipeline?.prs.map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} sessionBusy={sessionBusy} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} onTell={text => onTell(pipeline.id, t.url, text)} />)}
           {running && pipeline && (
             <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-4 space-y-2">
               <div className="flex gap-2">

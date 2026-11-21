@@ -544,6 +544,7 @@ export default function Home() {
               onAddPr={(id, url, review) => addPipelinePr(id, lid, url, review)}
               onSetPrReview={(id, url, review) => setPrReview(id, lid, url, review)}
               onTell={(id, url, text) => instructPipeline(id, lid, url, text)}
+              sessionBusy={liveSessions.find(s => s.id === lid)?.status === 'thinking'}
               onAct={(id, prUrl) => actPipeline(id, lid, prUrl)}
               onDismiss={dismissPipeline}
               onSetAuto={setPipelineAuto}

@@ -258,9 +258,13 @@ test('a draft is not sent for review until it is marked ready', async () => {
   await flush(); await flush(); await flush()
   later(); await pipelineEngine.step(p.id, true); await flush()
   expect(postedTo).toEqual([]); expect(dmed).toEqual([])
+  // changing the review setup on a draft doesn't DM either
+  pipelineEngine.setPrReview(p.id, G, { channel: { id: 'C2', name: 'discovery-prs' }, reviewers: [], dms: ['dana', 'tal'] })
+  await flush(); await flush(); await flush()
+  expect(dmed).toEqual([])
   prs[G].isDraft = false
   later(); await pipelineEngine.step(p.id, true); await flush(); await flush(); await flush()
-  expect(postedTo).toEqual(['discovery-prs']); expect(dmed).toEqual(['dana'])
+  expect(postedTo).toEqual(['discovery-prs']); expect(dmed).toEqual(['dana', 'tal'])
   pipelineEngine.stop(p.id)
 })
 
