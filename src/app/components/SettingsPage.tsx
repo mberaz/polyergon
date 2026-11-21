@@ -334,24 +334,37 @@ export function SettingsPage({ onClose, guard, busy = 0 }: { onClose: () => void
 
 // Local Whisper: whisper.cpp + a model file. Shows what's missing and downloads the model.
 function LocalWhisperSetup() {
-  const [st, setSt] = useState<{ cli: boolean; model: boolean; downloading: number | null; error: string | null } | null>(null)
-  const load = (method = 'GET') => fetch('/api/settings/transcription/local', { method }).then(r => r.json()).then(setSt).catch(() => {})
+  type St = { cli: boolean; model: boolean; downloading: number | null; error: string | null; brew: boolean; installing: boolean; installError: string | null }
+  const [st, setSt] = useState<St | null>(null)
+  const load = (method = 'GET', action = '') => fetch(`/api/settings/transcription/local${action ? `?action=${action}` : ''}`, { method }).then(r => r.json()).then(setSt).catch(() => {})
   useEffect(() => { load() }, [])
   useEffect(() => {
-    if (st?.downloading == null) return
+    if (st?.downloading == null && !st?.installing) return
     const t = setTimeout(() => load(), 1500)
     return () => clearTimeout(t)
   }, [st])
   if (!st) return null
+  const ready = st.cli && st.model
+  const step = (done: boolean, n: number, title: string, body: React.ReactNode) => (
+    <div className={`rounded-md border px-3 py-2 ${done ? 'border-emerald-800/60 bg-emerald-950/20' : 'border-amber-700/60 bg-amber-950/20'}`}>
+      <p className={done ? 'text-emerald-300' : 'text-amber-200'}>{done ? '✓' : `${n}.`} {title}</p>
+      {!done && <div className="mt-1.5 text-gray-300">{body}</div>}
+    </div>
+  )
   return (
     <div className="text-xs space-y-2 mt-2">
-      <p className="text-gray-500 leading-relaxed">Runs OpenAI&apos;s open-source Whisper model on this Mac with whisper.cpp. Audio never leaves your computer, and there&apos;s no key or cost.</p>
-      <p className={st.cli ? 'text-green-400' : 'text-amber-300'}>
-        {st.cli ? '✓ whisper.cpp installed' : <>1. In Terminal run <code className="text-amber-200">brew install whisper-cpp</code>, then <button onClick={() => load()} className="underline">check again</button></>}
-      </p>
-      {st.model ? <p className="text-green-400">✓ Model downloaded (large-v3-turbo)</p>
-        : st.downloading != null ? <p className="text-blue-300">Downloading model… {st.downloading}%</p>
-        : <p className="text-amber-300">2. <button onClick={() => load('POST')} className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white">Download model</button> <span className="text-gray-500">large-v3-turbo, about 550 MB</span></p>}
+      <p className="text-gray-500 leading-relaxed">Runs OpenAI&apos;s open-source Whisper model on this Mac with whisper.cpp. Audio never leaves your computer, and there&apos;s no key or cost. It needs two things:</p>
+      {step(st.cli, 1, st.cli ? 'whisper.cpp installed' : 'Install whisper.cpp (the program that runs the model)', st.installing
+        ? <p className="text-blue-300 animate-pulse">Installing with Homebrew… this can take a few minutes.</p>
+        : <>
+            {st.brew && <button onClick={() => load('POST', 'install')} className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white">Install for me</button>}
+            <p className="mt-1.5 text-gray-400">{st.brew ? 'Or in Terminal:' : 'In Terminal (needs Homebrew, brew.sh):'} <code className="select-all text-gray-200">brew install whisper-cpp</code> <button onClick={() => load()} className="underline">check again</button></p>
+            {st.installError && <p className="text-red-400 mt-1">{st.installError}</p>}
+          </>)}
+      {step(st.model, 2, st.model ? 'Model downloaded (large-v3-turbo)' : 'Download the model (about 550 MB)', st.downloading != null
+        ? <p className="text-blue-300">Downloading… {st.downloading}%</p>
+        : <button onClick={() => load('POST')} className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white">Download model</button>)}
+      {ready ? <p className="text-emerald-400">✓ Ready: meetings will transcribe on this Mac.</p> : <p className="text-amber-300">Not ready yet: meetings can&apos;t start until both steps are done.</p>}
       {st.error && <p className="text-red-400">{st.error}</p>}
     </div>
   )

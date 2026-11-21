@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.12
+
+- **Local Whisper setup is two clear steps:** install whisper.cpp (new **Install for me** button, using Homebrew) and download the model. Each shows ✓ or what's missing, and Settings says when it's ready.
+
 ## 0.1.11
 
 - **Meetings: Start recording tells you why it can't start** (for example, transcription not set up), with a button to Settings. Before, nothing happened.

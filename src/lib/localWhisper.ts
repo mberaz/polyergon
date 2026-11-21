@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'child_process'
+import { execFile, execFileSync, spawn } from 'child_process'
 import { createWriteStream, existsSync, mkdirSync, renameSync, statSync } from 'fs'
 import { join } from 'path'
 import { Readable } from 'stream'
@@ -20,12 +20,28 @@ function cliInstalled(): Promise<boolean> {
 
 // Why local transcription can't run right now, or null when it can.
 export function localWhisperProblem(): string | null {
-  try { execFileSync('which', [CLI], { stdio: 'ignore' }) } catch { return 'Local Whisper is not installed. In Terminal run: brew install whisper-cpp' }
+  try { execFileSync('which', [CLI], { stdio: 'ignore' }) } catch { return 'whisper.cpp is not installed. Open Settings → Meetings and click Install for me (or run: brew install whisper-cpp).' }
   if (!existsSync(LOCAL_MODEL_PATH)) return 'The Whisper model is not downloaded yet. Open Settings → Meetings and click Download model.'
   return null
 }
 
-export interface LocalWhisperStatus { cli: boolean; model: boolean; downloading: number | null; error: string | null }
+export interface LocalWhisperStatus { cli: boolean; model: boolean; downloading: number | null; error: string | null; brew: boolean; installing: boolean; installError: string | null }
+
+const brewPath = () => ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'].find(p => existsSync(p)) ?? null
+let install: { running: boolean; error: string | null } = { running: false, error: null }
+
+// Installs whisper.cpp with Homebrew in the background; status reports progress.
+export function installLocalCli(): void {
+  const brew = brewPath()
+  if (!brew || install.running) return
+  install = { running: true, error: null }
+  let out = ''
+  const p = spawn(brew, ['install', 'whisper-cpp'], { env: { ...process.env, HOMEBREW_NO_AUTO_UPDATE: '1', NONINTERACTIVE: '1' } })
+  p.stdout?.on('data', d => { out = (out + d).slice(-2000) })
+  p.stderr?.on('data', d => { out = (out + d).slice(-2000) })
+  p.on('error', e => { install = { running: false, error: e.message } })
+  p.on('exit', code => { install = { running: false, error: code === 0 ? null : (out.trim().split('\n').at(-1) || `brew exited ${code}`) } })
+}
 
 export async function localWhisperStatus(): Promise<LocalWhisperStatus> {
   return {
@@ -33,6 +49,9 @@ export async function localWhisperStatus(): Promise<LocalWhisperStatus> {
     model: existsSync(LOCAL_MODEL_PATH),
     downloading: download && !download.error ? (download.total ? Math.floor(download.done / download.total * 100) : 0) : null,
     error: download?.error ?? null,
+    brew: !!brewPath(),
+    installing: install.running,
+    installError: install.error,
   }
 }
 
