@@ -10,8 +10,23 @@ const CHUNK_SECONDS = 10
 export interface RecorderDevices { mic: string; system: string | null }
 export interface Recorder { devices: RecorderDevices; stop(): Promise<void> }
 
+const MIC_KEY = 'polyergon.micDeviceId'
+export const chosenMic = (): string => { try { return localStorage.getItem(MIC_KEY) ?? '' } catch { return '' } }
+export const chooseMic = (id: string) => { try { if (id) localStorage.setItem(MIC_KEY, id); else localStorage.removeItem(MIC_KEY) } catch { /* private mode */ } }
+
+// Microphones (not BlackHole). Asks for permission first so names show.
+export async function listMics(): Promise<{ id: string; label: string }[]> {
+  const s = await navigator.mediaDevices.getUserMedia({ audio: true })
+  s.getTracks().forEach(t => t.stop())
+  return (await navigator.mediaDevices.enumerateDevices())
+    .filter(d => d.kind === 'audioinput' && !/blackhole/i.test(d.label) && d.deviceId !== 'default' && d.deviceId !== 'communications')
+    .map(d => ({ id: d.deviceId, label: d.label || 'Microphone' }))
+}
+
 async function openInputs(): Promise<{ streams: MediaStream[]; devices: RecorderDevices }> {
-  const mic = await navigator.mediaDevices.getUserMedia({ audio: true })
+  const id = chosenMic()
+  const mic = await navigator.mediaDevices.getUserMedia({ audio: id ? { deviceId: { exact: id } } : true })
+    .catch(e => { if (id && (e as { name?: string }).name === 'OverconstrainedError') { chooseMic(''); return navigator.mediaDevices.getUserMedia({ audio: true }) } throw e })
   const all = await navigator.mediaDevices.enumerateDevices() // labels show once permission is granted
   const bh = all.find(d => d.kind === 'audioinput' && /blackhole/i.test(d.label))
   const streams = [mic]

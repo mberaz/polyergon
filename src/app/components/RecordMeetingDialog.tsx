@@ -1,5 +1,6 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { listMics, chosenMic, chooseMic } from '@/lib/browserRecorder'
 import type { Org } from '@/lib/orgRegistry'
 
 interface Props {
@@ -15,6 +16,10 @@ export function RecordMeetingDialog({ orgs, defaultOrgId, onStart, onCancel, onM
   const [orgId, setOrgId] = useState(defaultOrgId)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ level?: number; error?: string; devices?: { mic: string; system: string | null } } | null>(null)
+
+  const [mics, setMics] = useState<{ id: string; label: string }[]>([])
+  const [mic, setMic] = useState('')
+  useEffect(() => { setMic(chosenMic()); listMics().then(setMics).catch(() => {}) }, [])
 
   async function runMicTest() {
     setTesting(true)
@@ -55,6 +60,15 @@ export function RecordMeetingDialog({ orgs, defaultOrgId, onStart, onCancel, onM
             <option key={org.id} value={org.id}>{org.name}</option>
           ))}
         </select>
+
+        {mics.length > 0 && <>
+          <label className="text-xs text-gray-500 mb-1 block">Microphone</label>
+          <select value={mic} onChange={e => { setMic(e.target.value); chooseMic(e.target.value); setTestResult(null) }}
+            className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none border border-gray-700 focus:border-red-500 mb-4">
+            <option value="">Mac default input</option>
+            {mics.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+        </>}
 
         {/* Mic check */}
         <div className="border border-gray-800 rounded-lg p-3 mb-4">

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.10
+
+- **Meetings: choose the microphone.** The record dialog lists your microphones; the choice is remembered. Fixes silent tests when the Mac's default input is another device.
+
 ## 0.1.9
 
 - **Meetings record in the Polyergon window.** macOS gives background apps a silent microphone, so recordings from the Mac installer came out empty. Audio now comes from the browser, which already has microphone permission (plus BlackHole, if installed). Keep the window open while recording; you're warned if audio stops.
