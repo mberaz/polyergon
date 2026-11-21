@@ -330,7 +330,7 @@ class PipelineEngine {
     return null
   }
 
-  // Your free-form instruction about one PR ("notify product: Shiri and Lior"),
+  // Your free-form instruction about one PR ("notify product: Maya and Noam"),
   // done by the session once it's free.
   instruct(id: string, url: string, text: string): { error: string } | null {
     const p = this.items.find(x => x.id === id)

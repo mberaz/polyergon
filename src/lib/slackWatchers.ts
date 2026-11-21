@@ -281,7 +281,7 @@ class SlackWatcherEngine {
     return null
   }
 
-  // Your one-off instruction about this channel ("answer Koren with the deploy status"),
+  // Your one-off instruction about this channel ("answer Sam with the deploy status"),
   // done by the linked session with the Slack connector.
   instruct(id: string, text: string): { error: string } | null {
     const w = this.items.find(x => x.id === id)

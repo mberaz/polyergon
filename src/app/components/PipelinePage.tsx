@@ -178,7 +178,7 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
       {editReview && <ReviewEditor initial={review} onSave={r => { onSetReview(r); setEditReview(false) }} onCancel={() => setEditReview(false)} />}
       <div className="mt-3 flex gap-2">
         <input dir="auto" value={tell} onChange={e => setTell(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendTell() }}
-          placeholder="Tell Claude about this PR, e.g. let product (Shiri and Lior) know it's ready"
+          placeholder="Tell Claude about this PR, e.g. let the product team (Maya and Noam) know it's ready"
           className="flex-1 bg-gray-950 border border-gray-800 rounded-md px-3 py-1.5 text-sm text-gray-100 outline-none focus:border-blue-500 placeholder-gray-600" />
         <button onClick={sendTell} disabled={!tell.trim()} className="text-xs px-3 rounded-md bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">Send</button>
       </div>
@@ -346,7 +346,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
                   {optional && pm.on && (
                     <div className="mt-1.5">
                       <textarea dir="auto" rows={2} value={pmText ?? pm.checks} onChange={e => setPmText(e.target.value)}
-                        placeholder="Also (optional), e.g. use the post-merge skill; check labeling-service pods in prod-us and prod-eu"
+                        placeholder="Also (optional), e.g. use the post-merge skill; check the billing-service pods in prod-us and prod-eu"
                         className="w-full bg-gray-950 border border-gray-800 rounded-md px-2.5 py-1.5 text-xs text-gray-100 outline-none focus:border-blue-500 placeholder-gray-600 resize-none" />
                       <div className="flex items-center justify-end gap-2 mt-1">
                         {pmSaved && <span className="text-[11px] text-emerald-400">✓ Saved. Used on the next merge.</span>}

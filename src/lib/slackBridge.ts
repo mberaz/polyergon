@@ -125,7 +125,7 @@ export async function postToSlack(channel: SlackChannel, text: string, orgId: st
 
 // Sends a direct message to one person, found by name or @handle. Refuses
 // (does not guess) when the name matches nobody or more than one person.
-// A Slack name or @handle, optionally with its user id from the picker: "Dana Levi (U0ABC123)"
+// A Slack name or @handle, optionally with its user id from the picker: "Dana Cohen (U0ABC123)"
 export const DM_TARGET = /^@?[\p{L}\p{N} ._'-]{1,60}( \([UW][A-Z0-9]{5,}\))?$/u
 
 export async function dmOnSlack(person: string, text: string, orgId: string = DEFAULT_ORG_ID): Promise<{ permalink: string | null }> {

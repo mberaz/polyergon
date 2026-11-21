@@ -288,7 +288,7 @@ function ContextEditor({ knowledge, instructions, onSave, onCancel }: { knowledg
   )
 }
 
-// One-off instruction for the watcher's linked session ("reply to Koren with the deploy status").
+// One-off instruction for the watcher's linked session ("reply to Sam with the deploy status").
 function TellBox({ linked, onSend }: { linked: boolean; onSend: (text: string) => void }) {
   const [text, setText] = useState('')
   const [sent, setSent] = useState(false)
@@ -297,7 +297,7 @@ function TellBox({ linked, onSend }: { linked: boolean; onSend: (text: string) =
     <div className="mt-3">
       <div className="flex gap-2">
         <input dir="auto" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send() }} disabled={!linked}
-          placeholder={linked ? 'Tell it what to do now, e.g. answer Koren with the deploy status' : 'Link a session (🧠 menu) to give it instructions'}
+          placeholder={linked ? 'Tell it what to do now, e.g. answer Sam with the deploy status' : 'Link a session (🧠 menu) to give it instructions'}
           className="flex-1 bg-gray-950 border border-gray-800 rounded-md px-3 py-1.5 text-sm text-gray-100 outline-none focus:border-blue-500 placeholder-gray-500 disabled:opacity-60" />
         <button onClick={send} disabled={!linked || !text.trim()} className="text-xs px-3 rounded-md bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">Send</button>
       </div>

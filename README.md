@@ -18,35 +18,29 @@ Polyergon is a local app for people who run many Claude Code (or GitHub Copilot 
 
 ## What it does
 
+**[See everything it does](docs/features.md)** · **[Examples](docs/examples.md)** · **[Guides](docs/README.md)**
+
 ### Sessions
-- Real Claude Code and Copilot terminals in the browser, side by side.
-- Each card shows whether the session is **thinking**, **waiting for you** or **idle**, what it cost, and how close it is to auto-compacting.
-- Start a plain chat, open a project folder, resume by session ID, or **start from a Slack channel, thread or DM** so the session begins with that context.
-- Pick the model per session. Desktop and sound alerts when a session needs input. Search everything with <kbd>⌘K</kbd>.
+- Real Claude Code and Copilot terminals in the browser, side by side. Each card shows **thinking**, **waiting for you** or **idle**, cost, and how close it is to compacting.
+- **New session** from a plain chat, any folder (search or **Browse…**), or a **Slack channel, thread or DM** as context. Optionally on its **own git worktree**.
+- **Chat view:** read a session as chat, with right-to-left text shown properly and Claude's questions as buttons.
+- **Review changes** with line comments, a **task board** that turns tasks into sessions, auto-continue after usage limits, stall alerts, <kbd>⌘K</kbd> search.
 
 ### Ship it: PRs that move on their own
-Turn it on for a session and it runs the loop you usually babysit:
-
-1. **Open the PR** when the session has code to ship.
-2. **Post it for review** in a Slack channel, and track who picked it up.
-3. **Fix review comments**: new feedback goes back to the session, which fixes, pushes and replies on the PR.
-4. **Fix failing CI** the same way.
-5. **Merge** when it's approved and green.
-
-Each step can be **Auto** or **Ask me**. By default steps 1 to 4 are automatic and merging asks you. Fix rounds are capped per PR (3 by default), then it asks you. Approving is always left to your reviewers.
+Open the PR → ask for review → fix review comments → fix CI → merge → optional **post-merge checks**. Each step is **Auto** or **Ask me**.
+- Every PR the session opens shows up in about 15 seconds, each with its **own review setup**: Slack channel, **DMs** to people you pick, GitHub reviewers.
+- Drafts wait until they're marked ready. "Ready to merge" means approved, green, no open threads, and your chosen reviewers done.
+- A live status per PR (working now, queued, waiting for you, watching), and a **Tell Claude** box ("let product know it's ready").
 
 ### Slack
-- **Inbox:** mentions and DMs still waiting on you, as cards with a suggested reply. Reply, react, mark done, or link the card to a session so drafts use what that session knows.
-- **Channel watcher:** finds unanswered questions in a channel and drafts replies, optionally with a session's knowledge, extra sources (links, folders, channels, notes) and your own rules. You approve each reply, or let it answer new questions on its own. Every action is in an activity log.
+- **Inbox:** mentions and DMs waiting on you, with suggested replies.
+- **Channel watcher:** drafts replies from a session's knowledge, or answers on its own. Requests that need real work go to the session, which finishes and verifies them (asking you before production changes) and replies in the thread.
 
 ### Meetings (beta, macOS)
-Record a call and get a live transcript (local Whisper, OpenAI or Azure), running notes, answers to your questions and a summary. Add context from links, Slack channels, past meetings or sessions. Search every recording, continue a stopped one, and send the summary to Slack.
+Live transcript (**free, offline local Whisper**, or OpenAI/Azure, any language), running notes, Q&A and a summary you can send to Slack.
 
 ### More
-- **Orgs:** keep separate Claude accounts apart. Each org has its own login, Slack workspace, skills, plugins and automations.
-- **Skills:** browse, write and install skills and plugins from the marketplace, per org.
-- **PRs and usage:** your open PRs, review requests and merges from GitHub (needs `gh`), and token cost per session and per org.
-- **Notes** with reminders, and a **Home** dashboard of everything that needs you.
+Separate **orgs** (Claude login or API key, Slack, skills per org), skills and plugins, your PRs, usage and cost, notes with reminders, a Home dashboard, and **install as an app** with its own notifications.
 
 ## Requirements
 

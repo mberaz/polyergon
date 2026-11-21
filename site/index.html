@@ -105,7 +105,7 @@
   @media (max-width: 640px) { .bento { grid-template-columns: 1fr; } .c-ship, .c-live, .c-slack, .c-meet, .c-org { grid-column: auto; } }
 
   /* Pipeline track */
-  .track { margin-top: 56px; display: grid; grid-template-columns: repeat(5, 1fr); position: relative; }
+  .track { margin-top: 56px; display: grid; grid-template-columns: repeat(6, 1fr); position: relative; }
   .track::before { content: ""; position: absolute; top: 27px; left: 10%; right: 10%; height: 2px; background: linear-gradient(90deg, var(--accent) 0 80%, var(--line-2) 80%); }
   .node { text-align: center; position: relative; padding-inline: 8px; }
   .node .dot { width: 56px; height: 56px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; font-size: 24px;
@@ -125,6 +125,24 @@
   .fact p { margin: 0; color: var(--muted); font-size: 15px; }
   @media (max-width: 860px) { .local { grid-template-columns: 1fr; gap: 40px; } }
   @media (max-width: 520px) { .facts { grid-template-columns: 1fr; } }
+
+  /* Everything + examples */
+  .all { margin-top: 28px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .all .col { background: var(--bg); padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .all h4 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .all h4 i { color: var(--accent); }
+  .all ul { margin: 0; padding: 0; list-style: none; display: grid; align-content: start; gap: 8px; color: var(--muted); font-size: 14px; line-height: 1.45; flex: 1; }
+  .all li::before { content: "✓ "; color: var(--accent); }
+  .all a { font-size: 13px; color: var(--accent); }
+  @media (max-width: 960px) { .all { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .all { grid-template-columns: 1fr; } }
+  .ex { margin-top: 28px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .ex article { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); padding: 22px; display: flex; flex-direction: column; gap: 10px; }
+  .ex h4 { margin: 0; font-size: 16px; }
+  .ex p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; flex: 1; }
+  .ex code { font-size: 12.5px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  @media (max-width: 960px) { .ex { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .ex { grid-template-columns: 1fr; } }
 
   /* Install */
   .install { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); padding: 48px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 48px; align-items: center; }
@@ -185,6 +203,8 @@
     <div class="links">
       <a href="#features">Features</a>
       <a href="#ship-it">Ship it</a>
+      <a href="#examples">Examples</a>
+      <a href="https://github.com/polyergon/polyergon/tree/main/docs">Guides</a>
       <a href="#install">Install</a>
       <a class="gh" href="https://github.com/polyergon/polyergon">GitHub</a>
     </div>
@@ -264,15 +284,71 @@
     <p class="lead reveal" style="--i:1">Turn on Ship it for a session. When the code is ready, it takes over the loop you usually babysit.</p>
     <div class="track">
       <div class="node reveal"><span class="dot"><i class="ph ph-git-branch"></i></span><h4>Open the PR</h4><p>Commit, push and open it with a clear description.</p><span class="tag">Auto</span></div>
-      <div class="node reveal" style="--i:1"><span class="dot"><i class="ph ph-paper-plane-tilt"></i></span><h4>Post for review</h4><p>Shares the link in your review channel and tracks who picked it up.</p><span class="tag">Auto</span></div>
+      <div class="node reveal" style="--i:1"><span class="dot"><i class="ph ph-paper-plane-tilt"></i></span><h4>Ask for review</h4><p>Per PR: a Slack channel, DMs to people you pick, GitHub reviewers. Drafts wait.</p><span class="tag">You choose</span></div>
       <div class="node reveal" style="--i:2"><span class="dot"><i class="ph ph-chats"></i></span><h4>Fix comments</h4><p>Sends new review feedback to the session, then replies on the PR.</p><span class="tag">Auto</span></div>
       <div class="node reveal" style="--i:3"><span class="dot"><i class="ph ph-wrench"></i></span><h4>Fix CI</h4><p>Finds the failing check, fixes the cause and pushes.</p><span class="tag">Auto</span></div>
       <div class="node you reveal" style="--i:4"><span class="dot"><i class="ph ph-git-merge"></i></span><h4>You merge</h4><p>Approved and green? One click, or let it merge too.</p><span class="tag">Ask me</span></div>
+      <div class="node reveal" style="--i:5"><span class="dot"><i class="ph ph-seal-check"></i></span><h4>Check the merge</h4><p>Optional: CI on main, the deploy and logs, plus your own checks.</p><span class="tag">Optional</span></div>
     </div>
     <div class="shot reveal" style="margin-top:56px">
       <div class="bar"><i></i><i></i><i></i><span>Board</span></div>
       <img src="img/demo.gif" width="1200" height="492" loading="lazy" alt="Animated task board: a task is started, a session works on it, it waits for your review, its PR goes through CI and review, and it lands in Ready to merge with a Merge button">
     </div>
+  </section>
+
+  <section id="everything" class="wrap">
+    <h2 class="reveal">Everything it does</h2>
+    <p class="lead reveal" style="--i:1">The short list. Each area has a guide on GitHub.</p>
+    <div class="all">
+      <div class="col reveal"><h4><i class="ph ph-terminal-window"></i> Sessions</h4><ul>
+        <li>Claude Code and Copilot terminals side by side</li>
+        <li>Thinking, waiting for you, idle, at a glance</li>
+        <li>Start from a chat, any folder, or a Slack thread</li>
+        <li>Own git worktree per session</li>
+        <li>Chat view, right-to-left text done right</li>
+        <li>Answer Claude's questions with a click</li>
+        <li>Review changes with line comments</li>
+        <li>Task board from idea to merged</li>
+        <li>Auto-continue after usage limits, stall alerts</li>
+      </ul><a href="https://github.com/polyergon/polyergon/blob/main/docs/guides/sessions.md">Sessions guide →</a></div>
+      <div class="col reveal" style="--i:1"><h4><i class="ph ph-git-pull-request"></i> Ship it</h4><ul>
+        <li>Every PR the session opens, within seconds</li>
+        <li>Review setup per PR: channel, DMs, reviewers</li>
+        <li>Review comments and CI sent back to the session</li>
+        <li>Ready to merge only when it really is</li>
+        <li>Live status: working now, queued, waiting for you</li>
+        <li>Tell Claude about a PR in plain words</li>
+        <li>Optional post-merge checks</li>
+      </ul><a href="https://github.com/polyergon/polyergon/blob/main/docs/guides/ship-it.md">Ship it guide →</a></div>
+      <div class="col reveal" style="--i:2"><h4><i class="ph ph-chat-circle-text"></i> Slack</h4><ul>
+        <li>Inbox of mentions and DMs with drafted replies</li>
+        <li>Channel watcher that drafts or answers</li>
+        <li>Real work goes to the session, verified</li>
+        <li>Asks you before production changes</li>
+        <li>Context, rules and a "Tell it" box</li>
+      </ul><a href="https://github.com/polyergon/polyergon/blob/main/docs/guides/slack.md">Slack guide →</a></div>
+      <div class="col reveal" style="--i:3"><h4><i class="ph ph-microphone"></i> Meetings and more</h4><ul>
+        <li>Live transcript, notes, Q&amp;A, summary</li>
+        <li>Free, offline Whisper, any language</li>
+        <li>Separate orgs, skills and plugins</li>
+        <li>PRs, usage and cost per session</li>
+        <li>Install as an app with its own notifications</li>
+      </ul><a href="https://github.com/polyergon/polyergon/blob/main/docs/features.md">Full feature list →</a></div>
+    </div>
+  </section>
+
+  <section id="examples" class="wrap">
+    <h2 class="reveal">What people do with it</h2>
+    <p class="lead reveal" style="--i:1">Real recipes. Each takes a minute to set up.</p>
+    <div class="ex">
+      <article class="reveal"><h4>Ship a feature, skip the babysitting</h4><p>Ask a session for the change, turn on Ship it, go do something else. It opens the PR, gets it reviewed, fixes comments and CI, and asks before merging.</p><code>Add rate limiting to /export, with tests.</code></article>
+      <article class="reveal" style="--i:1"><h4>One session, four PRs</h4><p>A migration touched infra, an API and the app. Each PR gets its own review: one in #team-prs, one by DM, one waits as a draft.</p><code>infra#512 → #team-prs · api#88 → DM Alex</code></article>
+      <article class="reveal" style="--i:2"><h4>Tell product, from the PR</h4><p>Type it on the PR's panel. The session writes the group DM and sends back the link.</p><code>Let Maya and Noam know it's ready, in one DM.</code></article>
+      <article class="reveal"><h4>A #deployment channel that answers itself</h4><p>A watcher answers status questions from what the session knows. "Please roll out X" goes to the session, which asks you before the production step.</p><code>Rule: never say it's deployed unless you checked.</code></article>
+      <article class="reveal" style="--i:1"><h4>Check every deploy after merge</h4><p>Turn on post-merge checks and add your own. The PR is done only when the deploy is healthy.</p><code>Compare error rates 15 min before and after.</code></article>
+      <article class="reveal" style="--i:2"><h4>Meetings in any language</h4><p>Record a Hebrew meeting with offline Whisper, then ask for an English summary.</p><code>Summarize in English: decisions, owners, dates.</code></article>
+    </div>
+    <p class="reveal" style="margin-top:24px"><a class="btn btn-ghost" href="https://github.com/polyergon/polyergon/blob/main/docs/examples.md">More examples →</a> <a class="btn btn-ghost" href="https://github.com/polyergon/polyergon/blob/main/docs/guides/getting-started.md">Getting started guide →</a></p>
   </section>
 
   <section class="wrap local">
