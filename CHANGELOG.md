@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.13
+
+- **Drop files into Chat view:** they show as 📎 chips and their paths go in with your message.
+- **Short file paths:** dropped files are saved as /tmp/polyergon/<name>, in the terminal too.
+
 ## 0.1.12
 
 - **Local Whisper setup is two clear steps:** install whisper.cpp (new **Install for me** button, using Homebrew) and download the model. Each shows ✓ or what's missing, and Settings says when it's ready.
