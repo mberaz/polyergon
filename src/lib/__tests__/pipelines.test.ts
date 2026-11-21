@@ -324,3 +324,19 @@ test('you can close one PR you are finished with', async () => {
   expect(pipelineEngine.removePr(p.id, 'https://github.com/o/x/pull/9')).toEqual({ error: 'PR not found' })
   pipelineEngine.stop(p.id)
 })
+
+test('a second PR the session opens is tracked but not posted until you choose its review', async () => {
+  const P1 = 'https://github.com/o/a/pull/101', P2 = 'https://github.com/o/b/pull/102'
+  prs[P1] = base(101); prs[P2] = base(102)
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  dirty = false; session.prUrl = P1
+  const p = pipelineEngine.create('L1', { slackChannel: { id: 'C1', name: 'reviews' }, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false, postMerge: false } })
+  await flush(); await flush()
+  postedTo.length = 0
+  session.prUrl = P2 // the session printed a new PR link
+  later(); await pipelineEngine.step(p.id, true); await flush(); await flush()
+  expect(p.prs.map((t: { url: string }) => t.url)).toEqual([P1, P2])
+  expect(p.prs[1].review).toEqual({ channel: null, reviewers: [] })
+  expect(postedTo).toEqual([])
+  pipelineEngine.stop(p.id)
+})

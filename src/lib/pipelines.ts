@@ -119,6 +119,7 @@ const FILE = join(DATA_DIR, 'pipelines.json')
 const POLL_MS = 2 * 60_000
 const SETTLE_MS = 20_000 // a session must be quiet this long after we sent it work
 const SLACK_CHECK_MS = 10 * 60_000
+const FIND_PRS_MS = 10 * 60_000
 const QUIET_MS = 15_000 // session must stay 'waiting' this long before we type into it
 import { ACTIVE_PHASES, stepOf } from './pipelineView'
 const OPEN_TRACK: PrTrackState[] = ['in-review', 'working', 'ready']
@@ -238,6 +239,8 @@ class PipelineEngine {
     })
     onAnyPrUrlChange(id => this.forSession(id, p => this.step(p.id)))
     setInterval(() => this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => this.step(p.id, true)), POLL_MS)
+    // Sessions open PRs in ways the terminal scan misses: look for new ones regularly
+    setInterval(() => this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => void this.findOpenPrs(p)), FIND_PRS_MS)
     this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => { this.step(p.id, true); void this.findOpenPrs(p) })
   }
 
@@ -249,7 +252,7 @@ class PipelineEngine {
     if (!ACTIVE_PHASES.includes(p.phase)) return
     let added = false
     // Found, not chosen: no Slack post until you pick this PR's channel (Change)
-    for (const u of urls) if (!p.prs.some(t => t.url === u)) { this.addTrack(p, u, 'Found open PR', { channel: null, reviewers: [] }); added = true }
+    for (const u of urls) if (!p.prs.some(t => t.url === u)) { this.newPr(p, u); added = true }
     if (added) this.step(p.id, true)
   }
 
@@ -336,6 +339,12 @@ class PipelineEngine {
     if (next.channel && next.channel.name !== t.slack?.channel) this.announce(p, t, true)
     else this.announce(p, t) // DMs only; announce holds them while it's a draft
     return null
+  }
+
+  // A PR the session opened beyond the first: tracked, but nothing posted until you choose its review.
+  private newPr(p: Pipeline, url: string) {
+    this.addTrack(p, url, 'New PR found:', { channel: null, reviewers: [] })
+    this.update(p, {}, undefined, { title: 'New PR in the automation', body: `${shortPr(url)}: choose where to ask for review` })
   }
 
   private addTrack(p: Pipeline, url: string, why: string, review?: PrReview) {
@@ -478,7 +487,10 @@ class PipelineEngine {
     }
 
     // Any PR link the session printed becomes a tracked PR
-    if (s.prUrl && !p.prs.some(t => t.url === s.prUrl)) this.addTrack(p, s.prUrl, p.prs.length ? 'New PR' : 'PR opened')
+    if (s.prUrl && !p.prs.some(t => t.url === s.prUrl)) {
+      if (p.prs.length) this.newPr(p, s.prUrl) // another PR: you choose its review
+      else this.addTrack(p, s.prUrl, 'PR opened')
+    }
 
     if (p.phase === 'waiting-for-session') {
       if (!quiet) return
