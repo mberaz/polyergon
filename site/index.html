@@ -128,6 +128,9 @@
 
   /* Install */
   .install { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); padding: 48px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 48px; align-items: center; }
+  pre.cmd { position: relative; padding-right: 56px; }
+  .copy { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); background: none; border: 1px solid var(--line); border-radius: 8px; color: var(--text); opacity: .6; cursor: pointer; width: 34px; height: 34px; display: grid; place-items: center; font-size: 16px; }
+  .copy:hover { opacity: 1; }
   pre { margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 22px 24px; font-size: 14px; line-height: 1.9; overflow-x: auto; color: var(--text); }
   pre .p { color: var(--accent); user-select: none; }
   pre .c { color: var(--dim); }
@@ -281,7 +284,7 @@
           <li><code>gh</code> for PRs and Ship it (optional)</li>
         </ul>
       </div>
-      <pre><span class="p">$</span> npx polyergon <span class="c"># opens Polyergon in its own window</span></pre>
+      <pre class="cmd"><span class="p">$</span> npx polyergon <span class="c"># opens Polyergon in its own window</span><button type="button" class="copy" data-copy="npx polyergon" aria-label="Copy command"><i class="ph ph-copy"></i></button></pre>
     </div>
     <div class="updates reveal">
       <div>
@@ -316,6 +319,13 @@
   // Reveal sections as they enter the viewport (IntersectionObserver, no scroll listeners)
   const io = new IntersectionObserver(entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target) } }), { threshold: 0.15 })
   document.querySelectorAll('.reveal').forEach(el => io.observe(el))
+
+  // Copy-to-clipboard for command boxes
+  document.querySelectorAll('.copy').forEach(b => b.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(b.dataset.copy)
+    b.innerHTML = '<i class="ph ph-check"></i>'
+    setTimeout(() => { b.innerHTML = '<i class="ph ph-copy"></i>' }, 1500)
+  }))
 
   // Get updates: POST the email to the worker, show the result inline
   const form = document.getElementById('subscribe')
