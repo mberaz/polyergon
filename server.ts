@@ -38,6 +38,12 @@ import { sessionNameStore } from './src/lib/sessionNameStore'
 import { firstUserMessageSync } from './src/lib/sessionStore'
 import { realpathSync } from 'fs'
 
+// Agent CLIs install to these folders, which a Terminal or Dock launch may not have
+// on PATH yet (e.g. ~/.local/bin added to .zshrc after this shell started).
+// Sessions and the "is it installed" check both read PATH.
+process.env.PATH = [...new Set([...(process.env.PATH ?? '').split(':').filter(Boolean),
+  path.join(os.homedir(), '.local/bin'), path.join(os.homedir(), '.claude/local'), '/opt/homebrew/bin', '/usr/local/bin'])].join(':')
+
 const PORT = Number(process.env.PORT) || 3030
 const dev = process.env.NODE_ENV !== 'production'
 // Compiled builds run from .server-dist/; the Next app lives one level up.
