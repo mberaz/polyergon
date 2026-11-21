@@ -1,4 +1,6 @@
-# Polyergon
+<p align="center"><img src="public/icon-192.png" width="96" height="96" alt="Polyergon logo"></p>
+
+<h1 align="center">Polyergon</h1>
 
 **Run every Claude Code session from one screen.**
 
