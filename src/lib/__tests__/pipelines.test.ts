@@ -306,6 +306,9 @@ test('post-merge checks are optional: off, a merged PR is done; on, the session 
   expect(p.log.some((l: { text: string }) => l.text.startsWith('Post-merge checks finished'))).toBe(true)
   expect(p.prs[0].state).toBe('done')
   expect(p.phase).toBe('done')
+  const labels = (t: object) => pipelineSummary && require('../pipelineView').prSteps(t, false).map((s: { label: string }) => s.label)
+  expect(labels(p.prs[0])).toContain('Post-merge checks done')
+  expect(labels({ ...p.prs[0], postMergeRan: false })).not.toContain('Post-merge checks done') // merged before the step was on
 })
 
 test('you can close one PR you are finished with', async () => {

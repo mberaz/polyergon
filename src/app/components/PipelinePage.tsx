@@ -88,7 +88,7 @@ function LiveStatus({ t, p, auto, sessionBusy }: { t: PrTrack; p: Pipeline; auto
     <div className="mt-3 flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-950/60 px-3 py-1.5 text-xs">
       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
       <span className={cls}>{text}</span>
-      {isRunning(p) && v?.fetchedAt && <span className="ml-auto text-gray-500 whitespace-nowrap">checked {ago(v.fetchedAt)}</span>}
+      {isRunning(p) && t.state !== 'done' && v?.fetchedAt && <span className="ml-auto text-gray-500 whitespace-nowrap">checked {ago(v.fetchedAt)}</span>}
     </div>
   )
 }
@@ -103,7 +103,9 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
   const v = t.view
   const [label, cls] = t.view?.isDraft && t.state === 'in-review' ? ['draft', 'bg-gray-700 text-gray-300'] : TRACK_BADGE[t.state]
   const max = p.config.maxRounds
-  const ci = CI[v?.checks ?? 'none'] ?? CI.none
+  const finished = t.state === 'done'
+  // A finished PR isn't refreshed: don't show its last CI snapshot as live
+  const ci = finished ? (['✓', 'text-emerald-400', v?.state === 'MERGED' ? 'Merged. CI no longer tracked' : 'Closed'] as [string, string, string]) : CI[v?.checks ?? 'none'] ?? CI.none
   const autoNext = t.suggestion && t.suggestion.kind !== 'open-pr' && auto[stepOf(t.suggestion.kind)]
   return (
     <article className="rounded-2xl border border-gray-800 bg-gradient-to-b from-gray-900/80 to-gray-900/30 p-5 shadow-lg shadow-black/20">
@@ -123,7 +125,7 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
         <a href={t.url} target="_blank" rel="noreferrer" className="flex-shrink-0 text-xs px-3 py-1 rounded-lg border border-gray-700 hover:bg-gray-800 text-gray-200">Open PR ↗</a>
       </header>
 
-      {!editReview && !review.channel && !review.reviewers.length && !review.dms?.length && !t.slack?.permalink
+      {!editReview && !finished && !review.channel && !review.reviewers.length && !review.dms?.length && !t.slack?.permalink
         ? <div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2">
             <p className="text-xs text-amber-300">Not sent for review yet. Choose this PR's Slack channel, people to DM and reviewers.</p>
             <button onClick={() => setEditReview(true)} className="ml-auto text-xs px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white whitespace-nowrap">Choose</button>
@@ -174,12 +176,12 @@ function PrPanel({ t, p, auto, sessionBusy, onSend, onDismiss, onSetReview, onTe
         </Panel>
         <Panel title="CI">
           <p className="flex items-center gap-2 text-sm">
-            {v?.checks === 'pending'
+            {v?.checks === 'pending' && !finished
               ? <span className="w-4 h-4 rounded-full border-2 border-amber-300 border-t-transparent animate-spin motion-reduce:animate-none" aria-hidden />
               : <span className={`text-lg leading-none ${ci[1]}`}>{ci[0]}</span>}
             <span className="text-gray-200">{ci[2]}</span>
           </p>
-          {v && <p className="text-[11px] text-gray-500 mt-2">Updated {new Date(v.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}
+          {v && !finished && <p className="text-[11px] text-gray-500 mt-2">Updated {new Date(v.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}
         </Panel>
         <Panel title={`Slack${t.slack ? ` · #${t.slack.channel}` : ''}`} right={t.slack?.permalink && <a href={t.slack.permalink} target="_blank" rel="noreferrer" className="text-[11px] text-blue-400 hover:underline">Open thread ↗</a>}>
           {t.slack ? (

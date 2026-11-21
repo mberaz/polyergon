@@ -91,6 +91,7 @@ export interface PrTrack {
   // This PR's own review setup; missing = the automation's channel, no extra reviewers
   review?: PrReview
   dmSent?: string[] // people already DMed about this PR
+  postMergeRan?: boolean // went through the post-merge checks step
 }
 
 // Where a PR asks for review: a Slack channel (null = don't post) and GitHub reviewers
@@ -492,7 +493,7 @@ class PipelineEngine {
     if (busyOn && !quiet) return // session still on it
     let refresh = poll
     if (busyOn) {
-      if (busyOn.state === 'verifying') this.patchTrack(p, busyOn, { state: 'done' }, `Post-merge checks finished on ${shortPr(busyOn.url)}: see the session for results`, { title: 'Post-merge checks finished', body: shortPr(busyOn.url) })
+      if (busyOn.state === 'verifying') this.patchTrack(p, busyOn, { state: 'done', postMergeRan: true }, `Post-merge checks finished on ${shortPr(busyOn.url)}: see the session for results`, { title: 'Post-merge checks finished', body: shortPr(busyOn.url) })
       else this.patchTrack(p, busyOn, { state: 'in-review' }, `Session finished work on ${shortPr(busyOn.url)}`)
       this.update(p, { workingOn: null })
       refresh = true

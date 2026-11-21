@@ -66,7 +66,8 @@ export function prSteps(t: PrTrack, slack: boolean): { label: string; done: bool
     { label: 'Approved', done: approved, current: false },
     { label: ready ? 'Ready to merge' : blocker, done: ready, current: approved && !ready },
     { label: 'Merged', done: merged, current: ready && !merged },
-    ...(merged ? [{ label: t.state === 'done' ? 'Post-merge checks done' : 'Post-merge checks', done: t.state === 'done', current: t.state !== 'done' }] : []),
+    // Only PRs that went through the optional step show it
+    ...(merged && (t.state === 'verifying' || t.postMergeRan) ? [{ label: t.state === 'done' ? 'Post-merge checks done' : 'Post-merge checks', done: t.state === 'done', current: t.state !== 'done' }] : []),
   ]
 }
 
