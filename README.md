@@ -4,6 +4,8 @@
 
 Polyergon is a local app for people who run many Claude Code (or GitHub Copilot CLI) sessions at once. It shows which sessions need you, ships their pull requests, keeps up with Slack, and records meetings. It runs on your machine, and it's open source under the MIT license.
 
+[![CI](https://github.com/polyergon/polyergon/actions/workflows/ci.yml/badge.svg)](https://github.com/polyergon/polyergon/actions/workflows/ci.yml) [![npm](https://img.shields.io/npm/v/polyergon)](https://www.npmjs.com/package/polyergon)
+
 [polyergon.ai](https://polyergon.ai) · [npm](https://www.npmjs.com/package/polyergon)
 
 ![Task board demo: a task is started, a session works on it, it waits for your review, its PR goes through CI and review, and it lands in Ready to merge](site/img/demo.gif)
@@ -108,7 +110,7 @@ npm run dev        # hot reload on http://localhost:3030
 npm test           # unit tests
 ```
 
-The app is a Next.js front end with a small Node server (`server.ts`) that owns the terminals (node-pty), automations and Slack helpers. Code lives in `src/app` (UI) and `src/lib` (server logic). Issues and pull requests are welcome.
+The app is a Next.js front end with a small Node server (`server.ts`) that owns the terminals (node-pty), automations and Slack helpers. Code lives in `src/app` (UI) and `src/lib` (server logic). Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

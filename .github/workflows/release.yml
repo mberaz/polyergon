@@ -1,0 +1,36 @@
+name: Release
+# Publishing a GitHub release (tag vX.Y.Z) runs the checks and publishes to npm.
+# Uses npm trusted publishing (OIDC): no npm token or 2FA code needed.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish (e.g. v0.1.3)
+        required: true
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - name: Tag matches package.json
+        run: |
+          TAG="${{ inputs.tag || github.event.release.tag_name }}"
+          test "${TAG#v}" = "$(node -p "require('./package.json').version")"
+      - run: npm ci
+      - run: npx tsc --noEmit -p .
+      - run: npx tsc --noEmit -p tsconfig.server.json
+      - run: npm test
+      - run: npm run build
+      - run: npm publish --access public --provenance

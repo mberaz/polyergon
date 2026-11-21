@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- **New Session:** org, agent and model on one row, so Just chat is visible without scrolling. Enter in the name field starts a chat.
+- **API key sign-in:** the model list loads with your API key. If models can't load, you can still start with the default model.
+- **Slack watcher:** auto mode never posts promises. Requests that need real work go to the linked session, which does the work and replies in the thread.
+
 ## 0.1.2
 
 - **Auto-continue after usage limits:** when Claude hits its usage limit, the card shows when it resets and Polyergon sends "continue" a minute later.
