@@ -19,6 +19,21 @@ export function HistoryPanel({ sessionId, waiting, onSend, onClose }: Props) {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const [question, setQuestion] = useState<ScreenQuestion | null>(null)
+  const [attached, setAttached] = useState<string[]>([]) // dropped files' paths, added on send
+  const [dragging, setDragging] = useState(false)
+  const [dropError, setDropError] = useState('')
+
+  async function onDrop(e: React.DragEvent) {
+    e.preventDefault(); setDragging(false); setDropError('')
+    const files = [...e.dataTransfer.files].filter(f => f.size <= 25 * 1024 * 1024)
+    if (!files.length) { if (e.dataTransfer.files.length) setDropError('Files over 25 MB are skipped'); return }
+    const read = (f: File) => new Promise<{ name: string; data: string }>((res, rej) => { const r = new FileReader(); r.onload = () => res({ name: f.name, data: String(r.result).split(',')[1] ?? '' }); r.onerror = () => rej(r.error); r.readAsDataURL(f) })
+    try {
+      const r = await fetch('/api/drop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files: await Promise.all(files.map(read)) }) }).then(x => x.json())
+      if (r.paths?.length) setAttached(a => [...a, ...r.paths])
+      else setDropError(r.error ?? 'Could not add the file')
+    } catch { setDropError('Could not add the file') }
+  }
 
   useEffect(() => {
     if (!waiting) { setQuestion(null); return }
@@ -42,14 +57,23 @@ export function HistoryPanel({ sessionId, waiting, onSend, onClose }: Props) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'instant' }) }, [messages, question])
 
   function send() {
-    const prompt = input.trim()
+    const files = attached.map(p => /[^\w@%+=:,./-]/.test(p) ? `'${p.replace(/'/g, `'\\''`)}'` : p).join(' ')
+    const prompt = [input.trim(), files].filter(Boolean).join(' ')
     if (!prompt) return
-    setInput('')
+    setInput(''); setAttached([])
     onSend(prompt)
   }
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col bg-gray-950">
+    <div className="absolute inset-0 z-10 flex flex-col bg-gray-950"
+      onDragOver={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true) } }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false) }}
+      onDrop={onDrop}>
+      {dragging && (
+        <div className="absolute inset-2 z-20 rounded-xl border-2 border-dashed border-blue-400 bg-blue-950/40 flex items-center justify-center pointer-events-none">
+          <p className="text-sm text-blue-100 bg-gray-900/90 px-4 py-2 rounded-lg">Drop to attach to your message</p>
+        </div>
+      )}
       <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-3 flex-shrink-0">
         <p className="text-xs text-gray-500">Chat view · last 30 messages, updates live</p>
         <button onClick={onClose} className="ml-auto text-xs px-2.5 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800">Terminal view</button>
@@ -85,12 +109,23 @@ export function HistoryPanel({ sessionId, waiting, onSend, onClose }: Props) {
       </div>
 
       <div className="border-t border-gray-800 px-4 py-3 flex-shrink-0">
+        {(attached.length > 0 || dropError) && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {attached.map(p => (
+              <span key={p} title={p} className="text-[11px] pl-2 pr-1 py-0.5 rounded-full bg-gray-800 border border-gray-700 text-gray-200 flex items-center gap-1">
+                📎 {p.split('/').pop()}
+                <button onClick={() => setAttached(a => a.filter(x => x !== p))} aria-label="Remove" className="text-gray-400 hover:text-white px-0.5">×</button>
+              </span>
+            ))}
+            {dropError && <span className="text-[11px] text-red-400">{dropError}</span>}
+          </div>
+        )}
         <textarea
           dir="auto"
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-          placeholder="Write to the session… (Enter to send)"
+          placeholder="Write to the session… (Enter to send, drop files to attach)"
           rows={2}
           className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm outline-none resize-none placeholder-gray-600"
         />

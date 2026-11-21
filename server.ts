@@ -2,7 +2,7 @@ import { createServer } from 'http'
 import { parse } from 'url'
 import path from 'path'
 import os from 'os'
-import { existsSync, statSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs'
+import { existsSync, statSync, mkdirSync, writeFileSync } from 'fs'
 import { getGitRoot } from './src/lib/gitUtils'
 import next from 'next'
 import { WebSocketServer, WebSocket } from 'ws'
@@ -33,6 +33,7 @@ function missingCli(backendId: unknown): string | null {
 const sessionView = (s: LiveSession) => ({ id: s.id, cwd: s.cwd, gitRoot: s.gitRoot ?? getGitRoot(s.cwd), // restored sessions may lack it (cached lookup)
   status: s.status, claudeSessionId: s.claudeSessionId, createdAt: s.createdAt, prUrl: s.prUrl, rcUrl: s.rcUrl ?? null, rc: !!s.rc, orgId: s.orgId, backend: s.backend ?? 'claude', limitResetAt: sessionWatch.limitResetAt.get(s.id) ?? null, stalledSince: sessionWatch.stalledSince.get(s.id) ?? null, worktree: s.worktree ? { branch: s.worktree.branch, repo: s.worktree.repo } : null })
 import { slackWatchers } from './src/lib/slackWatchers'
+import { saveDropped, quotePath } from './src/lib/dropFiles'
 import { meetingStore, type ContextKind } from './src/lib/meetingStore'
 import { sessionNameStore } from './src/lib/sessionNameStore'
 import { firstUserMessageSync } from './src/lib/sessionStore'
@@ -411,17 +412,8 @@ app.prepare().then(async () => {
       } else if (msg.type === 'drop-files') {
         // Files dropped on the terminal: save copies (original names) and type their paths
         if (!currentSessionId || !Array.isArray(msg.files)) return
-        const dir = mkdtempSync(path.join(os.tmpdir(), 'polyergon-drop-'))
-        const paths: string[] = []
-        for (const f of (msg.files as { name?: unknown; data?: unknown }[]).slice(0, 20)) {
-          const name = path.basename(String(f.name ?? 'file')).replace(/[\x00-\x1f\x7f]/g, '').slice(0, 200) || 'file'
-          const buf = Buffer.from(String(f.data ?? ''), 'base64')
-          if (buf.length > 25 * 1024 * 1024) continue
-          const p = path.join(dir, name)
-          writeFileSync(p, buf)
-          paths.push(/[^\w@%+=:,./-]/.test(p) ? `'${p.replace(/'/g, `'\\''`)}'` : p)
-        }
-        if (paths.length) writeToSession(currentSessionId, paths.join(' ') + ' ')
+        const paths = saveDropped(msg.files as { name?: unknown; data?: unknown }[])
+        if (paths.length) writeToSession(currentSessionId, paths.map(quotePath).join(' ') + ' ')
         send({ type: 'files-dropped', paths })
 
       } else if (msg.type === 'meeting-start') {
