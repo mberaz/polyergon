@@ -1,9 +1,12 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '@/lib/sessionStore'
+import { screenBottom, typeKeys } from './Terminal'
+import { parseScreenQuestion, type ScreenQuestion } from '@/lib/screenQuestion'
 
 interface Props {
   sessionId: string | null // Claude's session id (transcript); null until Claude creates it
+  waiting: boolean
   onSend: (prompt: string) => void
   onClose: () => void
 }
@@ -11,10 +14,19 @@ interface Props {
 // Reading view of a live session. The terminal (xterm.js) can't lay out
 // right-to-left text, so Hebrew/Arabic come out scrambled there. Here each
 // paragraph gets dir="auto", so the browser orders it correctly.
-export function HistoryPanel({ sessionId, onSend, onClose }: Props) {
+export function HistoryPanel({ sessionId, waiting, onSend, onClose }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [question, setQuestion] = useState<ScreenQuestion | null>(null)
+
+  useEffect(() => {
+    if (!waiting) { setQuestion(null); return }
+    const read = () => setQuestion(q => { const n = parseScreenQuestion(screenBottom()); return JSON.stringify(n) === JSON.stringify(q) ? q : n })
+    read()
+    const t = setInterval(read, 1000)
+    return () => clearInterval(t)
+  }, [waiting])
 
   useEffect(() => {
     if (!sessionId) return
@@ -27,7 +39,7 @@ export function HistoryPanel({ sessionId, onSend, onClose }: Props) {
     return () => { stop = true; clearInterval(t) }
   }, [sessionId])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'instant' }) }, [messages])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'instant' }) }, [messages, question])
 
   function send() {
     const prompt = input.trim()
@@ -54,6 +66,21 @@ export function HistoryPanel({ sessionId, onSend, onClose }: Props) {
             </div>
           </div>
         ))}
+        {question && (
+          <div className="border border-emerald-700/60 bg-emerald-950/30 rounded-xl px-4 py-3">
+            <p className="text-xs text-emerald-300 mb-2">Claude is asking</p>
+            {question.text && <p dir="auto" className="text-sm text-gray-100 whitespace-pre-wrap break-words mb-3">{question.text}</p>}
+            <div className="flex flex-col gap-1.5">
+              {question.options.map(o => (
+                <button key={o.n} onClick={() => typeKeys(o.n)} dir="auto"
+                  className="text-left text-sm px-3 py-1.5 rounded border border-gray-700 bg-gray-900 text-gray-200 hover:bg-gray-800 hover:border-emerald-600">
+                  <span className="text-gray-500 mr-2">{o.n}.</span>{o.label}
+                </button>
+              ))}
+            </div>
+            <button onClick={onClose} className="mt-2 text-xs text-gray-400 hover:text-gray-200 underline">Answer in the terminal instead</button>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 

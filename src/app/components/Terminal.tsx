@@ -5,6 +5,22 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 
+// The one terminal on the page, so Chat view can read the screen and type keys.
+let current: { term: XTerm; ws: () => WebSocket | null } | null = null
+
+export function screenBottom(rows = 40): string {
+  const t = current?.term
+  if (!t) return ''
+  const buf = t.buffer.active
+  const out: string[] = []
+  for (let y = Math.max(0, buf.viewportY + t.rows - rows); y < buf.viewportY + t.rows; y++) out.push(buf.getLine(y)?.translateToString(true) ?? '')
+  return out.join('\n')
+}
+
+export function typeKeys(data: string) {
+  current?.ws()?.send(JSON.stringify({ type: 'input', data }))
+}
+
 interface Props {
   visible: boolean
   ws: WebSocket | null
@@ -44,6 +60,7 @@ export function Terminal({ visible, ws }: Props) {
     fit.fit()
     fitRef.current = fit
     xtermRef.current = term
+    current = { term, ws: () => wsRef.current }
 
     // Tell PTY the real terminal dimensions immediately
     const socket = wsRef.current
@@ -72,6 +89,7 @@ export function Terminal({ visible, ws }: Props) {
       observerRef.current?.disconnect()
       xtermRef.current?.dispose()
       xtermRef.current = null
+      current = null
       initializedRef.current = false
     }
   }, [])
