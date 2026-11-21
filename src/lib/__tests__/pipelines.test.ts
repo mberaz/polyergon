@@ -20,7 +20,7 @@ const dmed: string[] = []
 jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? session : undefined) } }))
 jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writes.push(t), onAnyStatusChange: () => () => {}, onAnyPrUrlChange: () => () => {} }))
 jest.mock('../sessionPrs', () => ({ openPrsOfSession: async () => foundPrs }))
-jest.mock('../slackBridge', () => ({ postToSlack: async (c: { name: string }, t: string) => { posts.push(t); postedTo.push(c.name); return { permalink: null } }, readSlackThread: async () => null, dmOnSlack: async (who: string) => { dmed.push(who); return { permalink: null } } }))
+jest.mock('../slackBridge', () => ({ postToSlack: async (c: { name: string }, t: string) => { posts.push(t); postedTo.push(c.name); return { permalink: null } }, readSlackThread: async () => null, DM_TARGET: /^@?[\p{L}\p{N} ._'-]{1,60}( \([UW][A-Z0-9]{5,}\))?$/u, dmOnSlack: async (who: string) => { dmed.push(who); return { permalink: null } } }))
 jest.mock('child_process', () => ({ execFile: (cmd: string, a: string[], _o: object, cb: (e: Error | null, r?: { stdout: string }) => void) => {
   if (cmd === 'git') return a.includes('--porcelain') ? cb(null, { stdout: dirty ? ' M file.ts' : '' }) : cb(new Error('no upstream'))
   if (a[0] === 'pr' && a[1] === 'edit') { posts.push(`gh ${a.join(' ')}`); return cb(null, { stdout: '' }) }
@@ -199,12 +199,12 @@ test('a PR can also DM people on Slack, each once', async () => {
   const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
   await flush()
   dmed.length = 0
-  expect(pipelineEngine.addPr(p.id, D, { channel: null, reviewers: [], dms: ['@dana', 'Koren Tako', 'bad;name'] })).toBeNull()
+  expect(pipelineEngine.addPr(p.id, D, { channel: null, reviewers: [], dms: ['@dana', 'Koren Tako (U0BPBE68RJR)', 'bad;name'] })).toBeNull()
   await flush(); await flush()
-  expect(dmed).toEqual(['dana', 'Koren Tako'])
-  expect(pipelineEngine.setPrReview(p.id, D, { channel: null, reviewers: [], dms: ['dana', 'Koren Tako', 'eve'] })).toBeNull()
+  expect(dmed).toEqual(['dana', 'Koren Tako (U0BPBE68RJR)'])
+  expect(pipelineEngine.setPrReview(p.id, D, { channel: null, reviewers: [], dms: ['dana', 'Koren Tako (U0BPBE68RJR)', 'eve'] })).toBeNull()
   await flush(); await flush()
-  expect(dmed).toEqual(['dana', 'Koren Tako', 'eve'])
+  expect(dmed).toEqual(['dana', 'Koren Tako (U0BPBE68RJR)', 'eve'])
   pipelineEngine.stop(p.id)
 })
 

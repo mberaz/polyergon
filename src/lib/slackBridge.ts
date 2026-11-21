@@ -71,6 +71,35 @@ export async function listSlackChannels(refresh = false, orgId: string = DEFAULT
   return data
 }
 
+export interface SlackPerson { id: string; name: string; handle?: string }
+
+// People in your workspace (no bots, no deactivated), for DM suggestions. Cached a day.
+export async function listSlackPeople(refresh = false, orgId: string = DEFAULT_ORG_ID): Promise<{ people: SlackPerson[]; fetchedAt: number }> {
+  if (!refresh) {
+    try {
+      const cached = JSON.parse(readFileSync(orgFile('slack-people', orgId), 'utf-8'))
+      if (Date.now() - cached.fetchedAt < CACHE_TTL_MS && cached.people?.length) return cached
+    } catch { /* no cache */ }
+  }
+  const { result } = await runClaude(
+    'Use the Slack connector to list the people in my Slack workspace: real people only, no bots, apps or deactivated accounts. ' +
+    'Page through all results (up to 1000). Respond with ONLY a JSON array, no prose: [{"id": "U123", "name": "Full Name", "handle": "username"}, ...]',
+    opts(undefined, orgId),
+  )
+  const start = result.indexOf('['), end = result.lastIndexOf(']')
+  let people: SlackPerson[] = []
+  try {
+    people = (JSON.parse(result.slice(start, end + 1)) as SlackPerson[])
+      .filter(p => p && typeof p.name === 'string' && /^[UW][A-Z0-9]{5,}$/.test(String(p.id)))
+      .map(p => ({ id: String(p.id), name: p.name.trim(), ...(p.handle ? { handle: String(p.handle).replace(/^@/, '') } : {}) }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  } catch { /* fall through */ }
+  if (!people.length) throw new SlackError(result.trim().slice(0, 300) || 'No people came back', classifySlackFailure(result))
+  const data = { people, fetchedAt: Date.now() }
+  writeFileSync(orgFile('slack-people', orgId), JSON.stringify(data))
+  return data
+}
+
 // Meeting summary markdown → Slack mrkdwn
 export function toSlackMarkdown(md: string): string {
   return md
@@ -96,11 +125,17 @@ export async function postToSlack(channel: SlackChannel, text: string, orgId: st
 
 // Sends a direct message to one person, found by name or @handle. Refuses
 // (does not guess) when the name matches nobody or more than one person.
+// A Slack name or @handle, optionally with its user id from the picker: "Dana Levi (U0ABC123)"
+export const DM_TARGET = /^@?[\p{L}\p{N} ._'-]{1,60}( \([UW][A-Z0-9]{5,}\))?$/u
+
 export async function dmOnSlack(person: string, text: string, orgId: string = DEFAULT_ORG_ID): Promise<{ permalink: string | null }> {
-  if (!/^@?[\p{L}\p{N} ._'-]{1,60}$/u.test(person)) throw new Error(`Not a Slack name: ${person}`)
+  if (!DM_TARGET.test(person)) throw new Error(`Not a Slack name: ${person}`)
+  const id = person.match(/\(([UW][A-Z0-9]{5,})\)$/)?.[1]
+  const who = id
+    ? `Send a direct message to the Slack user with id ${id}. `
+    : `Find the Slack user "${person.replace(/^@/, '')}" (match display name, real name or handle). If no one or more than one person matches, do not send anything. Otherwise send them a direct message. `
   const { result } = await runClaude(
-    `Use the Slack connector to find the Slack user "${person.replace(/^@/, '')}" (match display name, real name or handle). ` +
-    'If no one or more than one person matches, do not send anything. Otherwise send them the message below as a direct message, exactly as written, as one message. ' +
+    'Use the Slack connector. ' + who + 'Send the message below exactly as written, as one message. ' +
     'Reply with only "OK <the message permalink>" when sent, or "FAILED: <reason>".\n\n<message>\n' + text + '\n</message>',
     opts(undefined, orgId),
   )

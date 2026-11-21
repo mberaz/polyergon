@@ -1,4 +1,5 @@
 'use client'
+import { SlackPeoplePicker } from './SlackPeoplePicker'
 import { useState } from 'react'
 import type { Pipeline, PipelineConfig, PrTrack, PrReview } from '@/lib/pipelines'
 import type { SlackChannel } from '@/lib/slackBridge'
@@ -100,7 +101,7 @@ function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview }: { t: PrTrack; p
             <button onClick={() => setEditReview(true)} className="ml-auto text-xs px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white whitespace-nowrap">Choose</button>
           </div>
         : <div className="mt-3 flex items-center gap-2 flex-wrap text-xs text-gray-400">
-        <span>Review in <b className="text-gray-200 font-medium">{review.channel ? `#${review.channel.name}` : 'no Slack channel'}</b>{!!review.dms?.length && <> · DM <b className="text-gray-200 font-medium">{review.dms.join(', ')}</b></>}{review.reviewers.length > 0 && <> · reviewers <b className="text-gray-200 font-medium">{review.reviewers.join(', ')}</b></>}</span>
+        <span>Review in <b className="text-gray-200 font-medium">{review.channel ? `#${review.channel.name}` : 'no Slack channel'}</b>{!!review.dms?.length && <> · DM <b className="text-gray-200 font-medium">{review.dms.map(personName).join(', ')}</b></>}{review.reviewers.length > 0 && <> · reviewers <b className="text-gray-200 font-medium">{review.reviewers.join(', ')}</b></>}</span>
         {!editReview && <button onClick={() => setEditReview(true)} className="text-blue-400 hover:text-blue-300">Change</button>}
       </div>}
       {editReview && <ReviewEditor initial={review} onSave={r => { onSetReview(r); setEditReview(false) }} onCancel={() => setEditReview(false)} />}
@@ -215,7 +216,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
               {newReview
                 ? <ReviewEditor initial={newReview} onSave={setNewReview} onCancel={() => setNewReview(null)} saveLabel="Use for this PR" />
                 : <button onClick={() => setNewReview({ channel: pipeline.config.slackChannel, reviewers: [] })} className="text-xs text-blue-400 hover:text-blue-300">Different review for this PR (channel, reviewers)…</button>}
-              {newReview && <p className="text-[11px] text-gray-500">This PR: {newReview.channel ? `#${newReview.channel.name}` : 'no Slack post'}{newReview.dms?.length ? ` · DM ${newReview.dms.join(', ')}` : ''}{newReview.reviewers.length ? ` · ${newReview.reviewers.join(', ')}` : ''}</p>}
+              {newReview && <p className="text-[11px] text-gray-500">This PR: {newReview.channel ? `#${newReview.channel.name}` : 'no Slack post'}{newReview.dms?.length ? ` · DM ${newReview.dms.map(personName).join(', ')}` : ''}{newReview.reviewers.length ? ` · ${newReview.reviewers.join(', ')}` : ''}</p>}
             </div>
           )}
           {!running && (
@@ -270,24 +271,26 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   )
 }
 
+const personName = (v: string) => v.replace(/ \([UW][A-Z0-9]+\)$/, '')
+
 // One PR's review setup: Slack channel to post in and GitHub reviewers to request.
 function ReviewEditor({ initial, onSave, onCancel, saveLabel = 'Save' }: { initial: PrReview; onSave: (r: PrReview) => void; onCancel: () => void; saveLabel?: string }) {
   const [chText, setChText] = useState(initial.channel?.name ?? '')
   const [ch, setCh] = useState<SlackChannel | null>(initial.channel)
   const [who, setWho] = useState(initial.reviewers.join(', '))
-  const [dms, setDms] = useState((initial.dms ?? []).join(', '))
+  const [dms, setDms] = useState<string[]>(initial.dms ?? [])
   const box = 'w-full bg-gray-950 border border-gray-800 rounded-md px-2.5 py-1.5 text-sm text-gray-100 outline-none focus:border-blue-500 placeholder-gray-600'
-  const save = () => onSave({ channel: chText.trim() ? (ch ?? { id: '', name: chText.replace(/^#/, '').trim() }) : null, reviewers: who.split(/[\s,]+/).map(x => x.replace(/^@/, '')).filter(Boolean), dms: dms.split(',').map(x => x.trim().replace(/^@/, '')).filter(Boolean) })
+  const save = () => onSave({ channel: chText.trim() ? (ch ?? { id: '', name: chText.replace(/^#/, '').trim() }) : null, reviewers: who.split(/[\s,]+/).map(x => x.replace(/^@/, '')).filter(Boolean), dms })
   return (
     <div className="mt-2 rounded-lg border border-gray-800 bg-gray-950/60 p-3 grid sm:grid-cols-2 gap-2">
       <label className="text-xs text-gray-400">Slack channel for the review request
         <div className="mt-1"><SlackChannelPicker value={chText} onChange={(v, c) => { setChText(v); setCh(c) }} className={box} /></div>
         <span className="text-[11px] text-gray-500">Leave empty to skip the Slack post.</span>
       </label>
-      <label className="text-xs text-gray-400">Also DM on Slack (optional)
-        <input value={dms} onChange={e => setDms(e.target.value)} placeholder="Dana Levi, @koren" className={`${box} mt-1`} />
-        <span className="text-[11px] text-gray-500">Names or @handles, comma separated. Each gets the PR link once.</span>
-      </label>
+      <div className="text-xs text-gray-400">DM on Slack (optional)
+        <div className="mt-1"><SlackPeoplePicker value={dms} onChange={setDms} className={box} /></div>
+        <span className="text-[11px] text-gray-500">Each person gets the PR link once. Use only DMs by leaving the channel empty.</span>
+      </div>
       <label className="text-xs text-gray-400">GitHub reviewers (optional)
         <input value={who} onChange={e => setWho(e.target.value)} placeholder="alice, bob, org/team" className={`${box} mt-1`} />
       </label>

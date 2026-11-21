@@ -7,7 +7,7 @@ import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
 import { submitLine, onAnyStatusChange, onAnyPrUrlChange } from './ptyManager'
 import { summarizeChecks, isValidPrUrl } from './ghPrStatus'
-import { postToSlack, dmOnSlack, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
+import { postToSlack, dmOnSlack, DM_TARGET, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
 import type { PrCheckStatus } from './prTypes'
 import { openPrsOfSession } from './sessionPrs'
 
@@ -562,6 +562,6 @@ function cleanReview(r: PrReview | undefined): PrReview | undefined {
   if (!r) return undefined
   const ch = r.channel && typeof r.channel.name === 'string' && r.channel.name.trim() ? { id: String(r.channel.id ?? ''), name: r.channel.name.replace(/^#/, '').trim() } : null
   const reviewers = [...new Set((Array.isArray(r.reviewers) ? r.reviewers : []).map(x => String(x).trim().replace(/^@/, '')).filter(x => /^[\w.-]+(\/[\w.-]+)?$/.test(x)))].slice(0, 15)
-  const dms = [...new Set((Array.isArray(r.dms) ? r.dms : []).map(x => String(x).trim().replace(/^@/, '')).filter(x => /^[\p{L}\p{N} ._'-]{1,60}$/u.test(x)))].slice(0, 10)
+  const dms = [...new Set((Array.isArray(r.dms) ? r.dms : []).map(x => String(x).trim().replace(/^@/, '')).filter(x => DM_TARGET.test(x)))].slice(0, 10)
   return { channel: ch, reviewers, ...(dms.length ? { dms } : {}) }
 }
