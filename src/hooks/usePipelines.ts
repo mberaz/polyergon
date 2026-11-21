@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
+import type { PrReview } from '@/lib/pipelines'
 import type { Pipeline, PipelineConfig } from '@/lib/pipelines'
 import type { AutoSteps } from '@/lib/pipelineView'
 
@@ -34,9 +35,13 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
     setError(null)
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-start', liveId, config }))
   }, [])
-  const addPipelinePr = useCallback((id: string, liveId: string, url: string) => {
+  const addPipelinePr = useCallback((id: string, liveId: string, url: string, review?: PrReview) => {
     setError(null)
-    wsRef.current?.send(JSON.stringify({ type: 'pipeline-add-pr', id, liveId, url }))
+    wsRef.current?.send(JSON.stringify({ type: 'pipeline-add-pr', id, liveId, url, review }))
+  }, [])
+  const setPrReview = useCallback((id: string, liveId: string, url: string, review: PrReview) => {
+    setError(null)
+    wsRef.current?.send(JSON.stringify({ type: 'pipeline-pr-review', id, liveId, url, review }))
   }, [])
   const actPipeline = useCallback((id: string, liveId: string, prUrl: string | null) => {
     setError(null)
@@ -52,5 +57,5 @@ export function usePipelines(ws: WebSocket | null, onNotify: (title: string, bod
     wsRef.current?.send(JSON.stringify({ type: 'pipeline-stop', id }))
   }, [])
 
-  return { setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, actPipeline, dismissPipeline }
+  return { setPipelineAuto, pipelines, pipelineError: error, startPipeline, stopPipeline, addPipelinePr, setPrReview, actPipeline, dismissPipeline }
 }

@@ -85,7 +85,12 @@ export interface PrTrack {
   reviewRounds: number
   ciFixes: number
   mergeAttempts?: number
+  // This PR's own review setup; missing = the automation's channel, no extra reviewers
+  review?: PrReview
 }
+
+// Where a PR asks for review: a Slack channel (null = don't post) and GitHub reviewers
+export interface PrReview { channel: SlackChannel | null; reviewers: string[] }
 
 export interface Pipeline {
   id: string
@@ -269,22 +274,49 @@ class PipelineEngine {
   }
 
   // Track another PR on a running automation (from the dialog).
-  addPr(id: string, url: string): { error: string } | null {
+  addPr(id: string, url: string, review?: PrReview): { error: string } | null {
     const p = this.items.find(x => x.id === id)
     if (!p || !ACTIVE_PHASES.includes(p.phase)) return { error: 'Automation is not running' }
     if (!isValidPrUrl(url)) return { error: 'Not a GitHub pull request URL' }
-    this.addTrack(p, url, 'You added')
+    this.addTrack(p, url, 'You added', cleanReview(review))
     this.step(p.id, true)
     return null
   }
 
-  private addTrack(p: Pipeline, url: string, why: string) {
+  // Change one PR's review setup: posts to the new channel and requests the new reviewers.
+  setPrReview(id: string, url: string, review: PrReview): { error: string } | null {
+    const p = this.items.find(x => x.id === id)
+    const t = p?.prs.find(x => x.url === url)
+    if (!p || !t) return { error: 'PR not found' }
+    const next = cleanReview(review)!
+    const before = t.review ?? { channel: p.config.slackChannel, reviewers: [] }
+    t.review = next
+    const added = next.reviewers.filter(r => !before.reviewers.includes(r))
+    this.update(p, {}, `Review for ${shortPr(url)}: ${next.channel ? `#${next.channel.name}` : 'no Slack post'}${next.reviewers.length ? `, reviewers ${next.reviewers.join(', ')}` : ''}`)
+    if (added.length) this.requestReviewers(p, t, added)
+    if (next.channel && next.channel.name !== t.slack?.channel) this.announce(p, t, true)
+    return null
+  }
+
+  private addTrack(p: Pipeline, url: string, why: string, review?: PrReview) {
     if (p.prs.some(t => t.url === url)) return
-    const t: PrTrack = { url, state: 'in-review', seenFeedback: -1, reviewRounds: 0, ciFixes: 0 }
+    const t: PrTrack = { url, state: 'in-review', seenFeedback: -1, reviewRounds: 0, ciFixes: 0, ...(review ? { review } : {}) }
     p.prs = [...p.prs, t]
     p.phase = 'tracking'
     this.update(p, {}, `${why} ${shortPr(url)}`)
+    if (review?.reviewers.length) this.requestReviewers(p, t, review.reviewers)
     this.announce(p, t)
+  }
+
+  private async requestReviewers(p: Pipeline, t: PrTrack, logins: string[]) {
+    const env = { ...process.env }; delete env.GITHUB_TOKEN; delete env.GH_TOKEN
+    try {
+      await execFileAsync('gh', ['pr', 'edit', t.url, '--add-reviewer', logins.join(',')], { timeout: 30000, env })
+      this.update(p, {}, `Asked ${logins.join(', ')} to review ${shortPr(t.url)}`)
+    } catch (e) {
+      const msg = String((e as { stderr?: string }).stderr || (e as Error).message).trim().split('\n').filter(Boolean).at(-1)
+      this.update(p, {}, `Could not request reviewers on ${shortPr(t.url)}: ${msg}`)
+    }
   }
 
   // You clicked "Send to session" on a suggestion (prUrl = which PR's; none = open-PR)
@@ -454,9 +486,9 @@ class PipelineEngine {
     if (p.prs.length && p.prs.every(t => t.state === 'done')) this.update(p, { phase: 'done' }, 'All PRs are merged or closed', { title: 'Automation finished', body: `${p.prs.length} PR(s) done` })
   }
 
-  private async announce(p: Pipeline, t: PrTrack) {
-    const ch = p.config.slackChannel
-    if (!ch) return
+  private async announce(p: Pipeline, t: PrTrack, force = false) {
+    const ch = t.review ? t.review.channel : p.config.slackChannel
+    if (!ch || (t.slack?.permalink && !force)) return
     const pr = await prSnapshot(t.url)
     if (pr) this.patchTrack(p, t, { view: pr.view })
     try {
@@ -481,3 +513,11 @@ class PipelineEngine {
 
 declare global { var __pipelineEngine: PipelineEngine | undefined }
 export const pipelineEngine: PipelineEngine = global.__pipelineEngine ?? (global.__pipelineEngine = new PipelineEngine())
+
+// Trims a review setup from the browser: valid channel or null, logins without @ (teams as org/team)
+function cleanReview(r: PrReview | undefined): PrReview | undefined {
+  if (!r) return undefined
+  const ch = r.channel && typeof r.channel.name === 'string' && r.channel.name.trim() ? { id: String(r.channel.id ?? ''), name: r.channel.name.replace(/^#/, '').trim() } : null
+  const reviewers = [...new Set((Array.isArray(r.reviewers) ? r.reviewers : []).map(x => String(x).trim().replace(/^@/, '')).filter(x => /^[\w.-]+(\/[\w.-]+)?$/.test(x)))].slice(0, 15)
+  return { channel: ch, reviewers }
+}

@@ -13,7 +13,7 @@ import { spawnSession, writeToSession, submitLine, sendWhenReady, resizeSession,
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND, availableBackends, getBackend } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
-import { pipelineEngine, type PipelineConfig } from './src/lib/pipelines'
+import { pipelineEngine, type PipelineConfig, type PrReview } from './src/lib/pipelines'
 import { keepAwake } from './src/lib/keepAwake'
 import { sessionWatch } from './src/lib/sessionWatch'
 import { createWorktree, removeWorktree } from './src/lib/worktrees'
@@ -418,7 +418,10 @@ app.prepare().then(async () => {
         const result = pipelineEngine.create(msg.liveId as string, { slackChannel: ch, maxRounds: Number(cfg.maxRounds) || 3, auto: cfg.auto as PipelineConfig['auto'] })
         if ('error' in result) send({ type: 'pipeline-error', liveId: msg.liveId, message: result.error })
       } else if (msg.type === 'pipeline-add-pr') {
-        const err = pipelineEngine.addPr(msg.id as string, String(msg.url ?? '').trim())
+        const err = pipelineEngine.addPr(msg.id as string, String(msg.url ?? '').trim(), msg.review as PrReview | undefined)
+        if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
+      } else if (msg.type === 'pipeline-pr-review') {
+        const err = pipelineEngine.setPrReview(msg.id as string, String(msg.url ?? ''), (msg.review ?? { channel: null, reviewers: [] }) as PrReview)
         if (err) send({ type: 'pipeline-error', liveId: msg.liveId, message: err.error })
       } else if (msg.type === 'watcher-create') {
         const c = (msg.channel ?? {}) as { id?: string; name?: string }

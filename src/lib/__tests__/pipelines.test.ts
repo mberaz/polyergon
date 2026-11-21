@@ -7,6 +7,7 @@ process.env.POLYERGON_DATA_DIR = mkdtempSync(join(tmpdir(), 'pipes-'))
 const session = { id: 'L1', status: 'waiting', prUrl: null as string | null, backend: 'claude', cwd: '/repo' }
 const writes: string[] = []
 const posts: string[] = []
+const postedTo: string[] = []
 let dirty = true
 let threads: { isResolved: boolean }[] = []
 let gqlReviews: { author: { login: string }; state: string; commit: { oid: string } }[] = []
@@ -16,7 +17,7 @@ const prs: Record<string, Pr> = {}
 
 jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? session : undefined) } }))
 jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writes.push(t), onAnyStatusChange: () => () => {}, onAnyPrUrlChange: () => () => {} }))
-jest.mock('../slackBridge', () => ({ postToSlack: async (_c: unknown, t: string) => { posts.push(t); return { permalink: null } }, readSlackThread: async () => null }))
+jest.mock('../slackBridge', () => ({ postToSlack: async (c: { name: string }, t: string) => { posts.push(t); postedTo.push(c.name); return { permalink: null } }, readSlackThread: async () => null }))
 jest.mock('child_process', () => ({ execFile: (cmd: string, a: string[], _o: object, cb: (e: Error | null, r?: { stdout: string }) => void) => {
   if (cmd === 'git') return a.includes('--porcelain') ? cb(null, { stdout: dirty ? ' M file.ts' : '' }) : cb(new Error('no upstream'))
   if (a[0] === 'pr' && a[1] === 'edit') { posts.push(`gh ${a.join(' ')}`); return cb(null, { stdout: '' }) }
@@ -145,4 +146,28 @@ test('ready to merge only when approved, green, not a draft and no unresolved th
   gqlReviews = [{ author: { login: 'copilot-pull-request-reviewer' }, state: 'COMMENTED', commit: { oid: 'H2' } }, { author: { login: 'bob' }, state: 'APPROVED', commit: { oid: 'H2' } }]
   later(); await pipelineEngine.step(p.id, true)
   expect(p.prs[0].state).toBe('ready')
+})
+
+test('each PR can have its own review channel and reviewers', async () => {
+  const U3 = 'https://github.com/o/labeling/pull/3', U4 = 'https://github.com/o/infra/pull/4'
+  prs[U3] = base(3); prs[U4] = base(4)
+  session.prUrl = null
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  const p = pipelineEngine.create('L1', { slackChannel: { id: 'C1', name: 'reviews' }, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
+  await flush()
+  postedTo.length = 0
+  expect(pipelineEngine.addPr(p.id, U3)).toBeNull(); await flush()
+  expect(pipelineEngine.addPr(p.id, U4, { channel: { id: 'C9', name: '#infra-reviews' }, reviewers: ['@dana', 'org/sre', 'bad name!'] })).toBeNull(); await flush()
+  expect(postedTo).toEqual(['reviews', 'infra-reviews'])
+  expect(posts).toContain(`gh pr edit ${U4} --add-reviewer dana,org/sre`)
+
+  // Change U3: new channel gets a post, new reviewer is requested
+  expect(pipelineEngine.setPrReview(p.id, U3, { channel: { id: 'C7', name: 'labeling' }, reviewers: ['eve'] })).toBeNull(); await flush()
+  expect(postedTo.at(-1)).toBe('labeling')
+  expect(posts).toContain(`gh pr edit ${U3} --add-reviewer eve`)
+  // No channel: no new post
+  const n = postedTo.length
+  expect(pipelineEngine.setPrReview(p.id, U3, { channel: null, reviewers: ['eve'] })).toBeNull(); await flush()
+  expect(postedTo).toHaveLength(n)
+  pipelineEngine.stop(p.id)
 })

@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import type { Pipeline, PipelineConfig, PrTrack } from '@/lib/pipelines'
+import type { Pipeline, PipelineConfig, PrTrack, PrReview } from '@/lib/pipelines'
 import type { SlackChannel } from '@/lib/slackBridge'
 import { DEFAULT_AUTO, type AutoSteps, isRunning, pipelineSummary, shortPr, prSteps, preprSteps } from '@/lib/pipelineView'
 import { SlackChannelPicker } from './SlackChannelPicker'
@@ -69,7 +69,9 @@ function Panel({ title, children, right }: { title: string; children: React.Reac
   )
 }
 
-function PrPanel({ t, p, auto, onSend, onDismiss }: { t: PrTrack; p: Pipeline; auto: AutoSteps; onSend: () => void; onDismiss: () => void }) {
+function PrPanel({ t, p, auto, onSend, onDismiss, onSetReview }: { t: PrTrack; p: Pipeline; auto: AutoSteps; onSend: () => void; onDismiss: () => void; onSetReview: (r: PrReview) => void }) {
+  const review: PrReview = t.review ?? { channel: p.config.slackChannel, reviewers: [] }
+  const [editReview, setEditReview] = useState(false)
   const v = t.view
   const [label, cls] = TRACK_BADGE[t.state]
   const max = p.config.maxRounds
@@ -92,7 +94,13 @@ function PrPanel({ t, p, auto, onSend, onDismiss }: { t: PrTrack; p: Pipeline; a
         <a href={t.url} target="_blank" rel="noreferrer" className="flex-shrink-0 text-xs px-3 py-1 rounded-lg border border-gray-700 hover:bg-gray-800 text-gray-200">Open PR ↗</a>
       </header>
 
-      <div className="mt-4"><Track steps={prSteps(t, !!p.config.slackChannel)} working={t.state === 'working'} /></div>
+      <div className="mt-3 flex items-center gap-2 flex-wrap text-xs text-gray-400">
+        <span>Review in <b className="text-gray-200 font-medium">{review.channel ? `#${review.channel.name}` : 'no Slack channel'}</b>{review.reviewers.length > 0 && <> · reviewers <b className="text-gray-200 font-medium">{review.reviewers.join(', ')}</b></>}</span>
+        {!editReview && <button onClick={() => setEditReview(true)} className="text-blue-400 hover:text-blue-300">Change</button>}
+      </div>
+      {editReview && <ReviewEditor initial={review} onSave={r => { onSetReview(r); setEditReview(false) }} onCancel={() => setEditReview(false)} />}
+
+      <div className="mt-4"><Track steps={prSteps(t, !!review.channel)} working={t.state === 'working'} /></div>
 
       {t.suggestion && <div className="mt-2"><SuggestionBox s={t.suggestion} onSend={onSend} onDismiss={onDismiss} /></div>}
       {autoNext && <p className="text-[11px] text-amber-300/80 mt-1.5">Automatic: goes to the session as soon as it&apos;s idle.</p>}
@@ -134,7 +142,7 @@ function PrPanel({ t, p, auto, onSend, onDismiss }: { t: PrTrack; p: Pipeline; a
   )
 }
 
-export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onAct, onDismiss, onSetAuto }: {
+export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onReview, onStart, onStop, onAddPr, onSetPrReview, onAct, onDismiss, onSetAuto }: {
   sessionName: string
   pipeline: Pipeline | null
   error: string | null
@@ -142,7 +150,8 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   onReview?: () => void
   onStart: (config: PipelineConfig) => void
   onStop: (id: string) => void
-  onAddPr: (id: string, url: string) => void
+  onAddPr: (id: string, url: string, review?: PrReview) => void
+  onSetPrReview: (id: string, url: string, review: PrReview) => void
   onAct: (id: string, prUrl: string | null) => void
   onDismiss: (id: string, prUrl: string | null) => void
   onSetAuto: (id: string, auto: Partial<AutoSteps>) => void
@@ -152,6 +161,7 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
   const [maxRounds, setMaxRounds] = useState(3)
   const [autoDraft, setAutoDraft] = useState<AutoSteps>(DEFAULT_AUTO)
   const [prUrl, setPrUrl] = useState('')
+  const [newReview, setNewReview] = useState<PrReview | null>(null)
   const running = isRunning(pipeline)
   const auto: AutoSteps = running && pipeline ? { ...DEFAULT_AUTO, ...pipeline.config.auto } : autoDraft
   const setAuto = (k: keyof AutoSteps, on: boolean) => running && pipeline ? onSetAuto(pipeline.id, { [k]: on }) : setAutoDraft(a => ({ ...a, [k]: on }))
@@ -190,11 +200,17 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
         {/* PRs */}
         <div className="space-y-5 min-w-0">
           {pipeline?.suggestion && <SuggestionBox s={pipeline.suggestion} onSend={() => onAct(pipeline.id, null)} onDismiss={() => onDismiss(pipeline.id, null)} />}
-          {pipeline?.prs.map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} />)}
+          {pipeline?.prs.map(t => <PrPanel key={t.url} t={t} p={pipeline} auto={auto} onSend={() => onAct(pipeline.id, t.url)} onDismiss={() => onDismiss(pipeline.id, t.url)} onSetReview={r => onSetPrReview(pipeline.id, t.url, r)} />)}
           {running && pipeline && (
-            <div className="flex gap-2">
-              <input value={prUrl} onChange={e => setPrUrl(e.target.value)} placeholder="Track another PR: https://github.com/org/repo/pull/123" className={input} />
-              <button onClick={() => { onAddPr(pipeline.id, prUrl); setPrUrl('') }} disabled={!prUrl.trim()} className="text-sm px-4 rounded-lg border border-gray-700 hover:bg-gray-800 disabled:opacity-40 flex-shrink-0">Add PR</button>
+            <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-4 space-y-2">
+              <div className="flex gap-2">
+                <input value={prUrl} onChange={e => setPrUrl(e.target.value)} placeholder="Track another PR: https://github.com/org/repo/pull/123" className={input} />
+                <button onClick={() => { onAddPr(pipeline.id, prUrl, newReview ?? undefined); setPrUrl(''); setNewReview(null) }} disabled={!prUrl.trim()} className="text-sm px-4 rounded-lg border border-gray-700 hover:bg-gray-800 disabled:opacity-40 flex-shrink-0">Add PR</button>
+              </div>
+              {newReview
+                ? <ReviewEditor initial={newReview} onSave={setNewReview} onCancel={() => setNewReview(null)} saveLabel="Use for this PR" />
+                : <button onClick={() => setNewReview({ channel: pipeline.config.slackChannel, reviewers: [] })} className="text-xs text-blue-400 hover:text-blue-300">Different review for this PR (channel, reviewers)…</button>}
+              {newReview && <p className="text-[11px] text-gray-500">This PR: {newReview.channel ? `#${newReview.channel.name}` : 'no Slack post'}{newReview.reviewers.length ? ` · ${newReview.reviewers.join(', ')}` : ''}</p>}
             </div>
           )}
           {!running && (
@@ -244,6 +260,30 @@ export function PipelinePage({ sessionName, pipeline, error, onOpenSession, onRe
             </section>
           )}
         </aside>
+      </div>
+    </div>
+  )
+}
+
+// One PR's review setup: Slack channel to post in and GitHub reviewers to request.
+function ReviewEditor({ initial, onSave, onCancel, saveLabel = 'Save' }: { initial: PrReview; onSave: (r: PrReview) => void; onCancel: () => void; saveLabel?: string }) {
+  const [chText, setChText] = useState(initial.channel?.name ?? '')
+  const [ch, setCh] = useState<SlackChannel | null>(initial.channel)
+  const [who, setWho] = useState(initial.reviewers.join(', '))
+  const box = 'w-full bg-gray-950 border border-gray-800 rounded-md px-2.5 py-1.5 text-sm text-gray-100 outline-none focus:border-blue-500 placeholder-gray-600'
+  const save = () => onSave({ channel: chText.trim() ? (ch ?? { id: '', name: chText.replace(/^#/, '').trim() }) : null, reviewers: who.split(/[\s,]+/).map(x => x.replace(/^@/, '')).filter(Boolean) })
+  return (
+    <div className="mt-2 rounded-lg border border-gray-800 bg-gray-950/60 p-3 grid sm:grid-cols-2 gap-2">
+      <label className="text-xs text-gray-400">Slack channel for the review request
+        <div className="mt-1"><SlackChannelPicker value={chText} onChange={(v, c) => { setChText(v); setCh(c) }} className={box} /></div>
+        <span className="text-[11px] text-gray-500">Leave empty to skip the Slack post.</span>
+      </label>
+      <label className="text-xs text-gray-400">GitHub reviewers (optional)
+        <input value={who} onChange={e => setWho(e.target.value)} placeholder="alice, bob, org/team" className={`${box} mt-1`} />
+      </label>
+      <div className="sm:col-span-2 flex justify-end gap-2">
+        <button onClick={onCancel} className="text-xs px-2.5 py-1 text-gray-400 hover:text-white">Cancel</button>
+        <button onClick={save} className="text-xs px-3 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white">{saveLabel}</button>
       </div>
     </div>
   )
