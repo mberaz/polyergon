@@ -39,8 +39,8 @@ export function HistoryPanel({ sessionId, onSend, onClose }: Props) {
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-gray-950">
       <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-3 flex-shrink-0">
-        <p className="text-xs text-gray-500">Reading view · last 30 messages, updates live</p>
-        <button onClick={onClose} className="ml-auto text-xs px-2.5 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800">Back to terminal</button>
+        <p className="text-xs text-gray-500">Chat view · last 30 messages, updates live</p>
+        <button onClick={onClose} className="ml-auto text-xs px-2.5 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800">Terminal view</button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
