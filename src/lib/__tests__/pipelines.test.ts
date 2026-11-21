@@ -19,7 +19,8 @@ let foundPrs: string[] = []
 const dmed: string[] = []
 jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? session : undefined) } }))
 jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writes.push(t), sendWhenReady: (_id: string, t: string) => writes.push(t), onAnyStatusChange: () => () => {}, onAnyPrUrlChange: () => () => {} }))
-jest.mock('../sessionPrs', () => ({ openPrsOfSession: async () => foundPrs }))
+let transcriptPrs: string[] = []
+jest.mock('../sessionPrs', () => ({ openPrsOfSession: async () => foundPrs, newPrUrls: (_s: string, o: number) => { const urls = transcriptPrs; transcriptPrs = []; return { urls, offset: o + 1 } }, openAndMine: async (u: string[]) => u.filter(x => !x.includes('someone-else')) }))
 jest.mock('../slackBridge', () => ({ postToSlack: async (c: { name: string }, t: string) => { posts.push(t); postedTo.push(c.name); return { permalink: null } }, readSlackThread: async () => null, DM_TARGET: /^@?[\p{L}\p{N} ._'-]{1,60}( \([UW][A-Z0-9]{5,}\))?$/u, dmOnSlack: async (who: string) => { dmed.push(who); return { permalink: null } } }))
 jest.mock('child_process', () => ({ execFile: (cmd: string, a: string[], _o: object, cb: (e: Error | null, r?: { stdout: string }) => void) => {
   if (cmd === 'git') return a.includes('--porcelain') ? cb(null, { stdout: dirty ? ' M file.ts' : '' }) : cb(new Error('no upstream'))
@@ -338,5 +339,19 @@ test('a second PR the session opens is tracked but not posted until you choose i
   expect(p.prs.map((t: { url: string }) => t.url)).toEqual([P1, P2])
   expect(p.prs[1].review).toEqual({ channel: null, reviewers: [] })
   expect(postedTo).toEqual([])
+  pipelineEngine.stop(p.id)
+})
+
+test('a PR link written to the transcript is picked up on the next look, not 10 minutes later', async () => {
+  const N = 'https://github.com/o/labeling/pull/55', O = 'https://github.com/someone-else/x/pull/1'
+  prs[N] = base(55)
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  dirty = false; session.prUrl = 'https://github.com/o/a/pull/101'
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false, postMerge: false } })
+  await flush(); await flush()
+  transcriptPrs = [N, O] // Claude ran gh pr create; output landed in the transcript
+  await (pipelineEngine as unknown as { watchPrs: (p: unknown) => Promise<void> }).watchPrs(p)
+  expect(p.prs.map((t: { url: string }) => t.url)).toContain(N)
+  expect(p.prs.map((t: { url: string }) => t.url)).not.toContain(O) // not yours
   pipelineEngine.stop(p.id)
 })

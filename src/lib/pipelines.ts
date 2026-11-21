@@ -9,7 +9,7 @@ import { submitLine, sendWhenReady, onAnyStatusChange, onAnyPrUrlChange } from '
 import { summarizeChecks, isValidPrUrl } from './ghPrStatus'
 import { postToSlack, dmOnSlack, DM_TARGET, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
 import type { PrCheckStatus } from './prTypes'
-import { openPrsOfSession } from './sessionPrs'
+import { openPrsOfSession, newPrUrls, openAndMine } from './sessionPrs'
 
 const execFileAsync = promisify(execFile)
 
@@ -119,7 +119,7 @@ const FILE = join(DATA_DIR, 'pipelines.json')
 const POLL_MS = 2 * 60_000
 const SETTLE_MS = 20_000 // a session must be quiet this long after we sent it work
 const SLACK_CHECK_MS = 10 * 60_000
-const FIND_PRS_MS = 10 * 60_000
+const WATCH_PRS_MS = 15_000 // new PR links in the transcript show up within this
 const QUIET_MS = 15_000 // session must stay 'waiting' this long before we type into it
 import { ACTIVE_PHASES, stepOf } from './pipelineView'
 const OPEN_TRACK: PrTrackState[] = ['in-review', 'working', 'ready']
@@ -233,15 +233,35 @@ class PipelineEngine {
         this.items.filter(p => p.liveId === id && p.phase === 'needs-you').forEach(p =>
           this.update(p, { phase: p.prs.length ? 'tracking' : 'waiting-for-session', actedAt: Date.now() }, 'Session is working again; waiting for it to finish'))
       }
-      this.forSession(id, p => this.step(p.id))
+      this.forSession(id, p => { this.step(p.id); void this.watchPrs(p) })
       // re-check once the quiet period has passed
       if (status === 'waiting') setTimeout(() => this.forSession(id, p => this.step(p.id)), QUIET_MS + 1000)
     })
     onAnyPrUrlChange(id => this.forSession(id, p => this.step(p.id)))
     setInterval(() => this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => this.step(p.id, true)), POLL_MS)
-    // Sessions open PRs in ways the terminal scan misses: look for new ones regularly
-    setInterval(() => this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => void this.findOpenPrs(p)), FIND_PRS_MS)
+    // New PR links in the transcript, read incrementally: on every status change and every 15s
+    setInterval(() => this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => void this.watchPrs(p)), WATCH_PRS_MS)
     this.items.filter(p => ACTIVE_PHASES.includes(p.phase)).forEach(p => { this.step(p.id, true); void this.findOpenPrs(p) })
+  }
+
+  private prOffset = new Map<string, number>() // pipeline id → transcript bytes already read
+  private prChecked = new Set<string>() // URLs already looked up (not yours / not open)
+
+  // New PR links written since the last look; each new one is checked once on GitHub.
+  private async watchPrs(p: Pipeline) {
+    const sid = liveSessionStore.get(p.liveId)?.claudeSessionId
+    if (!sid) return
+    let found: { urls: string[]; offset: number }
+    try { found = newPrUrls(sid, this.prOffset.get(p.id) ?? -1) } catch { return }
+    this.prOffset.set(p.id, found.offset)
+    const fresh = found.urls.filter(u => !p.prs.some(t => t.url === u) && !this.prChecked.has(u))
+    if (!fresh.length) return
+    fresh.forEach(u => this.prChecked.add(u))
+    const mine = await openAndMine(fresh).catch(() => [] as string[])
+    mine.forEach(u => this.prChecked.delete(u))
+    let added = false
+    for (const u of mine) if (ACTIVE_PHASES.includes(p.phase) && !p.prs.some(t => t.url === u)) { this.newPr(p, u); added = true }
+    if (added) this.step(p.id, true)
   }
 
   // A session often has several PRs open; track each, not just the latest one.
