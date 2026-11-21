@@ -7,7 +7,7 @@ import { PrCard } from './AutomateDialog'
 import { Combobox, type ComboOption } from './Combobox'
 import { ExistingAutomations } from './ExistingAutomations'
 
-function WatchCard({ it, onSend, onDismiss, onRedraft, onDelegate }: { it: WatchItem; onSend: (text: string) => void; onDismiss: () => void; onRedraft: (hint?: string) => void; onDelegate?: () => void }) {
+function WatchCard({ it, onSend, onDismiss, onRedraft, onDelegate, onOpenSession }: { it: WatchItem; onSend: (text: string) => void; onDismiss: () => void; onRedraft: (hint?: string) => void; onDelegate?: () => void; onOpenSession?: () => void }) {
   const [text, setText] = useState(it.draft ?? '')
   const [hint, setHint] = useState<string | null>(null) // null = hint box closed
   const [editing, setEditing] = useState(false)
@@ -22,9 +22,14 @@ function WatchCard({ it, onSend, onDismiss, onRedraft, onDelegate }: { it: Watch
       <p dir="auto" className="text-sm text-gray-300 mt-1.5 line-clamp-4 whitespace-pre-wrap [overflow-wrap:anywhere]">{it.text}</p>
       {it.state === 'drafting' && <p className="text-xs text-gray-500 mt-2 animate-pulse">Drafting a reply…</p>}
       {it.state === 'failed' && <p className="text-xs text-red-400 mt-2">Draft failed: {it.error} <button onClick={() => onRedraft()} className="underline">Try again</button></p>}
-      {it.state === 'sent' && <p className="text-xs text-emerald-400 mt-2">✓ Answered: <span className="text-gray-400">{it.draft}</span></p>}
+      {it.state === 'sent' && <p className="text-xs text-emerald-400 mt-2 line-clamp-4">✓ Done, replied in the thread: <span className="text-gray-400">{it.draft}</span></p>}
       {it.state === 'sending' && <p className="text-xs text-blue-300 mt-2 animate-pulse">Posting in Slack…</p>}
-      {it.state === 'delegated' && <p className="text-xs text-blue-300 mt-2">Sent to the session. It does the work and replies in the thread.</p>}
+      {it.state === 'delegated' && (it.needsYou
+        ? <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-700/60 bg-amber-950/30 px-2 py-1.5">
+            <p className="text-xs text-amber-300">The session stopped without replying. It needs you: an approval or an answer.</p>
+            {onOpenSession && <button onClick={onOpenSession} className="ml-auto text-xs px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white whitespace-nowrap">Open session</button>}
+          </div>
+        : <p className="text-xs text-blue-300 mt-2 animate-pulse">The session is working on it. It replies in the thread when done.</p>)}
       {it.state === 'pending' && (
         <div className="mt-2 rounded-md bg-blue-950/40 border border-blue-900/50 p-2">
           <p className="text-[10px] font-semibold text-blue-300/80 uppercase tracking-wide mb-1">💡 Draft reply</p>
@@ -137,7 +142,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
         {showMacLoops && <ExistingAutomations />}
 
         {liveWatchers.map(w => {
-          const open = w.items.filter(i => i.state === 'pending' || i.state === 'drafting' || i.state === 'sending' || i.state === 'failed' || i.state === 'delegated')
+          const open = w.items.filter(i => i.state === 'pending' || i.state === 'drafting' || i.state === 'sending' || i.state === 'failed' || i.state === 'delegated' || (i.state === 'sent' && Date.now() - (i.doneAt ?? 0) < 86_400_000))
           const chip = 'text-[11px] px-2 py-0.5 rounded-full border border-gray-700 text-gray-400 whitespace-nowrap'
           const sources = (w.knowledge ?? '').split('\n').map(x => x.trim()).filter(Boolean)
           return (
@@ -182,7 +187,8 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
                       onSend={text => watcherCmd('watcher-send', { id: w.id, permalink: it.permalink, text })}
                       onDismiss={() => watcherCmd('watcher-dismiss', { id: w.id, permalink: it.permalink })}
                       onRedraft={hint => watcherCmd('watcher-redraft', { id: w.id, permalink: it.permalink, hint })}
-                      onDelegate={w.liveId ? () => watcherCmd('watcher-delegate', { id: w.id, permalink: it.permalink }) : undefined} />)}
+                      onDelegate={w.liveId ? () => watcherCmd('watcher-delegate', { id: w.id, permalink: it.permalink }) : undefined}
+                      onOpenSession={w.liveId ? () => onOpen(w.liveId!) : undefined} />)}
                   </div>
                 : <p className="text-xs text-gray-500">Nothing waiting on you. Last: {w.log.at(-1)?.text ?? 'no checks yet'}</p>}
               </div>

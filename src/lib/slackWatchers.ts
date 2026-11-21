@@ -5,7 +5,7 @@ import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
 import { sendWhenReady, isRunning } from './ptyManager'
 import { orgRegistry } from './orgRegistry'
-import { newChannelRequests, draftChannelReply, NEEDS_OWNER, replyInThread, timeFromPermalink, type SlackChannel } from './slackBridge'
+import { newChannelRequests, draftChannelReply, NEEDS_OWNER, replyInThread, timeFromPermalink, readSlackThread, slackMe, type SlackChannel } from './slackBridge'
 
 // "Slack channel watcher" automations: every few minutes, find new unanswered
 // questions in a channel and draft replies (optionally from a forked copy of a
@@ -20,6 +20,8 @@ export interface WatchItem {
   state: 'drafting' | 'pending' | 'sending' | 'sent' | 'dismissed' | 'failed' | 'delegated'
   draft: string | null
   error?: string
+  needsYou?: boolean // delegated, and the session stopped without replying in the thread
+  doneAt?: number // when it was answered (shown on the card for a day)
 }
 
 export interface SlackWatcher {
@@ -163,6 +165,9 @@ class SlackWatcherEngine {
         this.log(w, line)
       }
       w.checkedOnce = true
+      // Catch sessions that stopped while nobody was watching (e.g. after a restart)
+      const handed = w.items.filter(i => i.state === 'delegated' && !i.needsYou)
+      if (handed.length && w.liveId && liveSessionStore.get(w.liveId)?.status === 'waiting') void this.checkDelegated(w, handed)
     } catch (e) {
       this.log(w, `Check failed: ${(e as Error).message}`)
     } finally {
@@ -192,7 +197,7 @@ class SlackWatcherEngine {
         }
       } else if (w.mode === 'auto' && !backlog && !needsYou) {
         await replyInThread(it.permalink, it.draft, w.orgId)
-        it.state = 'sent'
+        it.state = 'sent'; it.doneAt = Date.now()
         this.log(w, `Answered ${it.author} automatically`, undefined, { detail: it.draft, link: it.permalink })
       } else {
         it.state = 'pending'
@@ -221,6 +226,37 @@ class SlackWatcherEngine {
       this.log(w, `You sent a reply to ${it.author}`, undefined, { detail: body, link: permalink })
       return null
     } catch (e) { it.state = before; this.save(); return { error: (e as Error).message } }
+  }
+
+  // The linked session stopped (waiting) or started again (thinking). When it
+  // stops, see whether it replied in each thread it was handed: replied = done,
+  // not replied = it needs you (an approval, a question, or it got stuck).
+  sessionStatus(liveId: string, status: string) {
+    for (const w of this.items.filter(x => x.liveId === liveId)) {
+      const open = w.items.filter(i => i.state === 'delegated')
+      if (!open.length) continue
+      if (status === 'thinking') {
+        if (open.some(i => i.needsYou)) { open.forEach(i => { i.needsYou = false }); this.save() }
+      } else if (status === 'waiting') void this.checkDelegated(w, open)
+    }
+  }
+
+  private async checkDelegated(w: SlackWatcher, open: WatchItem[]) {
+    let me: { name: string }
+    try { me = await slackMe(w.orgId) } catch { return }
+    for (const it of open) {
+      const view = await readSlackThread(it.permalink, w.orgId).catch(() => null)
+      if (!view || it.state !== 'delegated') continue
+      const last = view.replies.at(-1)
+      const mine = !!last && sameName(last.user, me.name)
+      if (mine) {
+        it.state = 'sent'; it.draft = last!.text; it.needsYou = false; it.doneAt = Date.now()
+        this.log(w, `Session replied to ${it.author}: done`, undefined, { detail: last!.text, link: it.permalink })
+      } else if (!it.needsYou) {
+        it.needsYou = true
+        this.log(w, `The session needs you about ${it.author}'s request`, { title: `#${w.channel.name}: the session needs you`, body: it.text.slice(0, 80) }, { link: it.permalink })
+      }
+    }
   }
 
   // Hand the request to the linked session: it does the work (runs the checks)
@@ -286,6 +322,11 @@ declare global { var __slackWatchers: SlackWatcherEngine | undefined }
 export const slackWatchers: SlackWatcherEngine = global.__slackWatchers ?? (global.__slackWatchers = new SlackWatcherEngine())
 
 // Same Slack thread? Replies carry thread_ts; a top-level post's ts is in /p<10 digits><6 digits>.
+function sameName(a: string, b: string): boolean {
+  const x = a.trim().toLowerCase(), y = b.trim().toLowerCase()
+  return !!x && !!y && (x === y || x.includes(y) || y.includes(x))
+}
+
 export function threadKey(permalink: string): string {
   const t = permalink.match(/thread_ts=(\d+\.\d+)/)
   if (t) return t[1]

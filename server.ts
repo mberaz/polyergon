@@ -156,7 +156,7 @@ app.prepare().then(async () => {
     const msg = JSON.stringify(ev)
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg) })
   })
-  onAnyStatusChange((id, status) => { if (status === 'waiting') flushRename(id) })
+  onAnyStatusChange((id, status) => { if (status === 'waiting') flushRename(id); slackWatchers.sessionStatus(id, status) })
   pipelineEngine.on((ev) => {
     const msg = JSON.stringify(ev)
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg) })

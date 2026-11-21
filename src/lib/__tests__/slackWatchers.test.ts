@@ -10,6 +10,7 @@ let mockReqs: { permalink: string; author: string; text: string }[] | null = nul
 jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
 const typed: string[] = []
 let running = true
+let threadReplies: { user: string; text: string }[] = []
 jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? { claudeSessionId: 'c1', cwd: '/r', orgId: 'o' } : undefined) } }))
 jest.mock('../ptyManager', () => ({ sendWhenReady: (_id: string, t: string) => typed.push(t), isRunning: () => running }))
 jest.mock('../orgRegistry', () => ({ orgRegistry: { get: () => undefined } }))
@@ -18,6 +19,8 @@ jest.mock('../slackBridge', () => ({
   newChannelRequests: async () => mockReqs ?? [{ permalink: `https://x.slack.com/archives/C1/p${Date.now() * 1000 + Math.floor(Math.random() * 1000)}`, author: 'Koren', text: '?' }],
   draftChannelReply: async () => draft,
   replyInThread: async (_p: string, t: string) => { posted.push(t) },
+  slackMe: async () => ({ id: 'U1', name: 'Ofir Yehoshua' }),
+  readSlackThread: async () => ({ reviewers: [], reactions: [], replies: threadReplies }),
   timeFromPermalink: (p: string) => new Date(Number(p.split('/p')[1]) / 1000 + 60_000).toISOString(),
 }))
 
@@ -100,4 +103,21 @@ test('threadKey matches a top-level post and its replies', () => {
   const { threadKey } = require('../slackWatchers')
   expect(threadKey('https://x.slack.com/archives/C1/p1795082828257279')).toBe('1795082828.257279')
   expect(threadKey('https://x.slack.com/archives/C1/p1795083000000100?thread_ts=1795082828.257279&cid=C1')).toBe('1795082828.257279')
+})
+
+test('a handed-off request shows "needs you" when the session stops without replying, and done once it replies', async () => {
+  const w = slackWatchers.create({ channel: { id: 'C4', name: 'deployment' }, liveId: 'L1', mode: 'approve', intervalMin: 5, orgId: 'o' })
+  if ('error' in w) throw new Error(w.error)
+  const it: { state: string; needsYou?: boolean; [k: string]: unknown } = { permalink: 'https://x.slack.com/archives/C4/p1795275893603199', author: 'Koren', text: 'Status?', time: '', state: 'delegated', draft: null }
+  w.items.push(it)
+  threadReplies = [{ user: 'Koren Tako', text: 'Status?' }]
+  slackWatchers.sessionStatus('L1', 'waiting')
+  await new Promise(r => setImmediate(r))
+  expect(it).toMatchObject({ state: 'delegated', needsYou: true })
+  slackWatchers.sessionStatus('L1', 'thinking')
+  expect(it.needsYou).toBe(false)
+  threadReplies = [{ user: 'Koren Tako', text: 'Status?' }, { user: 'Ofir Yehoshua', text: 'Done: rolled and verified' }]
+  slackWatchers.sessionStatus('L1', 'waiting')
+  await new Promise(r => setImmediate(r))
+  expect(it).toMatchObject({ state: 'sent', draft: 'Done: rolled and verified' })
 })
