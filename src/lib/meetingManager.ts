@@ -58,12 +58,15 @@ class MeetingManager {
   }
 
   micTest(): Promise<{ level: number } | { error: string }> {
-    return micTest(getAudioDevices())
+    const d = getAudioDevices()
+    return 'error' in d ? Promise.resolve(d) : micTest(d)
   }
 
   start(title: string, orgId: string): Meeting | { error: string } {
     const notReady = transcriptionProblem()
     if (notReady) return { error: notReady }
+    const d = getAudioDevices()
+    if ('error' in d) return d
     return this.begin(meetingStore.create(title, orgId || DEFAULT_ORG_ID))
   }
 
@@ -76,6 +79,8 @@ class MeetingManager {
     if (!existing) return { error: 'Meeting not found' }
     if (this.active.has(meetingId) || existing.status === 'recording') return { error: 'Meeting is already recording' }
     if (this.active.size > 0) return { error: 'Another meeting is recording. Stop it first.' }
+    const d = getAudioDevices()
+    if ('error' in d) return d
     const meeting = meetingStore.update(meetingId, { status: 'recording', endedAt: null }) ?? existing
     return this.begin(meeting)
   }
@@ -112,7 +117,8 @@ class MeetingManager {
   }
 
   private spawnCapture(meetingId: string): CaptureHandle {
-    return startCapture(meetingStore.dir(meetingId), getAudioDevices(), {
+    const d = getAudioDevices()
+    return startCapture(meetingStore.dir(meetingId), 'error' in d ? { mic: 'default', system: null } : d, {
       onChunk: (filePath) => this.enqueueChunk(meetingId, filePath),
       onExit: (code, stderrTail) => {
         const a = this.active.get(meetingId)

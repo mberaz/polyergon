@@ -1,5 +1,6 @@
 import { CONFIG_FILE, readConfig, writeConfig } from './configFile'
 import { LOCAL_MODEL_PATH } from './localWhisper'
+import { listAudioDevices, resolveDevices, type AudioDevices } from './audioCapture'
 
 export type TranscriptionConfig = (
   | { kind: 'openai'; apiKey: string }
@@ -100,15 +101,11 @@ export function saveTranscriptionConfig(input: TranscriptionInput, file = CONFIG
 // ffmpeg records these two devices and mixes them itself: system audio
 // arrives via BlackHole (with output set to a Multi-Output device), your
 // voice via the mic. No aggregate input device needed.
-export interface AudioDevices {
-  system: string
-  mic: string
-}
+export type { AudioDevices }
 
-export function getAudioDevices(): AudioDevices {
+// The configured devices if this Mac has them, else its built-in mic and BlackHole.
+export function getAudioDevices(): AudioDevices | { error: string } {
   const cfg = readConfig()
-  return {
-    system: typeof cfg.systemAudioDevice === 'string' && cfg.systemAudioDevice ? cfg.systemAudioDevice : 'BlackHole 2ch',
-    mic: typeof cfg.micDevice === 'string' && cfg.micDevice ? cfg.micDevice : 'MacBook Pro Microphone',
-  }
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
+  return resolveDevices({ system: str(cfg.systemAudioDevice), mic: str(cfg.micDevice) }, listAudioDevices())
 }

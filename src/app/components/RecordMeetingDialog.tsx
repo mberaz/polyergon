@@ -7,14 +7,14 @@ interface Props {
   defaultOrgId: string
   onStart: (title: string, orgId: string) => void
   onCancel: () => void
-  onMicTest: () => Promise<{ level?: number; error?: string }>
+  onMicTest: () => Promise<{ level?: number; error?: string; devices?: { mic: string; system: string | null } }>
 }
 
 export function RecordMeetingDialog({ orgs, defaultOrgId, onStart, onCancel, onMicTest }: Props) {
   const [title, setTitle] = useState('')
   const [orgId, setOrgId] = useState(defaultOrgId)
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ level?: number; error?: string } | null>(null)
+  const [testResult, setTestResult] = useState<{ level?: number; error?: string; devices?: { mic: string; system: string | null } } | null>(null)
 
   async function runMicTest() {
     setTesting(true)
@@ -75,8 +75,10 @@ export function RecordMeetingDialog({ orgs, defaultOrgId, onStart, onCancel, onM
             </div>
           </div>
           {testResult?.error && <p className="text-xs text-red-400 mt-2">{testResult.error}</p>}
+          {testResult?.devices && <p className="text-[11px] text-gray-500 mt-2">Recording from: {testResult.devices.mic}{testResult.devices.system ? ` + ${testResult.devices.system} (meeting audio)` : ''}</p>}
+          {testResult?.devices && !testResult.devices.system && <p className="text-xs text-yellow-500 mt-1">BlackHole isn't installed, so only your microphone is recorded, not the other side of the call. Install it: brew install blackhole-2ch</p>}
           {testResult?.level !== undefined && testResult.level < 0.004 && (
-            <p className="text-xs text-yellow-500 mt-2">Silence detected — check the aggregate device and that audio is playing.</p>
+            <p className="text-xs text-yellow-500 mt-2">Silence detected. Say something during the test, and check the microphone isn't muted.</p>
           )}
           {testResult?.level !== undefined && testResult.level >= 0.004 && (
             <p className="text-xs text-green-500 mt-2">Audio detected ✓</p>

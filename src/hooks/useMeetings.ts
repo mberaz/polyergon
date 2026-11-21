@@ -103,7 +103,7 @@ export function useMeetings(ws: WebSocket | null) {
   }, [])
 
   // One-shot request/response over the WS for the pre-meeting mic check
-  const micTest = useCallback((): Promise<{ level?: number; error?: string }> => {
+  const micTest = useCallback((): Promise<{ level?: number; error?: string; devices?: { mic: string; system: string | null } }> => {
     return new Promise((resolve) => {
       const socket = wsRef.current
       if (!socket || socket.readyState !== WebSocket.OPEN) {

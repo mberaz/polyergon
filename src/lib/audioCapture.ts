@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from 'child_process'
+import { spawn, spawnSync, ChildProcess } from 'child_process'
 import { readdirSync, readFileSync, statSync, mkdirSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -45,14 +45,38 @@ interface CaptureCallbacks {
 }
 
 export interface AudioDevices {
-  system: string // BlackHole — carries meeting audio when output is the Multi-Output device
+  system: string | null // BlackHole — carries meeting audio when output is the Multi-Output device; null = not installed
   mic: string
+}
+
+// Audio input names as macOS/ffmpeg sees them on this Mac.
+export function listAudioDevices(): string[] {
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-f', 'avfoundation', '-list_devices', 'true', '-i', ''], { encoding: 'utf-8', timeout: 10_000 })
+  const out = `${r.stderr ?? ''}`.split('AVFoundation audio devices:')[1] ?? ''
+  return [...out.matchAll(/\] \[\d+\] (.+)$/gm)].map(m => m[1].trim())
+}
+
+// The devices to record: what you configured if this Mac has it, else the
+// built-in microphone and BlackHole if installed. Works across Mac models.
+export function resolveDevices(wanted: { system?: string; mic?: string }, available: string[]): AudioDevices | { error: string } {
+  const has = (n?: string) => !!n && available.includes(n)
+  const virtual = /blackhole|teams|zoom|iphone|loopback|soundflower|aggregate|multi-output/i
+  const mic = has(wanted.mic) ? wanted.mic!
+    : available.find(n => /microphone/i.test(n) && !/iphone/i.test(n)) ?? available.find(n => !virtual.test(n))
+  if (!mic) return { error: available.length ? `No microphone found. Audio inputs on this Mac: ${available.join(', ')}` : 'No audio inputs found. Is ffmpeg installed (brew install ffmpeg)?' }
+  const system = has(wanted.system) ? wanted.system! : available.find(n => /blackhole/i.test(n)) ?? null
+  return { mic, system }
 }
 
 // Two avfoundation inputs mixed by ffmpeg itself — avoids needing a macOS
 // aggregate input device (whose programmatic creation requires a working
 // Swift toolchain).
 function ffmpegInputArgs(devices: AudioDevices): string[] {
+  if (!devices.system) return [ // no BlackHole: your microphone only
+    '-hide_banner', '-loglevel', 'error',
+    '-f', 'avfoundation', '-i', `:${devices.mic}`,
+    '-ar', '16000', '-ac', '1',
+  ]
   return [
     '-hide_banner', '-loglevel', 'error',
     '-f', 'avfoundation', '-i', `:${devices.system}`,
@@ -60,6 +84,12 @@ function ffmpegInputArgs(devices: AudioDevices): string[] {
     '-filter_complex', 'amix=inputs=2:duration=longest:normalize=0',
     '-ar', '16000', '-ac', '1',
   ]
+}
+
+// ffmpeg's "Input/output error" with devices present almost always means macOS blocked the mic.
+export function explainAudioError(err: string, devices: AudioDevices): string {
+  if (/input\/output error|permission|not authorized/i.test(err)) return `Couldn't open "${devices.mic}"${devices.system ? ` or "${devices.system}"` : ''}. macOS may be blocking the microphone: System Settings → Privacy & Security → Microphone, allow Terminal (or the app running Polyergon), then try again. (${err})`
+  return err
 }
 
 function ffmpegArgs(devices: AudioDevices, outPattern: string): string[] {
@@ -129,7 +159,7 @@ export function startCapture(meetingDir: string, devices: AudioDevices, cb: Capt
 
 // Records ~2s from the device and returns the level, for the pre-meeting mic
 // check. Errors (device missing, no permission) come back as { error }.
-export async function micTest(devices: AudioDevices): Promise<{ level: number } | { error: string }> {
+export async function micTest(devices: AudioDevices): Promise<{ level: number; devices: AudioDevices } | { error: string }> {
   const outFile = join(tmpdir(), `mic-test-${randomUUID().slice(0, 8)}.wav`)
   return new Promise((resolve) => {
     const proc = spawn('ffmpeg', [
@@ -143,7 +173,7 @@ export async function micTest(devices: AudioDevices): Promise<{ level: number } 
       clearTimeout(killer)
       try {
         if (code !== 0) {
-          resolve({ error: stderr.trim().split('\n').at(-1) ?? `ffmpeg exited ${code}` })
+          resolve({ error: explainAudioError(stderr.trim().split('\n').at(-1) ?? `ffmpeg exited ${code}`, devices) })
           return
         }
         const buf = readFileSync(outFile)
@@ -151,7 +181,7 @@ export async function micTest(devices: AudioDevices): Promise<{ level: number } 
           resolve({ error: 'No audio captured' })
           return
         }
-        resolve({ level: wavRms(buf) })
+        resolve({ level: wavRms(buf), devices })
       } catch (e) {
         resolve({ error: e instanceof Error ? e.message : 'mic test failed' })
       } finally {
