@@ -272,6 +272,7 @@ export async function draftChannelReply(r: ChannelRequest, channel: string, ctx:
     'Use what you know from this conversation and the code here. If you are not sure, say what you would check instead of guessing. ' +
     'Never promise work for later ("I\'ll check", "I\'ll post the results"): nobody will do it. ' +
     `If you can't give a real answer now, start the reply with ${NEEDS_OWNER} so I write it myself. ` +
+    `If they ask for something to be done (deploy, rollout, fix, restart) and it is not done yet, do not reply with a plan or a command for them to run: start with ${NEEDS_OWNER} so the work gets done first. ` +
     'Respond with ONLY the reply text.'
   const { result } = ctx
     ? await runClaude(prompt, { cwd: ctx.cwd, configDir: ctx.configDir, model: null, extraEnv: slackEnv(ctx.configDir), resumeId: ctx.resumeId, forkSession: true, timeoutMs: 300_000 })

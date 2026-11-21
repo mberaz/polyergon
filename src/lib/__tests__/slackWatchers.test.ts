@@ -6,6 +6,7 @@ process.env.POLYERGON_DATA_DIR = mkdtempSync(join(tmpdir(), 'watch-'))
 
 const posted: string[] = []
 let draft = ''
+let mockReqs: { permalink: string; author: string; text: string }[] | null = null
 jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
 const typed: string[] = []
 jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? { claudeSessionId: 'c1', cwd: '/r', orgId: 'o' } : undefined) } }))
@@ -13,7 +14,7 @@ jest.mock('../ptyManager', () => ({ sendWhenReady: (_id: string, t: string) => t
 jest.mock('../orgRegistry', () => ({ orgRegistry: { get: () => undefined } }))
 jest.mock('../slackBridge', () => ({
   NEEDS_OWNER: 'NEEDS_OWNER:',
-  newChannelRequests: async () => [{ permalink: `https://x.slack.com/archives/C1/p${Date.now() * 1000 + Math.floor(Math.random() * 1000)}`, author: 'Koren', text: '?' }],
+  newChannelRequests: async () => mockReqs ?? [{ permalink: `https://x.slack.com/archives/C1/p${Date.now() * 1000 + Math.floor(Math.random() * 1000)}`, author: 'Koren', text: '?' }],
   draftChannelReply: async () => draft,
   replyInThread: async (_p: string, t: string) => { posted.push(t) },
   timeFromPermalink: (p: string) => new Date(Number(p.split('/p')[1]) / 1000 + 60_000).toISOString(),
@@ -57,4 +58,30 @@ test('your instruction goes to the linked session; without one it errors', () =>
   expect(typed.at(-1)).toContain('answer Koren with the deploy status')
   const unlinked = slackWatchers.create({ channel: { id: 'C2', name: 'other' }, liveId: null, mode: 'approve', intervalMin: 5, orgId: 'o' })
   expect(slackWatchers.instruct(unlinked.id, 'x')).toEqual({ error: expect.stringContaining('Link a session') })
+})
+
+test('a follow-up in a thread the session handles goes back to that session, not to a draft', async () => {
+  const ts = Math.floor(Date.now() / 1000) + 60
+  const w = slackWatchers.create({ channel: { id: 'C1', name: 'deployment' }, liveId: 'L1', mode: 'auto', intervalMin: 5, orgId: 'o' })
+  mockReqs = [{ permalink: `https://x.slack.com/archives/C1/p${ts}000100`, author: 'Koren', text: 'When will it be ready?' }]
+  draft = 'NEEDS_OWNER: needs the rollout'
+  await slackWatchers.run(w.id)
+  expect(slackWatchers.list().find((x: { id: string }) => x.id === w.id).items[0].state).toBe('delegated')
+
+  const before = typed.length
+  mockReqs = [{ permalink: `https://x.slack.com/archives/C1/p${ts + 5}000200?thread_ts=${ts}.000100&cid=C1`, author: 'Koren', text: 'still not working' }]
+  draft = 'should not be used'
+  jest.setSystemTime(Date.now() + 10 * 60_000)
+  await slackWatchers.run(w.id)
+  const items = slackWatchers.list().find((x: { id: string }) => x.id === w.id).items
+  expect(items[0].state).toBe('delegated')
+  expect(typed.slice(before)).toHaveLength(1)
+  expect(typed.at(-1)).toContain('still not working')
+  mockReqs = null
+})
+
+test('threadKey matches a top-level post and its replies', () => {
+  const { threadKey } = require('../slackWatchers')
+  expect(threadKey('https://x.slack.com/archives/C1/p1795082828257279')).toBe('1795082828.257279')
+  expect(threadKey('https://x.slack.com/archives/C1/p1795083000000100?thread_ts=1795082828.257279&cid=C1')).toBe('1795082828.257279')
 })

@@ -130,7 +130,17 @@ class SlackWatcherEngine {
       if (fresh.length) {
         w.items = [...fresh.map(r => ({ ...r, state: 'drafting' as const, draft: null })), ...w.items].slice(0, 100)
         this.log(w, `Found ${fresh.length} question${fresh.length > 1 ? 's' : ''} in #${w.channel.name}`, undefined, { detail: fresh.map(r => `${r.author}: ${r.text}`).join('\n\n') })
-        for (const r of fresh) await this.draft(w, r.permalink)
+        for (const r of fresh) {
+          // A new message in a thread the session is already working: pass it on, don't draft over it
+          const owner = w.liveId && liveSessionStore.get(w.liveId) && w.items.find(i => i.state === 'delegated' && i.permalink !== r.permalink && threadKey(i.permalink) === threadKey(r.permalink))
+          const it = w.items.find(i => i.permalink === r.permalink)!
+          if (owner && it) {
+            sendWhenReady(w.liveId!, `Follow-up in the Slack thread you are handling (${r.permalink}) from ${r.author}: "${r.text.replace(/\s+/g, ' ').slice(0, 1500)}". ` +
+              'Continue until it is resolved and verified, then reply in the thread. Ask me here before any production change.')
+            it.state = 'delegated'
+            this.log(w, `${r.author} followed up: passed to the session`, undefined, { detail: r.text, link: r.permalink })
+          } else await this.draft(w, r.permalink)
+        }
       } else {
         // One rolling line, not one per check
         const line = `Checked ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: no new questions`
@@ -205,8 +215,12 @@ class SlackWatcherEngine {
     const text = it.text.replace(/\s+/g, ' ').slice(0, 1500)
     sendWhenReady(w.liveId,
       `Slack request in #${w.channel.name} from ${it.author} (${it.permalink}): "${text}". ` +
-      'Do the work needed to answer it (run the checks, read the code or logs). Then reply in that Slack thread with the Slack connector, with the actual results. ' +
-      'Report only what you verified; if something failed or you could not check it, say so plainly. Do not promise to do it later.')
+      'Do the work needed to answer it (run the checks, read the code or logs, make the change). Then reply in that Slack thread with the Slack connector, with the actual results. ' +
+      'Report only what you verified; if something failed or you could not check it, say so plainly. Do not promise to do it later. ' +
+      'Keep going until it is actually finished and verified: do not stop at a plan, a status update or a command for someone else to run. ' +
+      'Before any step that changes production (deploy, set image, rollout, restart, delete, migrate), ask me here and wait for my OK, then continue. ' +
+      'Reply in the Slack thread only when it is done (with how you verified it) or truly blocked (say exactly what blocks it). ' +
+      'If they reply in the thread again, I will pass it to you here.')
     it.state = 'delegated'
     this.log(w, `${auto ? 'Needed real work: sent' : 'You sent'} ${it.author}'s request to the session`, undefined, { detail: it.text, link: it.permalink })
     return null
@@ -223,7 +237,11 @@ class SlackWatcherEngine {
     sendWhenReady(w.liveId,
       `About the Slack channel #${w.channel.name} (id ${w.channel.id}), the owner asks: ${t.replace(/\s+/g, ' ')} ` +
       '— Use the Slack connector to read what you need and do it. Post in Slack only if that is what the owner asked for. ' +
-      'Report only what you verified; if you could not do something, say so plainly.')
+      'Report only what you verified; if you could not do something, say so plainly. ' +
+      'Keep going until it is actually finished and verified: do not stop at a plan, a status update or a command for someone else to run. ' +
+      'Before any step that changes production (deploy, set image, rollout, restart, delete, migrate), ask me here and wait for my OK, then continue. ' +
+      'Reply in the Slack thread only when it is done (with how you verified it) or truly blocked (say exactly what blocks it). ' +
+      'If they reply in the thread again, I will pass it to you here.')
     this.log(w, 'You told the session what to do', undefined, { detail: t })
     return null
   }
@@ -247,3 +265,11 @@ class SlackWatcherEngine {
 
 declare global { var __slackWatchers: SlackWatcherEngine | undefined }
 export const slackWatchers: SlackWatcherEngine = global.__slackWatchers ?? (global.__slackWatchers = new SlackWatcherEngine())
+
+// Same Slack thread? Replies carry thread_ts; a top-level post's ts is in /p<10 digits><6 digits>.
+export function threadKey(permalink: string): string {
+  const t = permalink.match(/thread_ts=(\d+\.\d+)/)
+  if (t) return t[1]
+  const p = permalink.match(/\/p(\d{10})(\d{6})/)
+  return p ? `${p[1]}.${p[2]}` : permalink
+}
