@@ -180,7 +180,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-[480px] max-h-[92vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-[560px] max-w-[95vw] max-h-[92vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
         <h2 className="text-white font-semibold mb-1">New Session</h2>
         <p className="text-xs text-gray-500 mb-4">Pick how to start. <b className="text-gray-400">Just chat</b> works for most things; pick a folder only when Claude should work on that code.</p>
 
@@ -197,7 +197,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
         />
 
         {/* Org + Agent + Model in one row, so the start options stay on screen */}
-        <div className="mb-1 grid grid-cols-3 gap-2">
+        <div className="mb-1 grid grid-cols-[1fr_1fr_1.6fr] gap-2">
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Org<Hint text="Which Claude account runs this session. Each org has its own login, billing, skills, Slack and integrations." /></label>
             <select
