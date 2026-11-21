@@ -227,7 +227,11 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           {notifyOn && permission === 'denied' && (
             <p className="text-xs text-amber-400">Chrome is blocking notifications for this site. Click the icon left of the address bar, then allow Notifications.</p>
           )}
-          {notifyOn && permission === 'granted' && <p className="text-xs text-green-400">Chrome permission: allowed</p>}
+          {notifyOn && permission === 'granted' && (
+            <p className="text-xs text-green-400">Chrome permission: allowed ·{' '}
+              <button onClick={() => new Notification('Polyergon', { body: 'Test: a session is waiting for you', icon: '/icon-192.png' })} className="underline text-gray-300 hover:text-white">Send test notification</button>
+            </p>
+          )}
           {permission === 'unsupported' && <p className="text-xs text-gray-500">This browser does not support notifications.</p>}
         </Sec>
 
