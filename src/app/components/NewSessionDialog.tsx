@@ -33,9 +33,7 @@ const Hint = ({ text }: { text: string }) => (
 
 export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onConfirm, onResumeById, onCancel }: Props) {
   const [mode, setMode] = useState<'chat' | 'folder' | 'slack'>('chat')
-  const [firstMsg, setFirstMsg] = useState('')
   const [query, setQuery] = useState('')
-  const [showMore, setShowMore] = useState(false)
   const [resumeId, setResumeId] = useState('')
   const [showResumeById, setShowResumeById] = useState(false)
   const [name, setName] = useState('')
@@ -164,7 +162,7 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
   const [isolate, setIsolate] = useState(false)
   function start(cwd: string) {
     localStorage.setItem('lastCwd', cwd)
-    onConfirm(cwd, name.trim(), orgId, backend, model, firstMsg.trim() || undefined, cwd !== 'general' && isolate)
+    onConfirm(cwd, name.trim(), orgId, backend, model, undefined, cwd !== 'general' && isolate)
   }
 
   async function submitNewOrg() {
@@ -195,9 +193,6 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
     else if (mode === 'slack') startFromSlack()
     else start(folderPick || typedPath)
   }
-  const orgName = orgs.find(o => o.id === orgId)?.name ?? 'Default'
-  const backendLabel = backends.find(b => b.id === backend)?.label ?? backend
-  const modelLabel = modelsLoading ? 'loading models…' : models.find(m => m.id === model)?.displayName ?? (modelsError ?? 'no model')
   const input = 'w-full bg-gray-800 text-white rounded-md px-3 py-2 text-sm outline-none border border-gray-700 focus:border-blue-500 placeholder-gray-500'
   const enterStarts = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go() } }
   const TABS = [
@@ -268,21 +263,12 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
             </div>
           )}
 
-          {mode !== 'slack' && (
-            <textarea value={firstMsg} onChange={e => setFirstMsg(e.target.value)} onKeyDown={enterStarts} rows={3} dir="auto" autoFocus={mode === 'chat'}
-              placeholder={mode === 'chat' ? 'What do you want to do? (optional, Enter to start)' : 'First message (optional)'} className={`${input} resize-none`} />
-          )}
 
-          <input value={name} onChange={e => setName(e.target.value)} onKeyDown={enterStarts}
+          <input value={name} onChange={e => setName(e.target.value)} onKeyDown={enterStarts} autoFocus={mode === 'chat'}
             placeholder="Session name (optional, Claude names it otherwise)" className={input} />
 
           <div className="rounded-md border border-gray-800">
-            <button onClick={() => setShowMore(v => !v)} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:text-gray-200">
-              <span className="truncate">{orgName} · {backendLabel} · {modelLabel}</span>
-              <span className="ml-auto text-blue-400">{showMore ? 'Done' : 'Change'}</span>
-            </button>
-            {showMore && (
-              <div className="px-3 pb-3 space-y-3 border-t border-gray-800 pt-3">
+              <div className="p-3 space-y-3">
                 <div className="grid grid-cols-[1fr_1fr_1.6fr] gap-2">
                   <label className="text-xs text-gray-500">Org<Hint text="Which Claude account runs this session. Each org has its own login, billing, skills, Slack and integrations." />
                     <select value={orgId} onChange={e => e.target.value === '__add__' ? setShowAddOrg(true) : setOrgId(e.target.value)} className={`${input} mt-1 px-2`}>
@@ -335,7 +321,6 @@ export function NewSessionDialog({ knownCwds, orgs, defaultOrgId, onAddOrg, onCo
                     className="block text-xs text-gray-500 hover:text-gray-300">↩ Resume a conversation by its session ID…</button>
                 )}
               </div>
-            )}
           </div>
         </div>
 
