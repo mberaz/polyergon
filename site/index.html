@@ -134,6 +134,8 @@
   pre { margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 22px 24px; font-size: 14px; line-height: 1.9; overflow-x: auto; color: var(--text); }
   pre .p { color: var(--accent); user-select: none; }
   pre .c { color: var(--dim); }
+  .tip { margin: 12px 2px 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .tip b { color: var(--text); font-weight: 500; }
   .req { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; color: var(--muted); font-size: 14px; }
   .req li::before { content: "+ "; color: var(--accent); }
   @media (max-width: 860px) { .install { grid-template-columns: 1fr; padding: 28px; gap: 28px; } }
@@ -284,7 +286,10 @@
           <li><code>gh</code> for PRs and Ship it (optional)</li>
         </ul>
       </div>
-      <pre class="cmd"><span class="p">$</span> npx polyergon <span class="c"># opens Polyergon in its own window</span><button type="button" class="copy" data-copy="npx polyergon" aria-label="Copy command"><i class="ph ph-copy"></i></button></pre>
+      <div>
+        <pre class="cmd"><span class="p">$</span> npx polyergon <span class="c"># opens Polyergon in its own window</span><button type="button" class="copy" data-copy="npx polyergon" aria-label="Copy command"><i class="ph ph-copy"></i></button></pre>
+        <p class="tip">Then install it as an app: <b>Settings → App → Install Polyergon</b>. You get a Dock icon, and notifications come from Polyergon.</p>
+      </div>
     </div>
     <div class="updates reveal">
       <div>
