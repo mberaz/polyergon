@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useInstallPrompt, isInstalledApp } from '@/hooks/useInstallPrompt'
 import type { Settings } from '@/lib/settingsStore'
 import type { TranscriptionStatus } from '@/lib/meetingConfig'
+import type { UpdateInfo } from '@/lib/updater'
 import type { ClaudeAuthStatus, ClaudeLogin } from '@/lib/claudeAuth'
 import { withOrg } from '@/lib/activeOrg'
 import { claudeLogin } from './SlackProblemBanner'
@@ -37,7 +38,7 @@ const SPOKEN: [string, string][] = [['he', 'Hebrew'], ['en', 'English'], ['ar', 
 
 export type SettingsGuard = { dirty: boolean; save: () => Promise<boolean> }
 
-export function SettingsPage({ onClose, guard }: { onClose: () => void; guard?: { current: SettingsGuard | null } }) {
+export function SettingsPage({ onClose, guard, busy = 0 }: { onClose: () => void; guard?: { current: SettingsGuard | null }; busy?: number }) {
   const [enabled, setEnabled] = useState(true)
   const [k, setK] = useState(300)
   const [loaded, setLoaded] = useState(false)
@@ -158,6 +159,7 @@ export function SettingsPage({ onClose, guard }: { onClose: () => void; guard?: 
         <h1 className="text-lg font-semibold md:hidden">Settings</h1>
         <Sec id="app" title="App" desc="Run Polyergon in its own window, with a Dock icon and notifications from Polyergon.">
           <InstallApp />
+          <Updates busy={busy} />
         </Sec>
 
         <Sec id="account" title="Claude account" desc="How sessions sign in to Claude. Each org has its own login.">
@@ -347,6 +349,61 @@ function LocalWhisperSetup() {
         : st.downloading != null ? <p className="text-blue-300">Downloading model… {st.downloading}%</p>
         : <p className="text-amber-300">2. <button onClick={() => load('POST')} className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white">Download model</button> <span className="text-gray-500">large-v3-turbo, about 550 MB</span></p>}
       {st.error && <p className="text-red-400">{st.error}</p>}
+    </div>
+  )
+}
+
+// Newer version? Upgrade in place (Mac installer) or show the command to run.
+function Updates({ busy }: { busy: number }) {
+  const [u, setU] = useState<UpdateInfo | null>(null)
+  const [state, setState] = useState<'idle' | 'checking' | 'confirm' | 'upgrading' | 'restarting' | 'error'>('checking')
+  const [msg, setMsg] = useState('')
+  const check = (refresh = false) => { setState('checking'); fetch(`/api/update${refresh ? '?refresh=1' : ''}`).then(r => r.json()).then(d => { setU(d); setState('idle') }).catch(() => { setState('error'); setMsg('Could not check for updates') }) }
+  useEffect(() => { check() }, [])
+  async function upgrade() {
+    setState('upgrading')
+    const r = await fetch('/api/update', { method: 'POST' }).then(r => r.json()).catch(() => ({ error: 'Upgrade failed' }))
+    if (r.error) { setState('error'); setMsg(r.error); return }
+    setState('restarting')
+    // wait for the new server, then reload
+    const start = Date.now()
+    const poll = () => fetch('/api/update').then(x => x.json()).then(d => { if (d.current === r.version) location.reload(); else throw 0 })
+      .catch(() => { if (Date.now() - start < 120_000) setTimeout(poll, 2000); else { setState('error'); setMsg('Polyergon did not come back. Check ~/Library/Logs/Polyergon.log') } })
+    setTimeout(poll, 4000)
+  }
+  return (
+    <div className="mt-4 pt-4 border-t border-gray-800">
+      <div className="flex items-center gap-2 flex-wrap">
+        <p className="text-sm font-medium">Updates</p>
+        <span className="text-xs text-gray-500">You have {u?.current ?? '…'}</span>
+        <button onClick={() => check(true)} disabled={state === 'checking'} className="ml-auto text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50">{state === 'checking' ? 'Checking…' : 'Check now'}</button>
+      </div>
+      {u && !u.newer && state === 'idle' && <p className="text-xs text-emerald-400 mt-1">✓ Up to date</p>}
+      {u?.newer && (
+        <div className="mt-2 rounded-lg border border-emerald-700/60 bg-emerald-950/30 p-3">
+          <p className="text-sm text-emerald-200">Polyergon {u.latest} is available. {u.notesUrl && <a href={u.notesUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">What's new</a>}</p>
+          {u.method === 'installer' ? (
+            state === 'confirm' ? (
+              <div className="mt-2">
+                <p className="text-xs text-amber-300">Polyergon restarts to finish.{busy > 0 ? ` ${busy} session${busy > 1 ? 's are' : ' is'} working and will be interrupted; resume ${busy > 1 ? 'them' : 'it'} after.` : ' Sessions stop and can be resumed after.'}</p>
+                <div className="flex gap-2 mt-2">
+                  <button onClick={upgrade} className="text-xs px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white">Upgrade and restart</button>
+                  <button onClick={() => setState('idle')} className="text-xs px-3 py-1 text-gray-400 hover:text-white">Cancel</button>
+                </div>
+              </div>
+            ) : state === 'upgrading' ? <p className="text-xs text-blue-300 mt-2 animate-pulse">Installing {u.latest}…</p>
+            : state === 'restarting' ? <p className="text-xs text-blue-300 mt-2 animate-pulse">Restarting. This page reloads when it's back…</p>
+            : <button onClick={() => setState('confirm')} className="mt-2 text-xs px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white">Upgrade now</button>
+          ) : (
+            <div className="mt-2">
+              <p className="text-xs text-gray-400">{u.method === 'source' ? 'This copy runs from a git checkout. In its folder, run:' : 'Stop Polyergon (Ctrl+C), then run:'}</p>
+              <code className="block mt-1 text-xs bg-gray-950 border border-gray-800 rounded px-2 py-1.5 text-gray-200 break-all select-all">{u.command}</code>
+              {u.method !== 'source' && <p className="text-[11px] text-gray-500 mt-1">Or switch to the Mac installer to upgrade from here: <code className="select-all">curl -fsSL https://polyergon.ai/install.sh | bash</code></p>}
+            </div>
+          )}
+        </div>
+      )}
+      {state === 'error' && <p className="text-xs text-red-400 mt-1">{msg}</p>}
     </div>
   )
 }

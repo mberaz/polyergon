@@ -554,7 +554,7 @@ export default function Home() {
             />
           )
         })()}
-        {view.mode === 'settings' && <SettingsPage key={activeOrgId} guard={settingsGuard} onClose={() => setView({ mode: 'empty' })} />}
+        {view.mode === 'settings' && <SettingsPage key={activeOrgId} guard={settingsGuard} busy={liveSessions.filter(s => s.status === 'thinking').length} onClose={() => setView({ mode: 'empty' })} />}
         {leaveTo && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setLeaveTo(null)}>
             <div role="dialog" aria-modal className="bg-gray-900 border border-gray-700 rounded-xl p-5 w-[380px] max-w-[92vw] shadow-2xl" onClick={e => e.stopPropagation()}>

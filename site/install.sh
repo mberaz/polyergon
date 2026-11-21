@@ -61,6 +61,7 @@ cat > "$PLIST" <<EOF
   <key>EnvironmentVariables</key><dict>
     <key>PORT</key><string>$PORT</string>
     <key>POLYERGON_NO_OPEN</key><string>1</string>
+    <key>POLYERGON_LABEL</key><string>$LABEL</string>
     <key>PATH</key><string>$SVC_PATH</string>
     $DATA_ENV
   </dict>

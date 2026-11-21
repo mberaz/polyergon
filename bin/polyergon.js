@@ -31,5 +31,6 @@ try {
 }
 
 process.env.NODE_ENV = 'production'
+process.env.POLYERGON_ROOT = root // the updater needs to know where it's installed
 if (!process.env.POLYERGON_NO_OPEN) process.env.POLYERGON_OPEN = '1'
 require(path.join(root, '.server-dist', 'server.js'))
