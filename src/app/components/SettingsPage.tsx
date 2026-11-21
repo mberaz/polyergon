@@ -162,6 +162,10 @@ export function SettingsPage({ onClose, guard, busy = 0 }: { onClose: () => void
           <Updates busy={busy} />
         </Sec>
 
+        <Sec id="help" title="Help" desc="Something broken or confusing? Tell us on GitHub.">
+          <ReportBug />
+        </Sec>
+
         <Sec id="account" title="Claude account" desc="How sessions sign in to Claude. Each org has its own login.">
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-1.5"><input type="radio" checked={authMode === 'login'} onChange={() => { setAuthMode('login'); setAuthDirty(true); touch() }} />Claude login</label>
@@ -404,6 +408,21 @@ function Updates({ busy }: { busy: number }) {
         </div>
       )}
       {state === 'error' && <p className="text-xs text-red-400 mt-1">{msg}</p>}
+    </div>
+  )
+}
+
+// Opens a GitHub bug report with this machine's versions filled in.
+function ReportBug() {
+  const [about, setAbout] = useState('')
+  useEffect(() => { fetch('/api/update').then(r => r.json()).then(d => setAbout(d.about ?? '')).catch(() => {}) }, [])
+  const url = `https://github.com/polyergon/polyergon/issues/new?template=bug_report.yml&version=${encodeURIComponent(about)}`
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      <a href={url} target="_blank" rel="noreferrer" className="text-xs px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white">Report a bug</a>
+      <a href="https://github.com/polyergon/polyergon/tree/main/docs" target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline">Guides</a>
+      <a href="https://github.com/polyergon/polyergon/issues/new?template=feature_request.yml" target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline">Suggest a feature</a>
+      {about && <p className="w-full text-[11px] text-gray-500">The report includes: {about}. Logs: ~/Library/Logs/Polyergon.log</p>}
     </div>
   )
 }

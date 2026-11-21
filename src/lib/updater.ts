@@ -16,6 +16,7 @@ export interface UpdateInfo {
   notesUrl: string | null
   method: InstallMethod
   command: string | null // what to run yourself when we can't upgrade in place
+  about: string // for bug reports: Polyergon, install method, macOS and Node versions
 }
 
 const root = () => process.env.POLYERGON_ROOT || process.cwd()
@@ -64,7 +65,9 @@ export async function checkForUpdate(force = false): Promise<UpdateInfo> {
     : method === 'npx' ? `npx -y ${pkg}`
     : method === 'global' ? `npm install -g ${pkg} && polyergon`
     : 'git pull && npm ci && npm run build'
-  return { current, latest: rel.latest, newer: !!rel.latest && isNewer(rel.latest, current), notesUrl: rel.notesUrl, method, command }
+  const macos = await execFileAsync('sw_vers', ['-productVersion']).then(r => `macOS ${r.stdout.trim()}`).catch(() => `${process.platform} ${process.arch}`)
+  const about = `Polyergon ${current} (${method}), ${macos} (${process.arch}), Node ${process.versions.node}`
+  return { current, latest: rel.latest, newer: !!rel.latest && isNewer(rel.latest, current), notesUrl: rel.notesUrl, method, command, about }
 }
 
 // Installer installs only: install the new version, then have launchd restart us.

@@ -94,6 +94,10 @@ Most options are set in the app under **Settings**: Claude sign-in or API key, a
 | `POLYERGON_WINDOW` | unset | Set to `browser` to open a normal browser tab instead of the app window |
 | `POLYERGON_ALLOWED_HOSTS` | unset | Extra host names allowed to reach the app (comma-separated) |
 
+## Report a bug
+
+In the app: **Settings → Help → Report a bug** opens a GitHub issue with your versions filled in. Or [open one here](https://github.com/polyergon/polyergon/issues/new?template=bug_report.yml). Logs are in `~/Library/Logs/Polyergon.log` (Mac installer). Ideas go in [Suggest a feature](https://github.com/polyergon/polyergon/issues/new?template=feature_request.yml).
+
 ## Security
 
 Polyergon drives real shells, so it is built to be reachable only by you.
