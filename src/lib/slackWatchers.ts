@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
 import { orgRegistry } from './orgRegistry'
-import { newChannelRequests, draftChannelReply, replyInThread, timeFromPermalink, type SlackChannel } from './slackBridge'
+import { newChannelRequests, draftChannelReply, NEEDS_OWNER, replyInThread, timeFromPermalink, type SlackChannel } from './slackBridge'
 
 // "Slack channel watcher" automations: every few minutes, find new unanswered
 // questions in a channel and draft replies (optionally from a forked copy of a
@@ -153,16 +153,18 @@ class SlackWatcherEngine {
     const it = w.items.find(i => i.permalink === permalink)
     if (!it) return
     try {
-      it.draft = await draftChannelReply(it, w.channel.name, this.ctxFor(w), w.orgId, { knowledge: w.knowledge, instructions: w.instructions })
+      const raw = await draftChannelReply(it, w.channel.name, this.ctxFor(w), w.orgId, { knowledge: w.knowledge, instructions: w.instructions })
+      const needsYou = raw.startsWith(NEEDS_OWNER)
+      it.draft = needsYou ? raw.slice(NEEDS_OWNER.length).trim() : raw
       // Auto-answer only messages posted after you started the watcher; older backlog waits for your approval
       const backlog = !(Date.parse(timeFromPermalink(it.permalink) || '') >= w.createdAt) // unknown time counts as backlog
-      if (w.mode === 'auto' && !backlog) {
+      if (w.mode === 'auto' && !backlog && !needsYou) {
         await replyInThread(it.permalink, it.draft, w.orgId)
         it.state = 'sent'
         this.log(w, `Answered ${it.author} automatically`, undefined, { detail: it.draft, link: it.permalink })
       } else {
         it.state = 'pending'
-        this.log(w, `Drafted a reply to ${it.author}${backlog && w.mode === 'auto' ? ' (older message: waits for your OK)' : ''}`, { title: `#${w.channel.name}: reply ready`, body: `${it.author}: ${it.text.slice(0, 80)}` }, { detail: it.draft, link: it.permalink })
+        this.log(w, `Drafted a reply to ${it.author}${backlog && w.mode === 'auto' ? ' (older message: waits for your OK)' : ''}${needsYou && w.mode === 'auto' ? ' (needs your answer: not posted)' : ''}`, { title: `#${w.channel.name}: reply ready`, body: `${it.author}: ${it.text.slice(0, 80)}` }, { detail: it.draft, link: it.permalink })
       }
     } catch (e) {
       it.state = 'failed'; it.error = (e as Error).message

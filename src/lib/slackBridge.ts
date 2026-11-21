@@ -258,6 +258,9 @@ export async function newChannelRequests(channel: SlackChannel, sinceIso: string
   return parseRequests(result)
 }
 
+// Marks a draft that only the owner can answer (no auto-post).
+export const NEEDS_OWNER = 'NEEDS_OWNER:'
+
 // Draft a reply. With ctx, Claude answers from a forked copy of that session
 // (its knowledge and repo), never touching the live session.
 export async function draftChannelReply(r: ChannelRequest, channel: string, ctx: { resumeId: string; cwd: string; configDir: string | null } | null, orgId: string = DEFAULT_ORG_ID, extra: { knowledge?: string; instructions?: string } = {}): Promise<string> {
@@ -267,6 +270,8 @@ export async function draftChannelReply(r: ChannelRequest, channel: string, ctx:
     (extra.knowledge?.trim() ? `Knowledge sources to check first (web links, files/folders on this Mac, Slack channels, notes):\n${extra.knowledge.trim()}\n` : '') +
     (extra.instructions?.trim() ? `How to answer (follow this):\n${extra.instructions.trim()}\n` : '') +
     'Use what you know from this conversation and the code here. If you are not sure, say what you would check instead of guessing. ' +
+    'Never promise work for later ("I\'ll check", "I\'ll post the results"): nobody will do it. ' +
+    `If you can't give a real answer now, start the reply with ${NEEDS_OWNER} so I write it myself. ` +
     'Respond with ONLY the reply text.'
   const { result } = ctx
     ? await runClaude(prompt, { cwd: ctx.cwd, configDir: ctx.configDir, model: null, extraEnv: slackEnv(ctx.configDir), resumeId: ctx.resumeId, forkSession: true, timeoutMs: 300_000 })
