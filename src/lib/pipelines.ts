@@ -7,7 +7,7 @@ import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
 import { submitLine, onAnyStatusChange, onAnyPrUrlChange } from './ptyManager'
 import { summarizeChecks, isValidPrUrl } from './ghPrStatus'
-import { postToSlack, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
+import { postToSlack, dmOnSlack, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
 import type { PrCheckStatus } from './prTypes'
 import { openPrsOfSession } from './sessionPrs'
 
@@ -88,10 +88,11 @@ export interface PrTrack {
   mergeAttempts?: number
   // This PR's own review setup; missing = the automation's channel, no extra reviewers
   review?: PrReview
+  dmSent?: string[] // people already DMed about this PR
 }
 
 // Where a PR asks for review: a Slack channel (null = don't post) and GitHub reviewers
-export interface PrReview { channel: SlackChannel | null; reviewers: string[] }
+export interface PrReview { channel: SlackChannel | null; reviewers: string[]; dms?: string[] } // dms: Slack names to DM
 
 export interface Pipeline {
   id: string
@@ -306,9 +307,10 @@ class PipelineEngine {
     const before = t.review ?? { channel: p.config.slackChannel, reviewers: [] }
     t.review = next
     const added = next.reviewers.filter(r => !before.reviewers.includes(r))
-    this.update(p, {}, `Review for ${shortPr(url)}: ${next.channel ? `#${next.channel.name}` : 'no Slack post'}${next.reviewers.length ? `, reviewers ${next.reviewers.join(', ')}` : ''}`)
+    this.update(p, {}, `Review for ${shortPr(url)}: ${next.channel ? `#${next.channel.name}` : 'no Slack post'}${next.dms?.length ? `, DM ${next.dms.join(', ')}` : ''}${next.reviewers.length ? `, reviewers ${next.reviewers.join(', ')}` : ''}`)
     if (added.length) this.requestReviewers(p, t, added)
     if (next.channel && next.channel.name !== t.slack?.channel) this.announce(p, t, true)
+    else this.sendDms(p, t)
     return null
   }
 
@@ -502,14 +504,33 @@ class PipelineEngine {
 
   private async announce(p: Pipeline, t: PrTrack, force = false) {
     const ch = t.review ? t.review.channel : p.config.slackChannel
-    if (!ch || (t.slack?.permalink && !force)) return
-    const pr = await prSnapshot(t.url)
-    if (pr) this.patchTrack(p, t, { view: pr.view })
-    try {
-      const { permalink } = await postToSlack(ch, `:eyes: Ready for review: *${pr?.title ?? 'PR'}*\n${t.url}`, liveSessionStore.get(p.liveId)?.orgId)
-      this.patchTrack(p, t, { slack: { channel: ch.name, permalink, checkedAt: Date.now() } }, `Posted ${shortPr(t.url)} to #${ch.name}`)
-    } catch (e) {
-      this.update(p, {}, `Slack post for ${shortPr(t.url)} failed: ${(e as Error).message}`)
+    if (ch && (!t.slack?.permalink || force)) {
+      const pr = await prSnapshot(t.url)
+      if (pr) this.patchTrack(p, t, { view: pr.view })
+      try {
+        const { permalink } = await postToSlack(ch, `:eyes: Ready for review: *${pr?.title ?? 'PR'}*\n${t.url}`, liveSessionStore.get(p.liveId)?.orgId)
+        this.patchTrack(p, t, { slack: { channel: ch.name, permalink, checkedAt: Date.now() } }, `Posted ${shortPr(t.url)} to #${ch.name}`)
+      } catch (e) {
+        this.update(p, {}, `Slack post for ${shortPr(t.url)} failed: ${(e as Error).message}`)
+      }
+    }
+    await this.sendDms(p, t)
+  }
+
+  // DMs each person in this PR's review setup once.
+  private async sendDms(p: Pipeline, t: PrTrack) {
+    const todo = (t.review?.dms ?? []).filter(d => !(t.dmSent ?? []).includes(d))
+    if (!todo.length) return
+    t.dmSent = [...(t.dmSent ?? []), ...todo] // claim first: no double DM if called again meanwhile
+    const title = t.view?.title ?? (await prSnapshot(t.url))?.title ?? 'PR'
+    for (const person of todo) {
+      try {
+        await dmOnSlack(person, `:eyes: Can you review this? *${title}*\n${t.url}`, liveSessionStore.get(p.liveId)?.orgId)
+        this.update(p, {}, `DMed ${person} about ${shortPr(t.url)}`)
+      } catch (e) {
+        t.dmSent = t.dmSent.filter(x => x !== person)
+        this.update(p, {}, `DM to ${person} about ${shortPr(t.url)} failed: ${(e as Error).message}`)
+      }
     }
   }
 
@@ -533,5 +554,6 @@ function cleanReview(r: PrReview | undefined): PrReview | undefined {
   if (!r) return undefined
   const ch = r.channel && typeof r.channel.name === 'string' && r.channel.name.trim() ? { id: String(r.channel.id ?? ''), name: r.channel.name.replace(/^#/, '').trim() } : null
   const reviewers = [...new Set((Array.isArray(r.reviewers) ? r.reviewers : []).map(x => String(x).trim().replace(/^@/, '')).filter(x => /^[\w.-]+(\/[\w.-]+)?$/.test(x)))].slice(0, 15)
-  return { channel: ch, reviewers }
+  const dms = [...new Set((Array.isArray(r.dms) ? r.dms : []).map(x => String(x).trim().replace(/^@/, '')).filter(x => /^[\p{L}\p{N} ._'-]{1,60}$/u.test(x)))].slice(0, 10)
+  return { channel: ch, reviewers, ...(dms.length ? { dms } : {}) }
 }

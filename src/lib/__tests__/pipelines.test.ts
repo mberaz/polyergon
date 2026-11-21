@@ -16,10 +16,11 @@ const base = (n: number): Pr => ({ number: n, state: 'OPEN', isDraft: false, rev
 const prs: Record<string, Pr> = {}
 
 let foundPrs: string[] = []
+const dmed: string[] = []
 jest.mock('../liveSessionStore', () => ({ liveSessionStore: { get: (id: string) => (id === 'L1' ? session : undefined) } }))
 jest.mock('../ptyManager', () => ({ submitLine: (_id: string, t: string) => writes.push(t), onAnyStatusChange: () => () => {}, onAnyPrUrlChange: () => () => {} }))
 jest.mock('../sessionPrs', () => ({ openPrsOfSession: async () => foundPrs }))
-jest.mock('../slackBridge', () => ({ postToSlack: async (c: { name: string }, t: string) => { posts.push(t); postedTo.push(c.name); return { permalink: null } }, readSlackThread: async () => null }))
+jest.mock('../slackBridge', () => ({ postToSlack: async (c: { name: string }, t: string) => { posts.push(t); postedTo.push(c.name); return { permalink: null } }, readSlackThread: async () => null, dmOnSlack: async (who: string) => { dmed.push(who); return { permalink: null } } }))
 jest.mock('child_process', () => ({ execFile: (cmd: string, a: string[], _o: object, cb: (e: Error | null, r?: { stdout: string }) => void) => {
   if (cmd === 'git') return a.includes('--porcelain') ? cb(null, { stdout: dirty ? ' M file.ts' : '' }) : cb(new Error('no upstream'))
   if (a[0] === 'pr' && a[1] === 'edit') { posts.push(`gh ${a.join(' ')}`); return cb(null, { stdout: '' }) }
@@ -188,4 +189,21 @@ test('starting finds every open PR of the session, not just the latest', async (
   expect(postedTo).toEqual(['reviews'])
   pipelineEngine.stop(p.id)
   foundPrs = []
+})
+
+test('a PR can also DM people on Slack, each once', async () => {
+  const D = 'https://github.com/o/labeling/pull/40'
+  prs[D] = base(40)
+  for (const old of pipelineEngine.list()) pipelineEngine.stop(old.id)
+  session.prUrl = null
+  const p = pipelineEngine.create('L1', { slackChannel: null, maxRounds: 3, auto: { openPr: false, review: false, ci: false, merge: false } })
+  await flush()
+  dmed.length = 0
+  expect(pipelineEngine.addPr(p.id, D, { channel: null, reviewers: [], dms: ['@dana', 'Koren Tako', 'bad;name'] })).toBeNull()
+  await flush(); await flush()
+  expect(dmed).toEqual(['dana', 'Koren Tako'])
+  expect(pipelineEngine.setPrReview(p.id, D, { channel: null, reviewers: [], dms: ['dana', 'Koren Tako', 'eve'] })).toBeNull()
+  await flush(); await flush()
+  expect(dmed).toEqual(['dana', 'Koren Tako', 'eve'])
+  pipelineEngine.stop(p.id)
 })

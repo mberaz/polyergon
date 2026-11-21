@@ -94,6 +94,21 @@ export async function postToSlack(channel: SlackChannel, text: string, orgId: st
   return { permalink: reply.match(/https:\/\/\S+slack\.com\/archives\/\S+/)?.[0] ?? null }
 }
 
+// Sends a direct message to one person, found by name or @handle. Refuses
+// (does not guess) when the name matches nobody or more than one person.
+export async function dmOnSlack(person: string, text: string, orgId: string = DEFAULT_ORG_ID): Promise<{ permalink: string | null }> {
+  if (!/^@?[\p{L}\p{N} ._'-]{1,60}$/u.test(person)) throw new Error(`Not a Slack name: ${person}`)
+  const { result } = await runClaude(
+    `Use the Slack connector to find the Slack user "${person.replace(/^@/, '')}" (match display name, real name or handle). ` +
+    'If no one or more than one person matches, do not send anything. Otherwise send them the message below as a direct message, exactly as written, as one message. ' +
+    'Reply with only "OK <the message permalink>" when sent, or "FAILED: <reason>".\n\n<message>\n' + text + '\n</message>',
+    opts(undefined, orgId),
+  )
+  const reply = result.trim()
+  if (!/^OK\b/i.test(reply)) throw new Error(reply.replace(/^FAILED:?\s*/i, '') || 'Slack did not confirm the DM')
+  return { permalink: reply.match(/https:\/\/\S+slack\.com\/archives\/\S+/)?.[0] ?? null }
+}
+
 export interface SlackThreadView {
   reviewers: string[] // said they'll review / are reviewing, or reacted 👀
   reactions: { emoji: string; users: string[] }[]
