@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4
+
+- **Fix: sessions went idle right away** when installed with `npx` or `npm install -g`. The terminal helper wasn't executable, so every session exited at start and had nothing to resume.
+- **Version** shown next to the Polyergon name.
+
 ## 0.1.3
 
 - **New Session:** org, agent and model on one row, so Just chat is visible without scrolling. Enter in the name field starts a chat.

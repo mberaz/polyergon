@@ -14,9 +14,10 @@ if (!existsSync(path.join(root, '.next', 'BUILD_ID')) || !existsSync(path.join(r
   fail('No production build found. Run `npm run build` first.')
 }
 
-// node-pty's helper sometimes loses its exec bit on install, which breaks every session.
-const prebuilds = path.join(root, 'node_modules', 'node-pty', 'prebuilds')
+// node-pty's helper loses its exec bit on install, which makes every session exit
+// at once. npx and global installs hoist node-pty next to us, so resolve it.
 try {
+  const prebuilds = path.join(path.dirname(require.resolve('node-pty/package.json', { paths: [root] })), 'prebuilds')
   for (const dir of readdirSync(prebuilds)) {
     const helper = path.join(prebuilds, dir, 'spawn-helper')
     if (existsSync(helper)) chmodSync(helper, 0o755)
