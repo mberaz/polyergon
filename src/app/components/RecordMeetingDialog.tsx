@@ -90,9 +90,10 @@ export function RecordMeetingDialog({ orgs, defaultOrgId, onStart, onCancel, onM
           </div>
           {testResult?.error && <p className="text-xs text-red-400 mt-2">{testResult.error}</p>}
           {testResult?.devices && <p className="text-[11px] text-gray-500 mt-2">Recording from: {testResult.devices.mic}{testResult.devices.system ? ` + ${testResult.devices.system} (meeting audio)` : ''}</p>}
-          {testResult?.devices && !testResult.devices.system && <p className="text-xs text-yellow-500 mt-1">BlackHole isn't installed, so only your microphone is recorded, not the other side of the call. Install it: brew install blackhole-2ch</p>}
+          {testResult?.level !== undefined && testResult.level >= 0.004 && <p className="text-xs text-green-400 mt-1">✓ Your microphone works.</p>}
+          {testResult?.devices && !testResult.devices.system && <p className="text-[11px] text-gray-500 mt-1">Tip: to also record the other side of calls (Zoom, Meet), install BlackHole: <code className="select-all">brew install blackhole-2ch</code></p>}
           {testResult?.level !== undefined && testResult.level < 0.004 && (
-            <p className="text-xs text-yellow-500 mt-2">Silence detected. Say something during the test, and check the microphone isn't muted.</p>
+            <p className="text-xs text-yellow-500 mt-2">Silence detected. Talk during the test. If it stays silent, pick another microphone above, and check it isn't muted in System Settings → Sound → Input.</p>
           )}
           {testResult?.level !== undefined && testResult.level >= 0.004 && (
             <p className="text-xs text-green-500 mt-2">Audio detected ✓</p>
