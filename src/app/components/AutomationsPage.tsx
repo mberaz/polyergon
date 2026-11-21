@@ -7,8 +7,9 @@ import { PrCard } from './AutomateDialog'
 import { Combobox, type ComboOption } from './Combobox'
 import { ExistingAutomations } from './ExistingAutomations'
 
-function WatchCard({ it, onSend, onDismiss, onRedraft, onDelegate }: { it: WatchItem; onSend: (text: string) => void; onDismiss: () => void; onRedraft: () => void; onDelegate?: () => void }) {
+function WatchCard({ it, onSend, onDismiss, onRedraft, onDelegate }: { it: WatchItem; onSend: (text: string) => void; onDismiss: () => void; onRedraft: (hint?: string) => void; onDelegate?: () => void }) {
   const [text, setText] = useState(it.draft ?? '')
+  const [hint, setHint] = useState<string | null>(null) // null = hint box closed
   const [editing, setEditing] = useState(false)
   const [clicked, setClicked] = useState(false) // one click = one post
   useEffect(() => { setClicked(false) }, [it.state])
@@ -20,7 +21,7 @@ function WatchCard({ it, onSend, onDismiss, onRedraft, onDelegate }: { it: Watch
       </div>
       <p dir="auto" className="text-sm text-gray-300 mt-1.5 line-clamp-4 whitespace-pre-wrap [overflow-wrap:anywhere]">{it.text}</p>
       {it.state === 'drafting' && <p className="text-xs text-gray-500 mt-2 animate-pulse">Drafting a reply…</p>}
-      {it.state === 'failed' && <p className="text-xs text-red-400 mt-2">Draft failed: {it.error} <button onClick={onRedraft} className="underline">Try again</button></p>}
+      {it.state === 'failed' && <p className="text-xs text-red-400 mt-2">Draft failed: {it.error} <button onClick={() => onRedraft()} className="underline">Try again</button></p>}
       {it.state === 'sent' && <p className="text-xs text-emerald-400 mt-2">✓ Answered: <span className="text-gray-400">{it.draft}</span></p>}
       {it.state === 'sending' && <p className="text-xs text-blue-300 mt-2 animate-pulse">Posting in Slack…</p>}
       {it.state === 'delegated' && <p className="text-xs text-blue-300 mt-2">Sent to the session. It does the work and replies in the thread.</p>}
@@ -34,9 +35,18 @@ function WatchCard({ it, onSend, onDismiss, onRedraft, onDelegate }: { it: Watch
             <button onClick={() => { setClicked(true); onSend(editing ? text : it.draft ?? '') }} disabled={clicked} className="text-xs px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">{clicked ? 'Posting…' : 'Send in thread'}</button>
             {!editing && <button onClick={() => { setText(it.draft ?? ''); setEditing(true) }} className="text-xs px-2 py-1 rounded-md border border-gray-700 hover:bg-gray-800">Edit</button>}
             {onDelegate && <button onClick={() => { setClicked(true); onDelegate() }} disabled={clicked} title="The linked session does the work (runs checks, reads code) and posts the real result in the thread" className="text-xs px-2 py-1 rounded-md border border-gray-700 hover:bg-gray-800 disabled:opacity-50">Have the session do it</button>}
-            <button onClick={onRedraft} className="text-xs px-2 py-1 rounded-md text-gray-400 hover:text-white">Redraft</button>
+            <button onClick={() => setHint(h => h === null ? '' : null)} title="Tell Claude what to change or add, and it writes a new draft" className="text-xs px-2 py-1 rounded-md text-gray-400 hover:text-white">Redraft…</button>
             <button onClick={onDismiss} className="ml-auto text-xs px-2 py-1 rounded-md text-gray-500 hover:text-white">Dismiss</button>
           </div>
+          {hint !== null && (
+            <div className="flex gap-2 mt-2">
+              <input dir="auto" value={hint} onChange={e => setHint(e.target.value)} autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') { onRedraft(hint); setHint(null) } if (e.key === 'Escape') setHint(null) }}
+                placeholder="What should the reply say or know? e.g. it's fixed in 2.3, mention the rollback"
+                className="flex-1 bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs text-gray-100 outline-none focus:border-blue-500" />
+              <button onClick={() => { onRedraft(hint); setHint(null) }} className="text-xs px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-white">Redraft</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -84,6 +94,7 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
   onEditWatcher: (w: SlackWatcher) => void
   watcherCmd: (type: string, body?: object) => void
 }) {
+  const [ctxOpen, setCtxOpen] = useState<string | null>(null) // watcher whose context editor is open
   const [shipFor, setShipFor] = useState('')
   const sorted = [...pipelines].sort((a, b) => Number(isRunning(b)) - Number(isRunning(a)) || b.updatedAt - a.updatedAt)
   const liveWatchers = [...watchers].sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running'))
@@ -148,8 +159,10 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
                     </select>
                     <span className={`${chip} ${w.mode === 'auto' ? 'border-amber-700/60 text-amber-300' : ''}`}>{w.mode === 'auto' ? 'Answers automatically' : 'You approve each reply'}</span>
                     <span className={chip}>Every {w.intervalMin} min</span>
-                    <span className={chip} title={sources.join('\n') || 'No extra sources. Edit to add links, folders, channels or notes.'}>📚 {sources.length} source{sources.length === 1 ? '' : 's'}</span>
-                    {w.instructions && <span className={chip} title={w.instructions}>📝 Rules</span>}
+                    <button onClick={() => setCtxOpen(o => o === w.id ? null : w.id)} title="Add links, notes or rules Claude uses for every reply in this channel"
+                      className={`${chip} hover:text-white hover:border-gray-500 ${ctxOpen === w.id ? 'border-blue-600 text-blue-300' : ''}`}>
+                      📚 Context{sources.length || w.instructions ? ` (${sources.length + (w.instructions ? 1 : 0)})` : ': add'}
+                    </button>
                   </div>
                 </div>
                 <span className="flex gap-2 flex-shrink-0">
@@ -158,13 +171,16 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
                   {w.status === 'running' && <button onClick={() => watcherCmd('watcher-stop', { id: w.id })} className="text-xs px-2.5 py-1 rounded-md border border-gray-700 text-red-400 hover:bg-red-950/40">Stop</button>}
                 </span>
               </div>
+              {ctxOpen === w.id && <ContextEditor key={w.id} knowledge={w.knowledge ?? ''} instructions={w.instructions ?? ''}
+                onSave={(knowledge, instructions) => { watcherCmd('watcher-update', { id: w.id, patch: { knowledge, instructions } }); setCtxOpen(null) }}
+                onCancel={() => setCtxOpen(null)} />}
               <div className="mt-3">
               {open.length
                 ? <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))' }}>
                     {open.map(it => <WatchCard key={it.permalink} it={it}
                       onSend={text => watcherCmd('watcher-send', { id: w.id, permalink: it.permalink, text })}
                       onDismiss={() => watcherCmd('watcher-dismiss', { id: w.id, permalink: it.permalink })}
-                      onRedraft={() => watcherCmd('watcher-redraft', { id: w.id, permalink: it.permalink })}
+                      onRedraft={hint => watcherCmd('watcher-redraft', { id: w.id, permalink: it.permalink, hint })}
                       onDelegate={w.liveId ? () => watcherCmd('watcher-delegate', { id: w.id, permalink: it.permalink }) : undefined} />)}
                   </div>
                 : <p className="text-xs text-gray-500">Nothing waiting on you. Last: {w.log.at(-1)?.text ?? 'no checks yet'}</p>}
@@ -190,6 +206,29 @@ export function AutomationsPage({ pipelines, watchers, sessions, nameOf, onOpen,
               : <p className="text-xs text-gray-500">{p.log.at(-1)?.text}</p>}
           </section>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// Context Claude uses for every reply in a watched channel: sources and rules, editable right on the card.
+function ContextEditor({ knowledge, instructions, onSave, onCancel }: { knowledge: string; instructions: string; onSave: (k: string, i: string) => void; onCancel: () => void }) {
+  const [k, setK] = useState(knowledge)
+  const [i, setI] = useState(instructions)
+  const box = 'w-full bg-gray-950 border border-gray-800 rounded-md px-2.5 py-2 text-xs text-gray-100 outline-none focus:border-blue-500'
+  return (
+    <div className="mt-3 rounded-lg border border-gray-800 bg-gray-950/50 p-3 space-y-2">
+      <label className="block text-xs text-gray-400">What Claude should know
+        <textarea dir="auto" value={k} onChange={e => setK(e.target.value)} rows={4} autoFocus className={`${box} mt-1 font-mono`}
+          placeholder={'Facts, links, folders or channels, one per line, e.g.\nProd deploys run every Tuesday 10:00\nhttps://docs.example.com/runbook\n#deployment-runbooks'} />
+      </label>
+      <label className="block text-xs text-gray-400">How to answer
+        <textarea dir="auto" value={i} onChange={e => setI(e.target.value)} rows={2} className={`${box} mt-1`}
+          placeholder="e.g. Keep it short. Never say a deploy is done. Tag @devops for prod changes." />
+      </label>
+      <div className="flex justify-end gap-2">
+        <button onClick={onCancel} className="text-xs px-2.5 py-1 text-gray-400 hover:text-white">Cancel</button>
+        <button onClick={() => onSave(k, i)} className="text-xs px-3 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white">Save</button>
       </div>
     </div>
   )

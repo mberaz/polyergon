@@ -150,11 +150,11 @@ class SlackWatcherEngine {
     return s?.claudeSessionId ? { resumeId: s.claudeSessionId, cwd: s.cwd, configDir: orgRegistry.get(s.orgId)?.configDir ?? null } : null
   }
 
-  private async draft(w: SlackWatcher, permalink: string) {
+  private async draft(w: SlackWatcher, permalink: string, hint = '') {
     const it = w.items.find(i => i.permalink === permalink)
     if (!it) return
     try {
-      const raw = await draftChannelReply(it, w.channel.name, this.ctxFor(w), w.orgId, { knowledge: w.knowledge, instructions: w.instructions })
+      const raw = await draftChannelReply(it, w.channel.name, this.ctxFor(w), w.orgId, { knowledge: w.knowledge, instructions: [w.instructions, hint && `For this reply, the owner says: ${hint}`].filter(Boolean).join('\n') })
       const needsYou = raw.startsWith(NEEDS_OWNER)
       it.draft = needsYou ? raw.slice(NEEDS_OWNER.length).trim() : raw
       // Auto-answer only messages posted after you started the watcher; older backlog waits for your approval
@@ -218,10 +218,14 @@ class SlackWatcherEngine {
     if (w && it) { it.state = 'dismissed'; this.log(w, `You dismissed ${it.author}'s question`, undefined, { link: permalink }) }
   }
 
-  redraft(id: string, permalink: string) {
+  // hint: your guidance for this one reply ("mention the rollback", "it's fixed in 2.3")
+  redraft(id: string, permalink: string, hint?: string) {
     const w = this.items.find(x => x.id === id)
     const it = w?.items.find(i => i.permalink === permalink)
-    if (w && it) { it.state = 'drafting'; it.error = undefined; this.save(); this.draft(w, permalink) }
+    if (!w || !it) return
+    const h = String(hint ?? '').trim().slice(0, 2000)
+    if (h) this.log(w, `You guided the reply to ${it.author}`, undefined, { link: permalink, detail: h })
+    it.state = 'drafting'; it.error = undefined; this.save(); this.draft(w, permalink, h)
   }
 }
 

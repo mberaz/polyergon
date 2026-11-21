@@ -447,7 +447,7 @@ app.prepare().then(async () => {
         const err = slackWatchers.delegate(msg.id as string, msg.permalink as string)
         if (err) send({ type: 'watcher-error', message: err.error })
       } else if (msg.type === 'watcher-redraft') {
-        slackWatchers.redraft(msg.id as string, msg.permalink as string)
+        slackWatchers.redraft(msg.id as string, msg.permalink as string, msg.hint as string | undefined)
       } else if (msg.type === 'pipeline-act') {
         // The one place an automation's message reaches a session: your click
         const err = pipelineEngine.act(msg.id as string, (msg.prUrl as string) || null)
