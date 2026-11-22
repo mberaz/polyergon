@@ -8,7 +8,7 @@ import { orgRegistry } from './orgRegistry'
 const execFileAsync = promisify(execFile)
 const PR_RE = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g
 
-function transcriptOf(id: string): string | null {
+export function transcriptOf(id: string): string | null {
   for (const { root } of orgRegistry.projectRoots()) {
     let dirs: string[]
     try { dirs = readdirSync(root) } catch { continue }

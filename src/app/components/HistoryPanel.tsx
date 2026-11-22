@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '@/lib/sessionStore'
+import type { SubagentInfo } from '@/lib/subagents'
 import { screenBottom, typeKeys } from './Terminal'
 import { parseScreenQuestion, activityLine, type ScreenQuestion } from '@/lib/screenQuestion'
 
@@ -25,6 +26,10 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
   const [attached, setAttached] = useState<string[]>([]) // dropped files' paths, added on send
   const [dragging, setDragging] = useState(false)
   const [dropError, setDropError] = useState('')
+  const [agents, setAgents] = useState<SubagentInfo[]>([])
+  const [showAgents, setShowAgents] = useState(false)
+  const [agent, setAgent] = useState<SubagentInfo | null>(null) // reading this subagent's conversation
+  const [agentMsgs, setAgentMsgs] = useState<ChatMessage[]>([])
 
   async function onDrop(e: React.DragEvent) {
     e.preventDefault(); setDragging(false); setDropError('')
@@ -65,6 +70,20 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
     return () => { stop = true; clearInterval(t) }
   }, [sessionId, busy])
 
+  // Subagents Claude started; the open one's conversation updates live
+  useEffect(() => {
+    if (!sessionId) return
+    let stop = false
+    const load = () => {
+      fetch(`/api/sessions/${sessionId}/subagents`).then(r => r.json()).then(d => { if (!stop) setAgents(a => JSON.stringify(a) === JSON.stringify(d.agents ?? []) ? a : d.agents ?? []) }).catch(() => {})
+      if (agent) fetch(`/api/sessions/${sessionId}/subagents?agent=${agent.id}`).then(r => r.json()).then(d => { if (!stop) setAgentMsgs(m => JSON.stringify(m) === JSON.stringify(d.messages ?? []) ? m : d.messages ?? []) }).catch(() => {})
+    }
+    load()
+    const t = setInterval(load, agent || thinking ? 2000 : 5000)
+    return () => { stop = true; clearInterval(t) }
+  }, [sessionId, agent, thinking])
+  const running = agents.filter(a => a.running).length
+
   // Live "what is Claude doing" line from the terminal
   useEffect(() => {
     if (!thinking) { setActivity(null); return }
@@ -74,7 +93,7 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
     return () => clearInterval(t)
   }, [thinking])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'instant' }) }, [messages, question, pending, thinking])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'instant' }) }, [messages, question, pending, thinking, agentMsgs])
 
   function send() {
     const files = attached.map(p => /[^\w@%+=:,./-]/.test(p) ? `'${p.replace(/'/g, `'\\''`)}'` : p).join(' ')
@@ -96,11 +115,50 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
         </div>
       )}
       <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-3 flex-shrink-0">
-        <p className="text-xs text-gray-500">Chat view · last 30 messages, updates live</p>
+        {agent
+          ? <button onClick={() => { setAgent(null); setAgentMsgs([]) }} className="text-xs text-gray-300 hover:text-white">← Back to chat</button>
+          : <p className="text-xs text-gray-500">Chat view · last 30 messages, updates live</p>}
+        {agents.length > 0 && (
+          <div className="relative">
+            <button onClick={() => setShowAgents(v => !v)} className="text-xs px-2.5 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800 flex items-center gap-1.5">
+              {running > 0 && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />}
+              Subagents ({agents.length}{running ? ` · ${running} running` : ''})
+            </button>
+            {showAgents && (
+              <div className="absolute left-0 top-full mt-1 z-30 w-96 max-w-[80vw] max-h-80 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 shadow-xl py-1">
+                {agents.map(a => (
+                  <button key={a.id} onClick={() => { setAgent(a); setAgentMsgs([]); setShowAgents(false) }}
+                    className={`w-full text-left px-3 py-2 hover:bg-gray-800 ${agent?.id === a.id ? 'bg-gray-800' : ''}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${a.running ? 'bg-blue-400 animate-pulse' : 'bg-gray-600'}`} />
+                      <span dir="auto" className="text-sm text-gray-200 truncate">{a.description}</span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 ml-3.5">{a.type} · {a.running ? 'running' : `done ${new Date(a.updatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <button onClick={onClose} className="ml-auto text-xs px-2.5 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800">Terminal view</button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+      {agent && (
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <p className="text-xs text-gray-500"><span className="text-gray-300">{agent.description}</span> · {agent.type} subagent · {agents.find(a => a.id === agent.id)?.running ? 'running' : 'done'} · read-only</p>
+          {!agentMsgs.length && <p className="text-gray-500 text-sm">Loading…</p>}
+          {agentMsgs.map((m, i) => (
+            <div key={i} className={m.role === 'user' ? 'border-l-2 border-gray-700 pl-3' : ''}>
+              {m.role === 'user' && <p className="text-[11px] text-gray-500 mb-1">{i === 0 ? 'Task from Claude' : 'Tool result / input'}</p>}
+              {m.content.split(/\n{2,}/).map((para, j) => (
+                <p key={j} dir="auto" className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${m.role === 'user' ? 'text-gray-400' : 'text-gray-200'} ${j ? 'mt-2' : ''}`}>{para}</p>
+              ))}
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+      )}
+      <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-4 ${agent ? 'hidden' : ''}`}>
         {!messages.length && !pending.length && <p className="text-gray-500 text-sm">{sessionId ? 'Loading the conversation…' : 'New session. Write your first message below.'}</p>}
         {messages.map((m, i) => (
           <div key={i} className={m.role === 'user' ? 'flex justify-end' : ''}>
@@ -140,10 +198,10 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
             <button onClick={onClose} className="mt-2 text-xs text-gray-400 hover:text-gray-200 underline">Answer in the terminal instead</button>
           </div>
         )}
-        <div ref={bottomRef} />
+        {!agent && <div ref={bottomRef} />}
       </div>
 
-      <div className="border-t border-gray-800 px-4 py-3 flex-shrink-0">
+      <div className={`border-t border-gray-800 px-4 py-3 flex-shrink-0 ${agent ? 'hidden' : ''}`}>
         {(attached.length > 0 || dropError) && (
           <div className="flex flex-wrap gap-1.5 mb-2">
             {attached.map(p => (
