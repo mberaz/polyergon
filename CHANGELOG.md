@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.17
+
+- **Chat view keeps your place:** scrolling up to read older messages no longer jumps back to the bottom. It follows new messages again once you scroll to the bottom or send one.
+
 ## 0.1.16
 
 - **Chat view on new sessions:** the conversation shows up reliably in a brand-new session, your first message goes in about a second after Claude is ready, and the status reads **Starting Claude…** until then.
