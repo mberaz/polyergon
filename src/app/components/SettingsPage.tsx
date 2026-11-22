@@ -15,6 +15,7 @@ const MAX_K = 1000
 
 const SECTIONS = [
   ['app', 'App'],
+  ['appearance', 'Appearance'],
   ['account', 'Claude account'],
   ['sessions', 'Sessions'],
   ['power', 'Power'],
@@ -45,6 +46,13 @@ export function SettingsPage({ onClose, guard, busy = 0 }: { onClose: () => void
   const [notifyOn, setNotifyOn] = useState(true)
   const [skipPerms, setSkipPerms] = useState(false)
   const [keepAwake, setKeepAwake] = useState(false)
+  const [theme, setThemeState] = useState<'dark' | 'light' | 'system'>('dark')
+  useEffect(() => { try { setThemeState((localStorage.getItem('theme') as 'dark' | 'light' | 'system') || 'dark') } catch {} }, [])
+  function setTheme(t: 'dark' | 'light' | 'system') {
+    setThemeState(t)
+    try { localStorage.setItem('theme', t) } catch {}
+    document.documentElement.dataset.theme = t === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t
+  }
   const [updatesEmail, setUpdatesEmail] = useState<string | undefined>()
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('unsupported')
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -230,6 +238,17 @@ export function SettingsPage({ onClose, guard, busy = 0 }: { onClose: () => void
             Applies to sessions started, resumed or restarted after you save.
           </p>
           {skipPerms && <p className="text-xs text-amber-400">Only use this with folders and tasks you trust.</p>}
+        </Sec>
+
+        <Sec id="appearance" title="Appearance" desc="Saved in this browser. The terminal stays dark.">
+          <div className="flex gap-2">
+            {(['dark', 'light', 'system'] as const).map(t => (
+              <button key={t} onClick={() => setTheme(t)}
+                className={`text-xs px-3 py-1.5 rounded border ${theme === t ? 'border-blue-500 bg-blue-600 text-white' : 'border-gray-700 text-gray-300 hover:bg-gray-800'}`}>
+                {t === 'dark' ? 'Dark' : t === 'light' ? 'Light' : 'Match my Mac'}
+              </button>
+            ))}
+          </div>
         </Sec>
 
         <Sec id="power" title="Power" desc="Keep sessions and automations running when you step away.">
