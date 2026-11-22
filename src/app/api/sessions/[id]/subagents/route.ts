@@ -6,7 +6,8 @@ import { getRecentMessages } from '@/lib/sessionStore'
 import { listSubagents, subagentFile, subagentsDir } from '@/lib/subagents'
 
 // GET → this session's subagents; ?agent=<id> → that subagent's last messages
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const transcript = transcriptOf(params.id)
   if (!transcript) return NextResponse.json({ agents: [], messages: [] })
   const dir = subagentsDir(transcript, params.id)

@@ -13,12 +13,14 @@ function message(store: MeetingStore, id: string): string | null {
 }
 
 // Preview of exactly what will be posted
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const text = message(new MeetingStore(), params.id)
   return text ? NextResponse.json({ text }) : NextResponse.json({ error: 'This meeting has no summary yet' }, { status: 404 })
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const body = await req.json().catch(() => null) as { channel?: { id?: string; name?: string } } | null
   const name = body?.channel?.name?.replace(/^#/, '').trim()
   if (!name || !/^[\w.-]{1,80}$/.test(name)) return NextResponse.json({ error: 'Pick a channel' }, { status: 400 })

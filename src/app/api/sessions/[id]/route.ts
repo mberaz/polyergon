@@ -23,7 +23,8 @@ async function* candidatePaths(id: string) {
 // Chat view polls every few seconds: remember where each transcript lives
 const pathCache = new Map<string, string>()
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const fs = await import('fs')
   try {
     const cached = pathCache.get(params.id)
@@ -43,7 +44,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 // a past incident permanently lost a real conversation to a single misclick
 // with no recovery path. This keeps every deleted session recoverable
 // (manually, by moving it back) indefinitely; nothing here auto-purges.
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const fs = await import('fs')
   if (!/^[a-f0-9-]{36}$/i.test(params.id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })

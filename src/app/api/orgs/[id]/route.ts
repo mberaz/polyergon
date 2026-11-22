@@ -2,9 +2,10 @@ export const dynamic = 'force-dynamic' // never prerender: reads live local stat
 import { NextRequest, NextResponse } from 'next/server'
 import { orgRegistry } from '@/lib/orgRegistry'
 
-type Ctx = { params: { id: string } }
+type Ctx = { params: Promise<{ id: string }> }
 
-export async function PUT(req: NextRequest, { params }: Ctx) {
+export async function PUT(req: NextRequest, props: Ctx) {
+  const params = await props.params;
   const body = await req.json().catch(() => null) as Record<string, unknown> | null
   if (!body) return NextResponse.json({ error: 'bad body' }, { status: 400 })
   const patch: Parameters<typeof orgRegistry.update>[1] = {}
@@ -25,7 +26,8 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
   return org ? NextResponse.json(org) : NextResponse.json({ error: 'not found' }, { status: 404 })
 }
 
-export async function DELETE(_req: Request, { params }: Ctx) {
+export async function DELETE(_req: Request, props: Ctx) {
+  const params = await props.params;
   return orgRegistry.remove(params.id)
     ? NextResponse.json({ ok: true })
     : NextResponse.json({ error: 'The Default org cannot be removed' }, { status: 400 })
