@@ -21,7 +21,7 @@ export interface BackendSpec {
   // resumeId and rcName are backend-agnostic extras the caller appends where
   // supported.
   // skipPermissions: run without permission prompts (Settings → Sessions).
-  spawnArgs: (opts: { model: string; cwd: string; resumeId?: string; rcName?: string; rc?: boolean; skipPermissions?: boolean }) => string[]
+  spawnArgs: (opts: { model: string; cwd: string; resumeId?: string; sessionId?: string; rcName?: string; rc?: boolean; skipPermissions?: boolean }) => string[]
   // Extra env for this model (e.g. the fable-5-1 window-enforcement bypass).
   env: (model: string) => Record<string, string>
   // Find the CLI's own session id for a session started in `cwd` at/after
@@ -35,13 +35,15 @@ const CLAUDE: BackendSpec = {
   id: 'claude',
   label: 'Claude',
   bin: 'claude',
-  spawnArgs: ({ model, resumeId, rcName, rc, skipPermissions }) => [
+  spawnArgs: ({ model, resumeId, sessionId, rcName, rc, skipPermissions }) => [
     ...(skipPermissions ? ['--permission-mode', 'bypassPermissions'] : []),
     '--model', model,
     // Remote Control is opt-in per session (📱 on the card) so the phone list
     // only shows sessions you actually want there, labeled with their name.
     ...(rc ? ['--remote-control', ...(rcName ? [rcName] : [])] : []),
     ...(resumeId ? ['--resume', resumeId] : []),
+    // New session: we pick its id, so Chat view can read it from the first message
+    ...(sessionId ? ['--session-id', sessionId] : []),
   ],
   env: (model): Record<string, string> =>
     // CLI 2.1.241 doesn't recognize the `claude-fable-5-1` id yet and refuses

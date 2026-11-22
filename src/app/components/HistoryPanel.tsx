@@ -20,6 +20,7 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
   const [pending, setPending] = useState<{ text: string; at: number }[]>([]) // sent, not yet in the transcript
   const [activity, setActivity] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [loaded, setLoaded] = useState(false) // first transcript read came back
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const [question, setQuestion] = useState<ScreenQuestion | null>(null)
@@ -53,12 +54,14 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
 
   // Fast while Claude works or a message is on its way; reads only the transcript's end
   const busy = thinking || pending.length > 0
+  useEffect(() => setLoaded(false), [sessionId])
   useEffect(() => {
     if (!sessionId) return
     let stop = false
     const load = () => fetch(`/api/sessions/${sessionId}`).then(r => r.json())
       .then(d => {
         if (stop) return
+        setLoaded(true)
         const msgs: ChatMessage[] = d.messages ?? []
         setMessages(m => JSON.stringify(m) === JSON.stringify(msgs) ? m : msgs)
         // a sent message shows up as a user message in the transcript: drop its "sending" copy
@@ -159,7 +162,7 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
         </div>
       )}
       <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-4 ${agent ? 'hidden' : ''}`}>
-        {!messages.length && !pending.length && <p className="text-gray-500 text-sm">{sessionId ? 'Loading the conversation…' : 'New session. Write your first message below.'}</p>}
+        {!messages.length && !pending.length && <p className="text-gray-500 text-sm">{sessionId && !loaded ? 'Loading the conversation…' : 'New session. Write your first message below.'}</p>}
         {messages.map((m, i) => {
           // A finished background subagent arrives as a <task-notification> "user" message: show one line
           const note = m.role === 'user' && m.content.trimStart().startsWith('<task-notification>') ? m.content : null
@@ -188,14 +191,14 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
           <div key={p.at} className="flex justify-end">
             <div className="max-w-[72%] bg-blue-600/60 rounded-2xl px-4 py-2">
               <p dir="auto" className="text-sm whitespace-pre-wrap break-words text-white">{p.text}</p>
-              <p className="text-[10px] text-blue-100/70 mt-1">{thinking ? 'Waiting for Claude to finish its current step…' : 'Sending…'}</p>
+              <p className="text-[10px] text-blue-100/70 mt-1">{!messages.length ? 'Goes in as soon as Claude has started…' : thinking ? 'Waiting for Claude to finish its current step…' : 'Sending…'}</p>
             </div>
           </div>
         ))}
         {thinking && (
           <div className="flex items-center gap-2 text-sm text-blue-200">
             <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-            <span>Claude is working{activity ? `: ${activity}` : '…'}</span>
+            <span>{messages.length ? `Claude is working${activity ? `: ${activity}` : '…'}` : 'Starting Claude…'}</span>
           </div>
         )}
         {question && (

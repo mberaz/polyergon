@@ -1,4 +1,5 @@
 import * as pty from 'node-pty'
+import { randomUUID } from 'crypto'
 import { typeInto, isExitCommand } from './exitCommand'
 import { existsSync, readdirSync, realpathSync, statSync } from 'fs'
 import { join } from 'path'
@@ -175,7 +176,8 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
   // ~/.claude/settings.json CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC flag — we
   // must NOT drop the user settings source to bypass it (it also carries all
   // skills/plugins; doing so blanked every skill).
-  const args = backend.spawnArgs({ model: effectiveModel, cwd, resumeId, rcName: cleanRcName || undefined, rc: !!rc, skipPermissions: getSettings().sessions.skipPermissions })
+  const sessionId = !resumeId && backend.id === 'claude' ? randomUUID() : undefined
+  const args = backend.spawnArgs({ model: effectiveModel, cwd, resumeId, sessionId, rcName: cleanRcName || undefined, rc: !!rc, skipPermissions: getSettings().sessions.skipPermissions })
 
   const proc = pty.spawn(backend.bin, args, {
     name: 'xterm-color',
@@ -206,7 +208,8 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
   headlessTerms.set(id, { term: headlessTerm, serialize: serializeAddon })
 
   // For new sessions, detect the session file Claude creates and persist its ID
-  if (!resumeId) detectAndStoreSessionId(id, cwd, spawnTime, configDir, backend)
+  if (sessionId) { liveSessionStore.setClaudeSessionId(id, sessionId); anySessionIdListeners.forEach(fn => fn(id, sessionId)) }
+  else if (!resumeId) detectAndStoreSessionId(id, cwd, spawnTime, configDir, backend)
 
   // Auto-confirm the workspace/folder trust dialog both CLIs show for a new
   // directory. Claude: "Yes, trust" is pre-selected, \r accepts it. Copilot:
@@ -374,16 +377,16 @@ export function isRunning(id: string): boolean { return ptyProcesses.has(id) }
 // prompt; while a startup dialog is showing it waits for you to answer it.
 export function sendWhenReady(id: string, text: string, timeoutMs = 10 * 60_000) {
   const started = Date.now()
-  let readySince = 0 // prompt must stay ready ~2s: TUIs report "waiting" before they finish drawing
+  let readySince = 0 // prompt must stay ready ~1s: TUIs report "waiting" before they finish drawing
   const tick = () => {
     if (!ptyProcesses.has(id) || Date.now() - started > timeoutMs) return
     if (liveSessionStore.get(id)?.status === 'waiting' && !onScreenDialog(id)) {
       readySince ||= Date.now()
-      if (Date.now() - readySince >= 2000) { submitLine(id, text); return }
+      if (Date.now() - readySince >= 1000) { submitLine(id, text); return }
     } else readySince = 0
-    setTimeout(tick, 1000)
+    setTimeout(tick, 250)
   }
-  setTimeout(tick, 1500)
+  setTimeout(tick, 500)
 }
 
 // Types a line into the agent's prompt and submits it. Enter goes separately:

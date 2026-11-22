@@ -275,7 +275,8 @@ app.prepare().then(async () => {
             pipelineEngine.create(id, { slackChannel: task.slackChannel ?? null, maxRounds: 3, auto: { openPr: false, review: true, ci: true, ready: true, merge: false, postMerge: false } })
           }
         }
-        send({ type: 'created', id, cwd, gitRoot, orgId })
+        // claudeSessionId is known at spawn (--session-id): the Chat view needs it from the start
+        send({ type: 'created', id, cwd, gitRoot, orgId, claudeSessionId: liveSessionStore.get(id)?.claudeSessionId ?? null })
         attachToSession(id)
         // First prompt (e.g. "cr <url>", "/mcp"): sent only once Claude is at its input prompt
         if (typeof msg.prompt === 'string' && msg.prompt.trim()) sendWhenReady(id, msg.prompt.slice(0, 20000))
