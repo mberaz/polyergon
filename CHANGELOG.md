@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.15
+
+- **See subagents:** Chat view has a **Subagents** button listing the subagents a session started (running or done). Click one to read its conversation live. A finished subagent shows as one line in the chat.
+- **`/exit` archives the session:** typing `/exit` (or `/quit`) moves the card to History, like Archive.
+- **Ship it: Find PRs** button picks up new and merged PRs now, and a **Mark draft ready** step (Auto by default) marks a green draft ready for review.
+
 ## 0.1.14
 
 - **Chat view works from the first message:** type in a brand-new session, your message shows instantly, a live line says what Claude is doing, and replies appear within a second of being written. Messages to a stopped session resume it first.
