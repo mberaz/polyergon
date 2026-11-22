@@ -5,7 +5,7 @@ import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { DATA_DIR } from './dataDir'
 import { liveSessionStore } from './liveSessionStore'
-import { submitLine, sendWhenReady, onAnyStatusChange, onAnyPrUrlChange } from './ptyManager'
+import { sendWhenReady, onAnyStatusChange, onAnyPrUrlChange } from './ptyManager'
 import { summarizeChecks, isValidPrUrl } from './ghPrStatus'
 import { postToSlack, dmOnSlack, DM_TARGET, readSlackThread, type SlackChannel, type SlackThreadView } from './slackBridge'
 import type { PrCheckStatus } from './prTypes'
@@ -433,7 +433,7 @@ class PipelineEngine {
       void this.markReady(p.id, t.url)
       return null
     }
-    submitLine(p.liveId, sug.text)
+    sendWhenReady(p.liveId, sug.text) // wakes it if it fell asleep
     if (t) {
       if (sug.kind === 'review') t.reviewRounds++
       if (sug.kind === 'ci') t.ciFixes++

@@ -375,7 +375,12 @@ export function isRunning(id: string): boolean { return ptyProcesses.has(id) }
 
 // Sends `text` as the session's first prompt once it sits at the real input
 // prompt; while a startup dialog is showing it waits for you to answer it.
+// Resumes a stopped (or auto-slept) session; set by server.ts.
+let waker: (id: string) => boolean = () => false
+export function setWaker(fn: (id: string) => boolean) { waker = fn }
+
 export function sendWhenReady(id: string, text: string, timeoutMs = 10 * 60_000) {
+  if (!ptyProcesses.has(id) && !waker(id)) return
   const started = Date.now()
   let readySince = 0 // prompt must stay ready ~1s: TUIs report "waiting" before they finish drawing
   const tick = () => {
@@ -409,6 +414,7 @@ export function getLastKnownSize(): { cols: number; rows: number } {
 }
 
 export function killSession(id: string) {
+  if (ptyProcesses.has(id)) { liveSessionStore.setStatus(id, 'idle'); emitStatus(id, 'idle') } // onExit skips it: the proc is gone by then
   const t = thinkingTimers.get(id)
   if (t) { clearTimeout(t); thinkingTimers.delete(id) }
   ptyProcesses.get(id)?.kill()

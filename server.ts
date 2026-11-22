@@ -9,7 +9,9 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { isAllowedRequest } from './src/lib/requestGuard'
 import { v4 as uuid } from 'uuid'
 import { liveSessionStore, LiveSessionStore } from './src/lib/liveSessionStore'
-import { spawnSession, writeToSession, submitLine, sendWhenReady, isRunning, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onExitCommand, onAnyPrUrlChange, onAnyRcUrlChange, onAnySessionId, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
+import { transcriptOf } from './src/lib/sessionPrs'
+import { listSubagents, subagentsDir } from './src/lib/subagents'
+import { spawnSession, writeToSession, submitLine, sendWhenReady, isRunning, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onExitCommand, setWaker, lastOutputAt, onAnyPrUrlChange, onAnyRcUrlChange, onAnySessionId, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND, availableBackends, getBackend } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
@@ -131,6 +133,7 @@ app.prepare().then(async () => {
   })
 
   const wss = new WebSocketServer({ noServer: true })
+  const viewing = new Map<WebSocket, string>() // client → session it has open
 
   // Meeting events go to every connected client — a meeting isn't "attached"
   // like a terminal session; any open tab shows its state.
@@ -145,6 +148,21 @@ app.prepare().then(async () => {
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'sessions', sessions })) })
     return true
   }
+  setWaker(slackWatchers.wake)
+  // Sleep idle sessions: a waiting claude process holds ~250 MB. Asleep = stopped card,
+  // woken by Resume, Chat view, Ship it or a Slack watcher. Skips open, Remote Control
+  // and usage-limit sessions (those wait to auto-continue).
+  // ponytail: fixed 60 min, make it a setting if people ask
+  setInterval(() => {
+    const open = new Set(viewing.values())
+    for (const s of liveSessionStore.list()) {
+      if (s.status !== 'waiting' || !isRunning(s.id) || s.rc || open.has(s.id) || sessionWatch.limitResetAt.has(s.id)) continue
+      if (Date.now() - (lastOutputAt.get(s.id) ?? 0) < 60 * 60_000) continue
+      const t = s.claudeSessionId ? transcriptOf(s.claudeSessionId) : null
+      if (t && listSubagents(subagentsDir(t, s.claudeSessionId!)).some(a => a.running)) continue // background subagents still working
+      killSession(s.id)
+    }
+  }, 5 * 60_000)
   slackWatchers.start()
   keepAwake.start()
   sessionWatch.start()
@@ -211,6 +229,7 @@ app.prepare().then(async () => {
       cleanupOutput?.()
       cleanupStatus?.()
       currentSessionId = sessionId
+      viewing.set(ws, sessionId)
 
       // Bring this session's PTY/headless-buffer size in line with the
       // client's actual viewport before snapshotting its screen state.
@@ -543,6 +562,7 @@ app.prepare().then(async () => {
     })
 
     ws.on('close', () => {
+      viewing.delete(ws)
       cleanupOutput?.()
       cleanupStatus?.()
       cleanupAnyStatus()
