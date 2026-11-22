@@ -9,7 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { isAllowedRequest } from './src/lib/requestGuard'
 import { v4 as uuid } from 'uuid'
 import { liveSessionStore, LiveSessionStore } from './src/lib/liveSessionStore'
-import { spawnSession, writeToSession, submitLine, sendWhenReady, isRunning, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onAnyPrUrlChange, onAnyRcUrlChange, onAnySessionId, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
+import { spawnSession, writeToSession, submitLine, sendWhenReady, isRunning, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onExitCommand, onAnyPrUrlChange, onAnyRcUrlChange, onAnySessionId, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
 import { DEFAULT_BACKEND, availableBackends, getBackend } from './src/lib/backends'
 import { meetingManager } from './src/lib/meetingManager'
@@ -158,6 +158,12 @@ app.prepare().then(async () => {
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg) })
   })
   onAnyStatusChange((id, status) => { if (status === 'waiting') flushRename(id); slackWatchers.sessionStatus(id, status) })
+  // /exit in a session = done with it: archive the card, like the Archive button
+  onExitCommand(id => {
+    liveSessionStore.remove(id)
+    const sessions = liveSessionStore.list().map(sessionView)
+    wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'sessions', sessions })) })
+  })
   pipelineEngine.on((ev) => {
     const msg = JSON.stringify(ev)
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg) })

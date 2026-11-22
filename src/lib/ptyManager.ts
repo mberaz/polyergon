@@ -1,4 +1,5 @@
 import * as pty from 'node-pty'
+import { typeInto, isExitCommand } from './exitCommand'
 import { existsSync, readdirSync, realpathSync, statSync } from 'fs'
 import { join } from 'path'
 import { Terminal as HeadlessTerminal } from '@xterm/headless'
@@ -317,6 +318,8 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
     // the same id before this old one has exited. Only the current owner may
     // tear the id's state down, or the new session is orphaned on arrival.
     if (ptyProcesses.get(id) !== proc) return
+    const byExit = exitRequested.delete(id)
+    typedLine.delete(id)
     const t = thinkingTimers.get(id)
     if (t) { clearTimeout(t); thinkingTimers.delete(id) }
     const wt = waitingTimers.get(id)
@@ -329,6 +332,7 @@ export function spawnSession(id: string, cwd: string, resumeId?: string, configD
     headlessTerms.get(id)?.term.dispose()
     headlessTerms.delete(id)
     prScanBuffers.delete(id)
+    if (byExit) exitCommandListeners.forEach(fn => fn(id))
   })
 }
 
@@ -341,7 +345,17 @@ export function screenText(id: string, rows = 20): string {
 // When the session last printed anything
 export const lastOutputAt = new Map<string, number>()
 
+// The user's current input line per session, and sessions where they ran /exit
+const typedLine = new Map<string, string>()
+const exitRequested = new Set<string>()
+const exitCommandListeners = new Set<(id: string) => void>()
+// Fires when a session's Claude quits because the user ran /exit (not when the app stops it)
+export function onExitCommand(fn: (id: string) => void) { exitCommandListeners.add(fn); return () => exitCommandListeners.delete(fn) }
+
 export function writeToSession(id: string, data: string) {
+  const { line, submitted } = typeInto(typedLine.get(id) ?? '', data)
+  typedLine.set(id, line)
+  if (submitted !== null) { if (isExitCommand(submitted)) exitRequested.add(id); else exitRequested.delete(id) }
   ptyProcesses.get(id)?.write(data)
 }
 
@@ -375,6 +389,7 @@ export function sendWhenReady(id: string, text: string, timeoutMs = 10 * 60_000)
 // Types a line into the agent's prompt and submits it. Enter goes separately:
 // sent in the same write, the TUI treats it as part of a paste and doesn't submit.
 export function submitLine(id: string, text: string) {
+  if (isExitCommand(text)) exitRequested.add(id) // /exit sent from Chat view
   ptyProcesses.get(id)?.write(text)
   setTimeout(() => ptyProcesses.get(id)?.write('\r'), 250)
 }

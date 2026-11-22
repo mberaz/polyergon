@@ -160,7 +160,21 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
       )}
       <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-4 ${agent ? 'hidden' : ''}`}>
         {!messages.length && !pending.length && <p className="text-gray-500 text-sm">{sessionId ? 'Loading the conversation…' : 'New session. Write your first message below.'}</p>}
-        {messages.map((m, i) => (
+        {messages.map((m, i) => {
+          // A finished background subagent arrives as a <task-notification> "user" message: show one line
+          const note = m.role === 'user' && m.content.trimStart().startsWith('<task-notification>') ? m.content : null
+          if (note) {
+            const tag = (t: string) => note.match(new RegExp(`<${t}>([\\s\\S]*?)</${t}>`))?.[1]?.trim() ?? ''
+            const name = tag('summary').match(/"(.+)"/)?.[1]
+            const found = agents.find(a => a.description === name)
+            return (
+              <button key={i} onClick={() => found && (setAgent(found), setAgentMsgs([]))} disabled={!found}
+                className="text-xs text-gray-400 flex items-center gap-2 enabled:hover:text-gray-200">
+                <span className="text-emerald-400">✓</span>{tag('summary') || 'A subagent finished'}{found && <span className="underline">open</span>}
+              </button>
+            )
+          }
+          return (
           <div key={i} className={m.role === 'user' ? 'flex justify-end' : ''}>
             <div className={m.role === 'user' ? 'max-w-[72%] bg-blue-600 rounded-2xl px-4 py-2' : 'max-w-[90%]'}>
               {m.content.split(/\n{2,}/).map((para, j) => (
@@ -168,7 +182,8 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
               ))}
             </div>
           </div>
-        ))}
+          )
+        })}
         {pending.map(p => (
           <div key={p.at} className="flex justify-end">
             <div className="max-w-[72%] bg-blue-600/60 rounded-2xl px-4 py-2">
