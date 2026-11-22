@@ -10,6 +10,7 @@ import { isAllowedRequest } from './src/lib/requestGuard'
 import { v4 as uuid } from 'uuid'
 import { liveSessionStore, LiveSessionStore } from './src/lib/liveSessionStore'
 import { transcriptOf } from './src/lib/sessionPrs'
+import { forkTranscript } from './src/lib/fork'
 import { listSubagents, subagentsDir } from './src/lib/subagents'
 import { spawnSession, writeToSession, submitLine, sendWhenReady, isRunning, resizeSession, killSession, onOutput, onStatusChange, onAnyStatusChange, onExitCommand, setWaker, lastOutputAt, onAnyPrUrlChange, onAnyRcUrlChange, onAnySessionId, getSerializedScreen, getLastKnownSize, findSessionIdSince } from './src/lib/ptyManager'
 import { orgRegistry, DEFAULT_ORG_ID } from './src/lib/orgRegistry'
@@ -349,6 +350,24 @@ app.prepare().then(async () => {
         spawnSession(id, cwd, rawSessionId, org?.configDir ?? null, model, rcNameFor({ id, cwd, claudeSessionId: rawSessionId, orgId }, msg.name as string | undefined), backend, !!msg.rc)
         send({ type: 'created', id, cwd, gitRoot, claudeSessionId: rawSessionId, orgId })
         attachToSession(id)
+
+      } else if (msg.type === 'fork') {
+        // New live session with the source's history up to message `at` (Chat view → Fork from here)
+        const src = liveSessionStore.get(msg.liveId as string)
+        const at = String(msg.at ?? '')
+        if (!src?.claudeSessionId || !/^[a-f0-9-]{36}$/i.test(at)) return
+        if ((src.backend ?? 'claude') !== 'claude') { send({ type: 'error', message: 'Fork works for Claude sessions only' }); return }
+        const file = transcriptOf(src.claudeSessionId)
+        const newClaudeId = uuid()
+        if (!file || !forkTranscript(file, at, newClaudeId)) { send({ type: 'error', message: 'Could not find that message in the conversation' }); return }
+        const org = orgRegistry.get(src.orgId)
+        const id = uuid()
+        liveSessionStore.add({ id, cwd: src.cwd, gitRoot: src.gitRoot, claudeSessionId: newClaudeId, status: 'thinking', createdAt: Date.now(), prUrl: null, orgId: src.orgId, backend: src.backend, model: src.model, rc: false })
+        spawnSession(id, src.cwd, newClaudeId, org?.configDir ?? null, src.model ?? org?.model, null, src.backend, false)
+        send({ type: 'created', id, cwd: src.cwd, gitRoot: src.gitRoot, orgId: src.orgId, claudeSessionId: newClaudeId })
+        attachToSession(id)
+        const forked = liveSessionStore.list().map(sessionView)
+        wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'sessions', sessions: forked })) })
 
       } else if (msg.type === 'resume-all') {
         // Staggered so resuming dozens of sessions doesn't recreate the

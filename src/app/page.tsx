@@ -454,7 +454,8 @@ export default function Home() {
         {view.mode === 'live' && activeSessionId && (reading
           ? <HistoryPanel sessionId={liveSessions.find(s => s.id === activeSessionId)?.claudeSessionId ?? null}
               status={liveSessions.find(s => s.id === activeSessionId)?.status}
-              onSend={text => sendToLive(activeSessionId, text)} onClose={() => setReading(false)} />
+              onSend={text => sendToLive(activeSessionId, text)}
+              onFork={at => ws?.send(JSON.stringify({ type: 'fork', liveId: activeSessionId, at }))} onClose={() => setReading(false)} />
           : <button onClick={() => setReading(true)} title="See the conversation as chat messages instead of the terminal. Right-to-left languages display correctly here."
               className="absolute top-2 right-4 z-10 text-xs px-2.5 py-1 rounded border border-gray-700 bg-gray-900/90 text-gray-300 hover:bg-gray-800">Chat view</button>)}
 

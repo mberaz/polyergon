@@ -9,13 +9,14 @@ interface Props {
   sessionId: string | null // Claude's session id (transcript); null until Claude creates it
   status: 'thinking' | 'waiting' | 'idle' | undefined
   onSend: (prompt: string) => void
+  onFork?: (messageId: string) => void
   onClose: () => void
 }
 
 // Reading view of a live session. The terminal (xterm.js) can't lay out
 // right-to-left text, so Hebrew/Arabic come out scrambled there. Here each
 // paragraph gets dir="auto", so the browser orders it correctly.
-export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
+export function HistoryPanel({ sessionId, status, onSend, onFork, onClose }: Props) {
   const waiting = status === 'waiting', thinking = status === 'thinking'
   const [pending, setPending] = useState<{ text: string; at: number }[]>([]) // sent, not yet in the transcript
   const [activity, setActivity] = useState<string | null>(null)
@@ -182,11 +183,15 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
             )
           }
           return (
-          <div key={i} className={m.role === 'user' ? 'flex justify-end' : ''}>
+          <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'group'}>
             <div className={m.role === 'user' ? 'max-w-[72%] bg-blue-600 rounded-2xl px-4 py-2' : 'max-w-[90%]'}>
               {m.content.split(/\n{2,}/).map((para, j) => (
                 <p key={j} dir="auto" className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${m.role === 'user' ? 'text-white' : 'text-gray-200'} ${j ? 'mt-2' : ''}`}>{para}</p>
               ))}
+              {m.role === 'assistant' && m.id && onFork && (
+                <button onClick={() => onFork(m.id!)} title="Start a new session with this conversation up to here. This session stays as it is."
+                  className="mt-1 text-[11px] text-gray-500 hover:text-gray-200 opacity-0 group-hover:opacity-100 focus:opacity-100">⑂ Fork from here</button>
+              )}
             </div>
           </div>
           )

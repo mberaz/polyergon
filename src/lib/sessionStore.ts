@@ -84,9 +84,10 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: string | null
+  id?: string // transcript entry uuid; fork point
 }
 
-function messageOf(entry: { type?: string; timestamp?: string; message?: { role?: string; content?: unknown } }): ChatMessage | null {
+function messageOf(entry: { type?: string; uuid?: string; timestamp?: string; message?: { role?: string; content?: unknown } }): ChatMessage | null {
   if (entry.type === 'user' && entry.message?.role === 'user') {
     const c = entry.message.content as string | { text?: string }[] | undefined
     const text = typeof c === 'string' ? c : c?.[0]?.text ?? ''
@@ -95,7 +96,7 @@ function messageOf(entry: { type?: string; timestamp?: string; message?: { role?
   if (entry.type === 'assistant' && entry.message?.role === 'assistant') {
     const parts = (entry.message.content ?? []) as ContentPart[]
     const text = parts.filter(p => p.type === 'text').map(p => p.text).join('')
-    return text ? { role: 'assistant', content: text, timestamp: entry.timestamp ?? null } : null
+    return text ? { role: 'assistant', content: text, timestamp: entry.timestamp ?? null, id: entry.uuid } : null
   }
   return null
 }
