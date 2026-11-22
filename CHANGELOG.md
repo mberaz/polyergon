@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.16
+
+- **Chat view on new sessions:** the conversation shows up reliably in a brand-new session, your first message goes in about a second after Claude is ready, and the status reads **Starting Claude…** until then.
+
 ## 0.1.15
 
 - **See subagents:** Chat view has a **Subagents** button listing the subagents a session started (running or done). Click one to read its conversation live. A finished subagent shows as one line in the chat.
