@@ -23,6 +23,8 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
   const [loaded, setLoaded] = useState(false) // first transcript read came back
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const stuck = useRef(true) // follow new output only while the reader is at the bottom
+  const onScroll = (e: React.UIEvent<HTMLDivElement>) => { const el = e.currentTarget; stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }
   const [question, setQuestion] = useState<ScreenQuestion | null>(null)
   const [attached, setAttached] = useState<string[]>([]) // dropped files' paths, added on send
   const [dragging, setDragging] = useState(false)
@@ -96,13 +98,15 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
     return () => clearInterval(t)
   }, [thinking])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'instant' }) }, [messages, question, pending, thinking, agentMsgs])
+  useEffect(() => { stuck.current = true }, [sessionId, agent])
+  useEffect(() => { if (stuck.current) bottomRef.current?.scrollIntoView({ behavior: 'instant' }) }, [messages, question, pending, thinking, agentMsgs])
 
   function send() {
     const files = attached.map(p => /[^\w@%+=:,./-]/.test(p) ? `'${p.replace(/'/g, `'\\''`)}'` : p).join(' ')
     const prompt = [input.trim(), files].filter(Boolean).join(' ')
     if (!prompt) return
     setInput(''); setAttached([])
+    stuck.current = true
     setPending(p => [...p, { text: prompt, at: Date.now() }])
     onSend(prompt)
   }
@@ -147,7 +151,7 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
       </div>
 
       {agent && (
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div onScroll={onScroll} className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           <p className="text-xs text-gray-500"><span className="text-gray-300">{agent.description}</span> · {agent.type} subagent · {agents.find(a => a.id === agent.id)?.running ? 'running' : 'done'} · read-only</p>
           {!agentMsgs.length && <p className="text-gray-500 text-sm">Loading…</p>}
           {agentMsgs.map((m, i) => (
@@ -161,7 +165,7 @@ export function HistoryPanel({ sessionId, status, onSend, onClose }: Props) {
           <div ref={bottomRef} />
         </div>
       )}
-      <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-4 ${agent ? 'hidden' : ''}`}>
+      <div onScroll={onScroll} className={`flex-1 overflow-y-auto px-5 py-4 space-y-4 ${agent ? 'hidden' : ''}`}>
         {!messages.length && !pending.length && <p className="text-gray-500 text-sm">{sessionId && !loaded ? 'Loading the conversation…' : 'New session. Write your first message below.'}</p>}
         {messages.map((m, i) => {
           // A finished background subagent arrives as a <task-notification> "user" message: show one line
