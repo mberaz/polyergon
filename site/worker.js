@@ -30,9 +30,18 @@ async function unsubscribe(url, env) {
   return new Response('<!doctype html><meta name="viewport" content="width=device-width"><title>Unsubscribed</title><body style="font:16px system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem"><h1>You are unsubscribed</h1><p>You will not get more Polyergon emails. <a href="/">Back to polyergon.ai</a></p>', { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
 
+// Count installer runs and Mac app downloads per day. Query:
+// npx wrangler d1 execute polyergon-subscribers --remote --command "SELECT * FROM downloads ORDER BY day DESC"
+function countDownload(url, env) {
+  const kind = url.pathname === '/install.sh' ? 'install.sh' : url.pathname.endsWith('.zip') ? 'mac-app' : null
+  if (!kind) return
+  return env.DB.prepare('INSERT INTO downloads (day, kind, count) VALUES (date(\'now\'), ?, 1) ON CONFLICT(day, kind) DO UPDATE SET count = count + 1').bind(kind).run().catch(() => {})
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url)
+    if (request.method === 'GET') { const c = countDownload(url, env); if (c) ctx.waitUntil(c) }
     if (url.pathname === '/unsubscribe') {
       try { return await unsubscribe(url, env) } catch { return new Response('Something went wrong. Try again later.', { status: 500 }) }
     }
