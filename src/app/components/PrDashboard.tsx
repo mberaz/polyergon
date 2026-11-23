@@ -32,7 +32,9 @@ interface Props {
 }
 
 interface Tooltip { x: number; y: number; lines: string[] }
-interface Filter { section?: SectKey; repo?: string; ageBucket?: string; weekStart?: number }
+// mine: open PRs you authored (Returned to you + Waiting on others, drafts included)
+interface Filter { section?: SectKey; mine?: boolean; repo?: string; ageBucket?: string; weekStart?: number }
+const MINE: SectKey[] = ['returned', 'waiting']
 
 const SECT_META: { key: SectKey; label: string; color: string }[] = [
   { key: 'needsReview', label: 'Needs your review', color: C.needsReview },
@@ -137,6 +139,7 @@ export function PrDashboard({ inbox, orgs, activeOrgId, refreshing, onRefresh, o
     }
     let items = openPrs
     if (filter?.section) items = items.filter(p => p.sect === filter.section)
+    if (filter?.mine) items = items.filter(p => MINE.includes(p.sect))
     if (filter?.repo) items = items.filter(p => (p.repo.split('/').at(-1) ?? p.repo) === filter.repo)
     if (filter?.ageBucket) {
       const def = AGE_DEFS.find(d => d.label === filter.ageBucket)!
@@ -152,6 +155,7 @@ export function PrDashboard({ inbox, orgs, activeOrgId, refreshing, onRefresh, o
 
   const filterChips: { label: string; clear: () => void }[] = []
   if (filter?.section) filterChips.push({ label: SECT_META.find(s => s.key === filter.section)!.label, clear: () => setFilter(f => ({ ...f, section: undefined })) })
+  if (filter?.mine) filterChips.push({ label: 'Opened by me', clear: () => setFilter(f => ({ ...f, mine: undefined })) })
   if (filter?.repo) filterChips.push({ label: filter.repo, clear: () => setFilter(f => ({ ...f, repo: undefined })) })
   if (filter?.ageBucket) filterChips.push({ label: `age ${filter.ageBucket}`, clear: () => setFilter(f => ({ ...f, ageBucket: undefined })) })
   if (filter?.weekStart !== undefined) filterChips.push({
@@ -162,7 +166,11 @@ export function PrDashboard({ inbox, orgs, activeOrgId, refreshing, onRefresh, o
   const isFiltered = filterChips.length > 0
 
   function toggleSection(key: SectKey) {
-    setFilter(f => f?.section === key ? { ...f, section: undefined, weekStart: undefined } : { ...f, section: key, weekStart: undefined })
+    setFilter(f => f?.section === key ? { ...f, section: undefined, weekStart: undefined } : { ...f, section: key, mine: undefined, weekStart: undefined })
+  }
+
+  function toggleMine() {
+    setFilter(f => f?.mine ? { ...f, mine: undefined, weekStart: undefined } : { ...f, mine: true, section: undefined, weekStart: undefined })
   }
 
   function showTip(e: React.MouseEvent, lines: string[]) {
@@ -208,6 +216,12 @@ export function PrDashboard({ inbox, orgs, activeOrgId, refreshing, onRefresh, o
               onClick={() => toggleSection(s.key)}
             />
           ))}
+          <StatTile
+            label="Opened by me"
+            value={openPrs.filter(p => MINE.includes(p.sect)).length}
+            selected={!!normalizedFilter?.mine}
+            onClick={toggleMine}
+          />
           <StatTile label="Merged · 7d" value={mergedLast7} />
         </div>
 
