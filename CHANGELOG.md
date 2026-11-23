@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.18
+
+- **Fork from here:** hover a Claude reply in Chat view and click **⑂ Fork from here** to start a new session with the conversation up to that reply. The original stays as it was.
+- **Light mode:** Settings → Appearance → Dark, Light or Match my Mac. Saved per browser; the terminal stays dark.
+- **Idle sessions sleep:** a session waiting for you for over an hour is stopped to free memory (about 250 MB each). Sending it anything wakes it up where it left off.
+- **Shift+Enter in the terminal** adds a new line instead of sending.
+- **PR dashboard:** shows all your open PRs, not just the first 50, and a new **Opened by me** tile lists every open PR you wrote.
+- Upgraded to Next.js 15 and React 19 (fixes all Dependabot security alerts).
+
 ## 0.1.17
 
 - **Chat view keeps your place:** scrolling up to read older messages no longer jumps back to the bottom. It follows new messages again once you scroll to the bottom or send one.
