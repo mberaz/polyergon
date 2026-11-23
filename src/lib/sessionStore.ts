@@ -188,10 +188,21 @@ async function titleFromTail(filePath: string, size = 262144): Promise<string | 
   } catch { return null }
 }
 
-export async function listAllSessions(): Promise<SessionSummary[]> {
+// Every tab polls this every 30s, and /api/prs calls it too. Re-reading all
+// transcripts each time (thousands, 320 KB each) blocked the server for seconds,
+// so a file is re-read only when its mtime or size changed, and concurrent
+// callers share one scan.
+const summaryCache = new Map<string, { key: string; summary: SessionSummary }>()
+let inFlight: Promise<SessionSummary[]> | null = null
+
+export function listAllSessions(): Promise<SessionSummary[]> {
+  return inFlight ??= scanAllSessions().finally(() => { inFlight = null })
+}
+
+async function scanAllSessions(): Promise<SessionSummary[]> {
   // Collect all .jsonl files with their mtime first (cheap stat), across
   // every registered org's projects root.
-  const files: { filePath: string; projectDir: string; sessionId: string; mtime: Date; orgId: string }[] = []
+  const files: { filePath: string; projectDir: string; sessionId: string; mtime: Date; size: number; orgId: string }[] = []
 
   for (const { orgId, root } of orgRegistry.projectRoots()) {
     let projectDirs: string[]
@@ -208,7 +219,7 @@ export async function listAllSessions(): Promise<SessionSummary[]> {
         const filePath = path.join(projectFullPath, file)
         try {
           const s = await fs.promises.stat(filePath)
-          files.push({ filePath, projectDir, sessionId: file.replace('.jsonl', ''), mtime: s.mtime, orgId })
+          files.push({ filePath, projectDir, sessionId: file.replace('.jsonl', ''), mtime: s.mtime, size: s.size, orgId })
         } catch { /* skip */ }
       }
     }
@@ -217,7 +228,12 @@ export async function listAllSessions(): Promise<SessionSummary[]> {
   // Parse metadata from the first 64 KB of each file (covers large preambles)
   const READ_SIZE = 65536
   const summaries: SessionSummary[] = []
-  await Promise.all(files.map(async ({ filePath, projectDir, sessionId, mtime, orgId }) => {
+  const seen = new Set<string>()
+  await Promise.all(files.map(async ({ filePath, projectDir, sessionId, mtime, size, orgId }) => {
+    seen.add(filePath)
+    const key = `${mtime.getTime()}:${size}:${orgId}`
+    const hit = summaryCache.get(filePath)
+    if (hit?.key === key) { summaries.push(hit.summary); return }
     try {
       const fd = await fs.promises.open(filePath, 'r')
       const buf = Buffer.alloc(READ_SIZE)
@@ -229,9 +245,12 @@ export async function listAllSessions(): Promise<SessionSummary[]> {
       const metadata = extractSessionMetadata(content, sessionId, mtime)
       metadata.title = await titleFromTail(filePath)
       const gitRoot = metadata.cwd ? getGitRoot(metadata.cwd) : null
-      summaries.push({ ...metadata, projectPath: decodeProjectPath(projectDir), projectEncoded: projectDir, filePath, gitRoot, orgId })
+      const summary = { ...metadata, projectPath: decodeProjectPath(projectDir), projectEncoded: projectDir, filePath, gitRoot, orgId }
+      summaryCache.set(filePath, { key, summary })
+      summaries.push(summary)
     } catch { /* skip unreadable */ }
   }))
+  for (const k of summaryCache.keys()) if (!seen.has(k)) summaryCache.delete(k)
 
   return summaries.sort((a, b) => {
     const ta = a.lastTimestamp ?? ''

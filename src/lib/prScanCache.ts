@@ -88,9 +88,12 @@ export class PrUrlCache {
           // Stream line by line — extractPrUrl returns the LAST match, so
           // carrying the latest per-line hit is equivalent to scanning the whole
           // file, without loading a multi-hundred-MB transcript into memory.
-          let prUrl: string | null = null
+          // Transcripts are append-only: when one grew, read only the new bytes.
+          const grew = cached && stat.size > cached.size
+          let prUrl: string | null = grew ? cached.prUrl : null
           try {
-            const rl = createInterface({ input: createReadStream(filePath, { encoding: 'utf-8' }), crlfDelay: Infinity })
+            const input = createReadStream(filePath, { encoding: 'utf-8', start: grew ? cached.size : 0 })
+            const rl = createInterface({ input, crlfDelay: Infinity })
             for await (const line of rl) prUrl = extractPrUrl(line) ?? prUrl
           } catch { /* unreadable, treat as no PR */ }
 
