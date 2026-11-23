@@ -95,16 +95,17 @@ describe('fetchAllPrStatuses', () => {
     prStatusCache.clear()
   })
 
-  it('fetches distinct URLs and skips failures without throwing', async () => {
+  it('fetches distinct URLs in one batched call and skips PRs that errored', async () => {
     let call = 0
     mockExecFile.mockImplementation((_cmd, args, optsOrCb, maybeCb) => {
       const cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb
       call++
-      if (args[2].includes('/1')) {
-        cb(new Error('boom'), { stdout: '', stderr: '' })
-      } else {
-        cb(null, { stdout: JSON.stringify({ number: 2, title: 'ok', state: 'OPEN', reviewDecision: null, statusCheckRollup: [] }), stderr: '' })
-      }
+      expect(args.slice(0, 2)).toEqual(['api', 'graphql'])
+      // gh exits non-zero when one alias errors but still prints the others
+      const stdout = JSON.stringify({ data: { p0: null, p1: { pullRequest: { number: 2, title: 'ok', state: 'OPEN', reviewDecision: null, updatedAt: null,
+        commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [{ status: 'COMPLETED', conclusion: 'FAILURE' }] } } } }] } } } } })
+      const err = Object.assign(new Error('partial'), { stdout })
+      cb(err, { stdout, stderr: '' })
     })
 
     const urls = [
@@ -115,6 +116,7 @@ describe('fetchAllPrStatuses', () => {
     const result = await fetchAllPrStatuses(urls)
     expect(result.has('https://github.com/acme/widgets/pull/1')).toBe(false)
     expect(result.get('https://github.com/acme/widgets/pull/2')?.number).toBe(2)
-    expect(call).toBe(2) // deduped — only 2 distinct URLs actually fetched
+    expect(result.get('https://github.com/acme/widgets/pull/2')?.checks).toBe('failing')
+    expect(call).toBe(1)
   })
 })

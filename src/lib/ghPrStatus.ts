@@ -4,7 +4,6 @@ import { STRICT_PR_URL_RE } from './prDetector'
 import type { PrCheckStatus, PrStatus } from './prTypes'
 
 const execFileAsync = promisify(execFile)
-const CONCURRENCY = 6
 
 export function isValidPrUrl(url: string): boolean {
   return STRICT_PR_URL_RE.test(url)
@@ -76,18 +75,59 @@ export async function fetchPrStatus(url: string): Promise<PrStatus | null> {
   }
 }
 
-// Concurrency-capped so one hung `gh` call can't block the rest.
+// One `gh api graphql` call per BATCH PRs. Each process spawn blocks the event
+// loop (badly on a loaded Mac with endpoint security scanning every exec), so
+// one `gh pr view` per PR froze the whole app for seconds.
+const BATCH = 40
+
+export function batchQuery(urls: string[]): string {
+  const parts = urls.map((url, i) => {
+    const [, owner, name, num] = url.match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)$/)!
+    return `p${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { pullRequest(number: ${num}) {
+      number title state reviewDecision updatedAt
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+        ... on CheckRun { status conclusion } ... on StatusContext { state } } } } } } } } }`
+  })
+  return `query { ${parts.join('\n')} }`
+}
+
 export async function fetchAllPrStatuses(urls: string[]): Promise<Map<string, PrStatus>> {
-  const unique = Array.from(new Set(urls))
+  const unique = Array.from(new Set(urls)).filter(isValidPrUrl)
   const results = new Map<string, PrStatus>()
 
-  for (let i = 0; i < unique.length; i += CONCURRENCY) {
-    const batch = unique.slice(i, i + CONCURRENCY)
-    const settled = await Promise.allSettled(batch.map(url => fetchPrStatus(url)))
-    settled.forEach((r, idx) => {
-      if (r.status === 'fulfilled' && r.value) results.set(batch[idx], r.value)
+  for (let i = 0; i < unique.length; i += BATCH) {
+    const batch = unique.slice(i, i + BATCH)
+    let stdout: string
+    try {
+      ({ stdout } = await execFileAsync('gh', ['api', 'graphql', '-f', `query=${batchQuery(batch)}`], { timeout: 30000, maxBuffer: 32 * 1024 * 1024 }))
+    } catch (e) {
+      // gh exits non-zero when any PR in the batch errors (e.g. deleted repo) but still prints the rest
+      stdout = (e as { stdout?: string }).stdout ?? ''
+    }
+    let data: Record<string, { pullRequest?: GhPr | null } | null> = {}
+    try { data = JSON.parse(stdout).data ?? {} } catch { continue }
+    batch.forEach((url, idx) => {
+      const pr = data[`p${idx}`]?.pullRequest
+      if (!pr) return
+      const updatedAt = pr.updatedAt ? Date.parse(pr.updatedAt) : NaN
+      const status: PrStatus = {
+        number: pr.number,
+        title: pr.title,
+        state: pr.state,
+        reviewDecision: pr.reviewDecision ?? null,
+        checks: summarizeChecks(pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes ?? []),
+        updatedAt: Number.isNaN(updatedAt) ? null : updatedAt,
+        fetchedAt: Date.now(),
+      }
+      prStatusCache.set(url, status)
+      results.set(url, status)
     })
   }
 
   return results
+}
+
+interface GhPr {
+  number: number; title: string; state: PrStatus['state']; reviewDecision: string | null; updatedAt: string | null
+  commits?: { nodes?: { commit?: { statusCheckRollup?: { contexts?: { nodes?: GhCheckItem[] } } | null } }[] }
 }
