@@ -72,6 +72,16 @@ export function Terminal({ visible, ws }: Props) {
       wsRef.current?.send(JSON.stringify({ type: 'input', data }))
     })
 
+    // Shift+Enter inserts a newline instead of submitting. xterm sends a plain
+    // \r for it, the same as Enter, so send ESC+CR (Meta+Enter) instead, which
+    // Claude Code reads as "new line" (what its /terminal-setup configures).
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.key !== 'Enter' || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return true
+      if (e.type === 'keydown') wsRef.current?.send(JSON.stringify({ type: 'input', data: '\x1b\r' }))
+      e.preventDefault()
+      return false
+    })
+
     const observer = new ResizeObserver(() => {
       fit.fit()
       const s = wsRef.current
