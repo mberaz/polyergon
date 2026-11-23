@@ -39,7 +39,9 @@ export interface PrInbox {
 const CACHE_TTL_MS = 5 * 60 * 1000
 const MERGED_SECTION_DAYS = 7
 const STATS_WINDOW_WEEKS = 8
-const SEARCH_LIMIT = '50'
+// GitHub search returns at most 1000 results. Open PRs get no lower cap: one
+// past it silently drops out of every section (including "Returned to you").
+const SEARCH_LIMIT = '1000'
 const MERGED_SEARCH_LIMIT = '200'
 
 interface GhSearchItem {
