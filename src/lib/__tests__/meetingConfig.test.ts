@@ -21,6 +21,8 @@ describe('transcription config', () => {
     saveTranscriptionConfig({ provider: 'azure', endpoint: 'https://x.example', apiKey: 'k-azure' }, file)
     saveTranscriptionConfig({ provider: 'azure', endpoint: 'https://y.example', apiKey: '' }, file)
     expect(getTranscriptionConfig(file)).toMatchObject({ kind: 'azure', apiKey: 'k-azure', endpoint: 'https://y.example' })
+    saveTranscriptionConfig({ provider: 'azure', endpoint: 'https://y.example/openai/deployments/d/audio/transcriptions?api-version=1', apiKey: '' }, file)
+    expect(getTranscriptionConfig(file)).toMatchObject({ endpoint: 'https://y.example' })
     saveTranscriptionConfig({ provider: 'openai', apiKey: 'sk-open' }, file)
     expect(JSON.parse(readFileSync(file, 'utf-8')).azureApiKey).toBeUndefined()
     saveTranscriptionConfig({ provider: 'none' }, file)

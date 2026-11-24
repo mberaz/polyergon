@@ -25,7 +25,8 @@ export function getTranscriptionConfig(file = CONFIG_FILE): TranscriptionConfig 
   if (typeof azureEndpoint === 'string' && azureEndpoint && typeof azureApiKey === 'string' && azureApiKey) {
     return {
       kind: 'azure',
-      endpoint: azureEndpoint.replace(/\/+$/, ''),
+      // People paste the full transcription URL from the Azure portal; we add the path ourselves
+      endpoint: azureEndpoint.replace(/\/openai\/.*$/, '').replace(/\/+$/, ''),
       apiKey: azureApiKey,
       deployment: typeof azureDeployment === 'string' && azureDeployment ? azureDeployment : 'gpt-4o-transcribe',
       language,
